@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-fopenmp -O 
 MODEL_OBJECTS=Elastic_Modeling_Job.o Elastic_Shot.o Elastic_SEGY_File.o Elastic_SEGY_File_Receiver_Range.o Global_Coordinate_System.o Voxet.o Voxet_Property.o 
 PROPAGATOR_OBJECTS=Elastic_Buffer.o Elastic_Pipeline.o Elastic_Propagator.o
-CUDA_FILES=Simple_Copy.cu Compute_ABC.cu Earth_Model.cu Propagate_Particle_Velocities.cu Propagate_Stresses_Isotropic.cu Elastic_Kernels.cu
+CUDA_FILES=Simple_Copy.cu Compute_ABC.cu Earth_Model.cu Propagate_Particle_Velocities.cu Propagate_Stresses_Orthorhombic.cu Elastic_Kernels.cu
 
 # -DGPU-DEBUG
 all: $(CUDA_FILES) $(PROPAGATOR_OBJECTS) $(MODEL_OBJECTS) gpuViscoElasticOrthorhomicFD.cpp
