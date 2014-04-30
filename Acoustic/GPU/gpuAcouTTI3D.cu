@@ -4671,7 +4671,7 @@ int main(int argc, char* argv[])
 
 		float* stf = new float[2000];
 		int tsrc = 0;
-		src(4, dt, fmax, 1, "nil", &tsrc, stf);
+		src(4, dt, fmax, parmfile->sourcetype+1, parmfile->stfname, &tsrc, stf);
 		prop->Put_Source_Wavelet(stf,tsrc,xsrc,ysrc,zsrc,zsrcghost);
 		//prop->AddToPQ(xsrc,ysrc,zsrc,1.0f,1.0f);
 
