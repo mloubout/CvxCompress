@@ -1,0 +1,100 @@
+! FDAniQ.in - Input file for FDAniQ.f90
+! Orthorhombic Test Case from Tsvankin, 1997
+! #grd pts (nx,ny,nz); grd size (dx,dy,dz)
+  200, 200, 200, 12.5, 12.5, 12.5
+! top of model boundary conditions: freesurfflag (T;F):
+  F 
+! rec & sou ghosting flags (T;F):
+  F, F
+! SEGY trace length [s], time increment [s]:
+  0.4, 0.0040
+! #snaps, ik_dec fac, fileformat (=t, =g)
+  3,  2,  t
+! snapshot times (s):
+  0.1, 0.2, 0.3
+! SEG-Y time shift (s):
+  0.
+! #rec's, rec type, iline#, xline#:
+  10, p, 1, 1 
+! i=1,nrec: (xrec(i),yrec(i),zrec(i))
+  1250., 1250., 250.
+  1250., 1275., 250.
+  1250., 1300., 250.
+  1250., 1325., 250.
+  1250., 1350., 250.
+  1250., 1375., 250.
+  1250., 1400., 250.
+  1250., 1425., 250.
+  1250., 1450., 250.
+  1250., 1475., 250.
+! #t-steps btwn. monitor writes, xmon, ymon, zmon
+  4, 1250.0, 1250.0, 150.
+! #sources (comprising the shot), shot#:
+  1, 1
+! l=1,nshot: k=1,nsou: (xsou(k,l),ysou(k,l),zsou(k,l),istype(k,l),samp(k,l))
+  1250.00000 ,  1250.00000 ,   250.00000 ,p , 0.10000E+01
+! sou wavelet: #pts; dt [s]; fmax [Hz]
+  26, 4.e-3, 200.0
+! tdum sou_wavelet:
+   9.8494581E-09
+   2.5148890E-07
+   4.7537010E-06
+   6.6278953E-05
+   6.7821663E-04
+   5.0565046E-03
+   2.7162332E-02
+   0.1031818    
+   0.2675149    
+   0.4352064    
+   0.3194400    
+  -0.2617989    
+  -0.8965126    
+  -0.8965126    
+  -0.2617989    
+   0.3194400    
+   0.4352064    
+   0.2675149    
+   0.1031818    
+   2.7162332E-02
+   5.0565046E-03
+   6.7821663E-04
+   6.6278953E-05
+   4.7537010E-06
+   2.5148890E-07
+   9.8494581E-09
+! modeling physics (=eIso;eVTI;eVOr;eTTI;eTOr;aTTI;aTOr)
+eIso
+! mod files(Dn;Vp0;Vs0;Eps1;Eps2;Gam1;Gam2;Del1;Del2;Del3;Q;Azim;Dip;Slip):
+'rho.bin'
+'vp0.bin'
+'vs0.bin'
+'eps1.bin'
+'eps2.bin'
+'gam1.bin'
+'gam2.bin'
+'del1.bin'
+'del2.bin'
+'del3.bin'
+'q.bin'
+'azim.bin'
+'dip.bin'
+'rake.bin'
+! center frequency for SLS attenuation mechanism [Hz]:
+15.
+! bigendianflag (=T;F):
+F
+! orderaxes (=zyx,zxy,xyz)
+zyx
+! smoothseafloorflag (T;F):
+F
+! number of threads (i.e., ncpus) for OpenMP:
+20
+! order of time integration (=2; =4):
+2
+! overidedtiflag (T;F), dti_override:
+F
+! overide nabcflag (T;F), nabc_top, nabc_bot, nabc_sdx, nabc_sdy
+F
+! overide fmaxflag (T;F), vmin 
+T, 1500.
+F
