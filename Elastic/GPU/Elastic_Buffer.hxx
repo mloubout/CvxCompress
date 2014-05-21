@@ -179,10 +179,17 @@ public:
 	void Launch_Data_Transfers();
 	void Launch_Simple_Copy_Kernel();
 
+	/* Original coefficients 
 	static const float _C0 = 1225.0f/1024.0f;
 	static const float _C1 = -245.0f/3072.0f;
 	static const float _C2 = 49.0f/5120.0f;
-	static const float _C3 = -5.0f/7168.0f;
+	static const float _C3 = -5.0f/7168.0f; */
+	
+	// Optimized (for lower dispersion) coefficients 
+	static const float _C0 = 1.1850912100109303f;
+	static const float _C1 = -0.0835270299926924f;
+	static const float _C2 = 0.016837760894350576f;
+	static const float _C3 = -0.0027386181103430177f;
 
 private:
 	friend class Elastic_Pipeline;
