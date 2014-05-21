@@ -4,6 +4,7 @@
 class Elastic_Modeling_Job;
 class Elastic_SEGY_File;
 class Elastic_Propagator;
+class Elastic_Pipeline;
 
 class Elastic_Shot
 {
@@ -11,8 +12,7 @@ public:
 	Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx, double x, double y, double z);
 	~Elastic_Shot();
 
-	bool Set_Propagation_Time(double PropTime, const char* parmfile_path, int line_num);
-	double Get_Propagation_Time() {return _propagation_time;}
+	double Get_Propagation_Time();
 
 	int Get_Source_Index() {return _souidx;}
 
@@ -52,9 +52,58 @@ public:
 
 	void Add_SEGY_File(Elastic_SEGY_File* segy_file);
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
-	void Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop);
 
-	void Shift_Receiver_Transfer_Buffers();
+	void Allocate_Pinned_Host_Memory(Elastic_Propagator* prop);
+	void Free_Pinned_Host_Memory(Elastic_Propagator* prop);
+
+	void Create_Trace_Resample_Buffers(Elastic_Propagator* prop);
+	void Free_Trace_Resample_Buffers();
+
+	void Calculate_RX_Locations_And_Results_Size(Elastic_Propagator* prop, int device_id, int& rxloc_size, int& rxres_size, int& num_full_compute);
+	void Start_Extract_Receiver_Values_From_Device(
+			Elastic_Propagator* prop, 
+			Elastic_Pipeline* pipe,
+			int device_id, 
+			int* block_offsets, 
+			int* timesteps, 
+			int* num_rx,
+			int* flags,
+			int num_blocks, 
+			float** d_rxloc_block, 
+			float* d_rxres,
+			float* h_rxres
+			);
+	void Extract_Receiver_Values_From_Device(
+			Elastic_Propagator* prop, 
+			Elastic_Pipeline* pipe,
+			int device_id, 
+			int* block_offsets, 
+			int* timesteps, 
+			int* num_rx,
+			int* flags,
+			int num_blocks, 
+			float** d_rxloc_block, 
+			float* d_rxres,
+			float* h_rxres
+			);
+	void DEMUX_Receiver_Values(
+			Elastic_Propagator* prop,
+			Elastic_Pipeline* pipe,
+			int device_id, 
+			int* block_offsets, 
+			int* timesteps, 
+			int* num_rx,
+			int* flags,
+			int num_blocks, 
+			float* h_rxres
+			);
+	void Resample_Receiver_Traces(
+			Elastic_Propagator* prop,
+			Elastic_Pipeline* pipe,
+			double dti
+			);
+
+	void Write_SEGY_Files();
 
 private:
 	int _log_level;
@@ -76,10 +125,49 @@ private:
 	double* _stf;
 	void _src(double dt, double fmax, int type, char* stfname, int* tsrc, double* stf);
 
-	double _propagation_time;
-
 	Elastic_SEGY_File** _segy_files;
 	int _num_segy_files;
+
+        bool _Range_Intersects(int x0, int x1, int x_lo, int x_hi);
+        bool _Receiver_Intersects(int x0, int x1, int y0, int y1, int ix, int iy);
+	void _Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop);
+
+        int _totSteps;
+        int _nBlks;
+        int _num_pipes;
+        float** _h_rcv_loc;
+        float*** _h_rcv_binned;
+	float** _h_pinned_rcv_loc;
+        int*** _h_rcv_trcidx;
+        int*** _h_rcv_trcflag;
+        int* _h_rcv_loc_size_f;
+
+	int _num_traces;
+	double* _h_trace_rcv_x;
+	double* _h_trace_rcv_y;
+	double* _h_trace_rcv_z;
+	int* _h_trace_iline;
+	int* _h_trace_xline;
+	int* _h_trace_trcens;
+	double* _h_trace_tshift;
+	double* _h_trace_sample_rate;
+	float** _h_trace_in;
+	float** _h_trace_out;
+	int* _h_trace_flag;
+	int* _h_trace_idx_in;
+	int* _h_trace_idx_in_nn;
+	int* _h_trace_idx_out;
+	int* _h_trace_iFile;  // iFile no for this trace
+	bool* _h_trace_touched;
+
+	// indexed on _num_segy_files
+	int* _h_trace_nsamp_in;
+	int* _h_trace_nsamp_out;
+	int** _h_trace_out_idxM;
+	float*** _h_trace_out_sinc_coeffs;
+
+	unsigned long _Comp_RxLoc_Length(float* rxloc);
+	unsigned long _Comp_RxRes_Length(float* rxloc, int flags);
 };
 
 #endif

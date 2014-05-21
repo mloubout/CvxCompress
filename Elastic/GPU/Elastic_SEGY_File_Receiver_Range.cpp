@@ -37,9 +37,12 @@ void Elastic_SEGY_File_Receiver_Range::Add_Z(double start, double end, double in
 }
 
 int Elastic_SEGY_File_Receiver_Range::Compute_Receiver_Locations(
-		float*& rcv_x,
-		float*& rcv_y,
-		float*& rcv_z
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z,
+		int*& iline,
+		int*& xline,
+		int*& trcens
 		)
 {
 	if (Is_Valid())
@@ -53,9 +56,12 @@ int Elastic_SEGY_File_Receiver_Range::Compute_Receiver_Locations(
 		// add 1e-5 of interval to prevent round off error from eliminating last point
 		int nz = (int)((_z_end + _z_interval * 1e-5 - _z_start) / _z_interval) + 1;
 
-		rcv_x = new float[nx*ny*nz];
-		rcv_y = new float[nx*ny*nz];
-		rcv_z = new float[nx*ny*nz];
+		rcv_x = new double[nx*ny*nz];
+		rcv_y = new double[nx*ny*nz];
+		rcv_z = new double[nx*ny*nz];
+		iline = new int[nx*ny*nz];
+		xline = new int[nx*ny*nz];
+		trcens = new int[nx*ny*nz];
 		for (int iz = 0;  iz < nz;  ++iz)
 		{
 			for (int iy = 0;  iy < ny;  ++iy)
@@ -66,6 +72,10 @@ int Elastic_SEGY_File_Receiver_Range::Compute_Receiver_Locations(
 					rcv_x[idx] = _x_start + (double)ix * _x_interval;
 					rcv_y[idx] = _y_start + (double)iy * _y_interval;
 					rcv_z[idx] = _z_start + (double)iz * _z_interval;
+					// TO-DO :: Add proper offsets to these inline, xline numbers
+					xline[idx] = ix;
+					iline[idx] = iy;
+					trcens[idx] = ix+1;
 				}
 			}
 		}
@@ -74,6 +84,9 @@ int Elastic_SEGY_File_Receiver_Range::Compute_Receiver_Locations(
 	rcv_x = 0L;
 	rcv_y = 0L;
 	rcv_z = 0L;
+	iline = 0L;
+	xline = 0L;
+	trcens = 0L;
 	return 0;
 }
 

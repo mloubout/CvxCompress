@@ -662,28 +662,6 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			if (!error)
 			{
-				int souidx;
-				double prop_time;
-				int matched = sscanf(s, "SHOT %d PROPAGATION_TIME %lf", &souidx, &prop_time);
-				if (matched == 2)
-				{
-					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - PROPAGATION_TIME Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
-						error = shot->Set_Propagation_Time(prop_time, parmfile_path, line_num);
-						if (error) break;
-						if (_log_level > 3) printf("Shot %d :: Propagation time set to %.3lfs.\n",souidx,prop_time);
-					}
-				}
-			}
-			if (!error)
-			{
 				int souidx, fileidx;
 				char base_filename[4096];
 				double sample_rate;

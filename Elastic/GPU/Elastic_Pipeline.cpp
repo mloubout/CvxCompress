@@ -1,8 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include "Elastic_Buffer.hxx"
 #include "Elastic_Pipeline.hxx"
 #include "Elastic_Propagator.hxx"
 #include "Elastic_Shot.hxx"
+#include "Elastic_Modeling_Job.hxx"
+#include "gpuAssert.h"
 
 Elastic_Pipeline::Elastic_Pipeline(
 		Elastic_Propagator* prop,
@@ -23,7 +26,29 @@ Elastic_Pipeline::Elastic_Pipeline(
 	_buffers = new Elastic_Buffer*[1000];
 	_num_devices = 0;
 	_device_IDs = 0L;
+
 	_d_Mem = 0L;
+
+	_d_RxLoc = 0L;
+	_d_RxLoc_block = 0L;
+	_h_RxLoc_block_Offset = 0L;
+	_h_RxLoc_num_blocks = 0L;
+
+	_d_RxRes = 0L;
+
+	_h_RxRes_curr = 0L;
+	_h_RxRes_curr_block_offset = 0L;
+	_h_RxRes_curr_timestep = 0L;
+	_h_RxRes_curr_num_rx = 0L;
+	_h_RxRes_curr_flags = 0L;
+	_h_RxRes_curr_num_blocks = 0L;
+	
+	_h_RxRes_prev = 0L;
+	_h_RxRes_prev_block_offset = 0L;
+	_h_RxRes_prev_timestep = 0L;
+	_h_RxRes_prev_num_rx = 0L;
+	_h_RxRes_prev_flags = 0L;
+	_h_RxRes_prev_num_blocks = 0L;
 }
 
 Elastic_Pipeline::~Elastic_Pipeline()
@@ -66,6 +91,197 @@ void Elastic_Pipeline::Shift_Buffers()
 	for (int i = 0;  i < _num_buffers;  ++i)
         {
                 _buffers[i]->Shift_Buffer();
+	}
+}
+
+void Elastic_Pipeline::_Shift_Rx_Blocks()
+{
+	//printf("Elastic_Pipeline::_Shift_Rx_Blocks - start\n");
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_id = _device_IDs[iDev];
+		int nn = _h_RxLoc_num_blocks[iDev];
+		void* first_d_RxLoc_block = _d_RxLoc_block[iDev][0];
+		for (int ib = 1;  ib < nn;  ++ib)
+		{
+			_d_RxLoc_block[iDev][ib-1] = _d_RxLoc_block[iDev][ib];
+			_h_RxLoc_block_Offset[iDev][ib-1] = _h_RxLoc_block_Offset[iDev][ib];
+		}
+		_d_RxLoc_block[iDev][nn-1] = first_d_RxLoc_block;
+		_h_RxLoc_block_Offset[iDev][nn-1] = -1;
+	}
+
+	// flip pinned receiver results transfer blocks
+	void** tmp = _h_RxRes_curr;
+	_h_RxRes_curr = _h_RxRes_prev;
+	_h_RxRes_prev = tmp;
+
+	// shift meta data
+	if (_h_RxRes_prev_num_blocks != 0L)
+	{
+		for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	        {
+			delete [] _h_RxRes_prev_block_offset[iDev];
+			delete [] _h_RxRes_prev_timestep[iDev];
+			delete [] _h_RxRes_prev_num_rx[iDev];
+			delete [] _h_RxRes_prev_flags[iDev];
+		}
+		delete [] _h_RxRes_prev_block_offset;
+		delete [] _h_RxRes_prev_timestep;
+		delete [] _h_RxRes_prev_num_rx;
+		delete [] _h_RxRes_prev_flags;
+		delete [] _h_RxRes_prev_num_blocks;
+	}
+
+	_h_RxRes_prev_block_offset = _h_RxRes_curr_block_offset;
+	_h_RxRes_prev_timestep = _h_RxRes_curr_timestep;
+	_h_RxRes_prev_num_rx = _h_RxRes_curr_num_rx;
+	_h_RxRes_prev_flags = _h_RxRes_curr_flags;
+	_h_RxRes_prev_num_blocks = _h_RxRes_curr_num_blocks;
+
+	_h_RxRes_curr_block_offset = 0L;
+	_h_RxRes_curr_timestep = 0L;
+	_h_RxRes_curr_num_rx = 0L;
+	_h_RxRes_curr_flags = 0L;
+	_h_RxRes_curr_num_blocks = 0L;
+	//printf("Elastic_Pipeline::_Shift_Rx_Blocks - end\n");
+}
+
+void Elastic_Pipeline::Launch_Receiver_Extraction_Kernels(Elastic_Shot* shot)
+{
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_id = _device_IDs[iDev];
+		int num_full_compute = _h_RxRes_curr_num_blocks[iDev];
+		shot->Extract_Receiver_Values_From_Device(
+				_prop, this, device_id,
+				_h_RxRes_curr_block_offset[iDev],_h_RxRes_curr_timestep[iDev],_h_RxRes_curr_num_rx[iDev],_h_RxRes_curr_flags[iDev],num_full_compute,
+				(float**)(_d_RxLoc_block[iDev]),
+				(float*)(_d_RxRes[iDev]),
+				(float*)(_h_RxRes_curr[iDev]));
+	}
+}
+
+void Elastic_Pipeline::Launch_Receiver_Data_Transfers(Elastic_Shot* shot)
+{
+	_Shift_Rx_Blocks();
+
+	_h_RxRes_curr_block_offset = new int*[_num_devices];
+	_h_RxRes_curr_timestep = new int*[_num_devices];
+	_h_RxRes_curr_num_rx = new int*[_num_devices];
+	_h_RxRes_curr_flags = new int*[_num_devices];
+	_h_RxRes_curr_num_blocks = new int[_num_devices];
+
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_id = _device_IDs[iDev];
+
+		int num_full_compute = _h_RxLoc_num_blocks[iDev];
+		if (num_full_compute > 0)
+		{
+			// find first full compute buffer in pipeline
+			Elastic_Buffer* first_full_compute_buffer = 0L;
+			for (int iBuf = 0;  iBuf < _num_buffers;  ++iBuf)
+			{
+				Elastic_Buffer* buffer = _buffers[iBuf];
+				if (buffer->Get_Device_ID() == device_id && buffer->Is_Compute() && !buffer->Is_Partial_Compute())
+				{
+					if (!buffer->Get_M1_Buffer()->Is_Compute() || (buffer->Get_M1_Buffer()->Is_Compute() && buffer->Get_M1_Buffer()->Is_Partial_Compute()))
+					{
+						first_full_compute_buffer = buffer;
+						break;
+					}
+				}
+			}
+			//char bufname[4096];
+			//printf("First full compute buffer is %s\n",first_full_compute_buffer->Get_Name_String(bufname));
+			_h_RxLoc_block_Offset[iDev][num_full_compute-1] = first_full_compute_buffer->Get_Block_Offset(1,0);
+
+			_h_RxRes_curr_block_offset[iDev] = new int[num_full_compute];
+			_h_RxRes_curr_timestep[iDev] = new int[num_full_compute];
+			_h_RxRes_curr_num_rx[iDev] = new int[num_full_compute];
+			_h_RxRes_curr_flags[iDev] = new int[num_full_compute];
+			_h_RxRes_curr_num_blocks[iDev] = num_full_compute;
+	
+			for (int ib = 0;  ib < num_full_compute;  ++ib)
+			{
+				// defaults
+				_h_RxRes_curr_block_offset[iDev][ib] = -1;
+				_h_RxRes_curr_timestep[iDev][ib] = -1;
+				_h_RxRes_curr_num_rx[iDev][ib] = 0;
+				_h_RxRes_curr_flags[iDev][ib] = 0;
+
+				// match compute buffers with RxLoc buffers
+				int rxloc_block_offset = _h_RxLoc_block_Offset[iDev][ib];
+				if (rxloc_block_offset >= 0)
+				{
+					for (int iBuf = 0;  iBuf < _num_buffers;  ++iBuf)
+					{
+						Elastic_Buffer* buffer = _buffers[iBuf];
+						int cmp_buffer_block_offset = buffer->Get_Block_Offset(1,0);
+						if (buffer->Get_Device_ID() == device_id && buffer->Is_Compute() && !buffer->Is_Partial_Compute() && rxloc_block_offset == cmp_buffer_block_offset)
+						{
+							// found it
+							_h_RxRes_curr_block_offset[iDev][ib] = rxloc_block_offset;
+							_h_RxRes_curr_timestep[iDev][ib] = buffer->Get_Block_Timestep(1,0);
+							break;
+						}
+					}
+				}
+			}
+
+			//printf("Launch_Extraction_Kernels :: num_full_compute=%d\n",num_full_compute);
+			//for (int ib = 0;  ib < num_full_compute;  ++ib)
+			//{
+			//	printf("  Block %d :: Timestep=%d, #RX=%d, Flags=%d\n",_h_RxRes_curr_block_offset[iDev][ib],_h_RxRes_curr_timestep[iDev][ib],_h_RxRes_curr_num_rx[iDev][ib],_h_RxRes_curr_flags[iDev][ib]);
+			//}
+
+			shot->Start_Extract_Receiver_Values_From_Device(
+				_prop, this, device_id,
+				_h_RxRes_curr_block_offset[iDev],_h_RxRes_curr_timestep[iDev],_h_RxRes_curr_num_rx[iDev],_h_RxRes_curr_flags[iDev],num_full_compute,
+				(float**)(_d_RxLoc_block[iDev]),
+				(float*)(_d_RxRes[iDev]),
+				(float*)(_h_RxRes_curr[iDev]));
+		}
+		else
+		{
+			_h_RxRes_curr_block_offset[iDev] = 0L;
+			_h_RxRes_curr_timestep[iDev] = 0L;
+			_h_RxRes_curr_num_rx[iDev] = 0L;
+			_h_RxRes_curr_flags[iDev] = 0L;
+			_h_RxRes_curr_num_blocks[iDev] = 0;
+		}
+	}
+}
+
+void Elastic_Pipeline::DEMUX_Receiver_Values(Elastic_Shot* shot)
+{
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_id = _device_IDs[iDev];
+		if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[iDev] > 0)
+		{
+			shot->DEMUX_Receiver_Values(
+					_prop, this, device_id,
+					_h_RxRes_prev_block_offset[iDev],
+					_h_RxRes_prev_timestep[iDev],
+					_h_RxRes_prev_num_rx[iDev],
+					_h_RxRes_prev_flags[iDev],
+					_h_RxRes_prev_num_blocks[iDev],
+					(float*)(_h_RxRes_prev[iDev]));
+		}
+	}
+}
+
+void Elastic_Pipeline::Resample_Receiver_Traces(Elastic_Shot* shot, double dti)
+{
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+        {
+                int device_id = _device_IDs[iDev];
+                if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[iDev] > 0)
+                {
+			shot->Resample_Receiver_Traces(_prop, this, dti);
+		}
 	}
 }
 
@@ -253,6 +469,21 @@ unsigned long Elastic_Pipeline::Compute_Device_Memory_Requirement(int device_id)
 	return acc;
 }
 
+void Elastic_Pipeline::Compute_RX_Device_Memory_Requirement(int device_id, int& rxloc_size, int& rxres_size)
+{
+	rxloc_size = 0;
+	rxres_size = 0;
+	Elastic_Modeling_Job* job = _prop->Get_Job();
+	for (int idx = 0;  idx < job->Get_Number_Of_Shots();  ++idx)
+	{
+		Elastic_Shot* shot = job->Get_Shot_By_Index(idx);
+		int curr_rxloc_size, curr_rxres_size, num_full_compute;
+		shot->Calculate_RX_Locations_And_Results_Size(_prop, device_id, curr_rxloc_size, curr_rxres_size, num_full_compute);
+		if (curr_rxloc_size > rxloc_size) rxloc_size = curr_rxloc_size;
+		if (curr_rxres_size > rxres_size) rxres_size = curr_rxres_size;
+	}
+}
+
 void Elastic_Pipeline::Print_Graphical(int device_id)
 {
 	printf("device_id = %d\n",device_id);
@@ -270,7 +501,11 @@ void Elastic_Pipeline::Print_Graphical(int device_id)
 	// print bX
 	printf("  bX  ");
 	for (int i = min_block_offset;  i <= max_block_offset;  ++i) printf("%3d ",i);
-	double size_MB = (double)Compute_Device_Memory_Requirement(device_id) / (double)(1024.0 * 1024.0);
+	unsigned long reqd_mem = Compute_Device_Memory_Requirement(device_id);
+	int rxloc_size, rxres_size;
+	Compute_RX_Device_Memory_Requirement(device_id, rxloc_size, rxres_size);
+	unsigned long tot_reqd_mem = reqd_mem + (unsigned long)(rxloc_size + rxres_size);
+	double size_MB = (double)tot_reqd_mem / (double)(1024.0 * 1024.0);
 	printf(" | %.0fMB, Workload=%.2f%%\n",size_MB,100.0*Get_Computational_Overhead(device_id));
 
 	// print buffers
@@ -377,6 +612,34 @@ void Elastic_Pipeline::Free_Device_Memory()
                 delete [] _d_Mem;
                 _d_Mem = 0L;
         }
+	if (_h_RxRes_curr != 0L)
+	{
+		for (int i = 0;  i < _num_devices;  ++i)
+                {
+			if (_h_RxRes_curr[i] != 0L) cudaFreeHost(_h_RxRes_curr[i]);
+		}
+		delete [] _h_RxRes_curr;
+		_h_RxRes_curr = 0L;
+	}
+	if (_h_RxRes_prev != 0L)
+	{
+		for (int i = 0;  i < _num_devices;  ++i)
+                {
+			if (_h_RxRes_prev[i] != 0L) cudaFreeHost(_h_RxRes_prev[i]);
+		}
+		delete [] _h_RxRes_prev;
+		_h_RxRes_prev = 0L;
+	}
+	if (_d_RxLoc != 0L)
+	{
+		delete [] _d_RxLoc;
+		_d_RxLoc = 0L;
+	}
+	if (_d_RxRes != 0L)
+	{
+		delete [] _d_RxRes;
+		_d_RxRes = 0L;
+	}
 }
 
 int* Elastic_Pipeline::Get_All_Device_IDs()
@@ -419,6 +682,62 @@ void Elastic_Pipeline::_Compile_Device_IDs()
 	}
 }
 
+void Elastic_Pipeline::Allocate_RxLoc_Buffer(Elastic_Shot* shot)
+{
+	//printf("Elastic_Pipeline::Allocate_RxLoc_Buffer - start\n");
+	if (_num_devices > 0)
+	{
+		_d_RxLoc_block = new void**[_num_devices];
+                _h_RxLoc_block_Offset = new int*[_num_devices];
+                _h_RxLoc_num_blocks = new int[_num_devices];
+		for (int i = 0;  i < _num_devices;  ++i)
+		{
+			int device_id = _device_IDs[i];
+			//printf("_d_RxLoc[%d] = %p\n",device_id,_d_RxLoc[i]);
+			int rxloc_size, rxres_size, num_full_compute;
+			shot->Calculate_RX_Locations_And_Results_Size(_prop, device_id, rxloc_size, rxres_size, num_full_compute);
+			_h_RxLoc_num_blocks[i] = num_full_compute;
+			if (num_full_compute > 0)
+			{
+				_d_RxLoc_block[i] = new void*[num_full_compute];
+				_d_RxLoc_block[i][0] = _d_RxLoc[i];
+				//printf("_d_RxLoc_block[%d][%d] = %p\n",device_id,0,_d_RxLoc_block[i][0]);
+				_h_RxLoc_block_Offset[i] = new int[num_full_compute];
+				_h_RxLoc_block_Offset[i][0] = -1;
+				for (int ib = 1;  ib < num_full_compute;  ++ib)
+				{
+					_d_RxLoc_block[i][ib] = ((char*)_d_RxLoc_block[i][ib-1]) + (rxloc_size / num_full_compute);
+					_h_RxLoc_block_Offset[i][ib] = -1;
+					//printf("_d_RxLoc_block[%d][%d] = %p\n",device_id,ib,_d_RxLoc_block[i][ib]);
+				}
+			}
+			else
+			{
+				_d_RxLoc_block[i] = 0L;
+				_h_RxLoc_block_Offset[i] = 0L;
+			}
+		}
+	}
+	//printf("Elastic_Pipeline::Allocate_RxLoc_Buffer - end\n");
+}
+
+void Elastic_Pipeline::Free_RxLoc_Buffer(Elastic_Shot* shot)
+{
+	if (_d_RxLoc_block != 0L)
+	{
+		for (int i = 0;  i < _num_devices;  ++i)
+                {
+			delete [] _d_RxLoc_block[i];
+		}
+		delete [] _d_RxLoc_block;
+		delete [] _h_RxLoc_block_Offset;
+		delete [] _h_RxLoc_num_blocks;
+		_d_RxLoc_block = 0L;
+		_h_RxLoc_block_Offset = 0L;
+		_h_RxLoc_num_blocks = 0L;
+	}
+}
+
 void Elastic_Pipeline::Allocate_Device_Memory()
 {
 	Free_Device_Memory();
@@ -426,17 +745,24 @@ void Elastic_Pipeline::Allocate_Device_Memory()
 	if (_num_devices > 0)
 	{
 		_d_Mem = new void*[_num_devices];
+		_d_RxLoc = new void*[_num_devices];
+		_d_RxRes = new void*[_num_devices];
+		_h_RxRes_curr = new void*[_num_devices];
+		_h_RxRes_prev = new void*[_num_devices];
 		for (int i = 0;  i < _num_devices;  ++i)
 		{
 			int device_id = _device_IDs[i];
 			unsigned long reqd_mem = Compute_Device_Memory_Requirement(device_id);
-			double reqd_mem_MB = (double)reqd_mem / 1048576.0;
+			int rxloc_size, rxres_size;
+			Compute_RX_Device_Memory_Requirement(device_id, rxloc_size, rxres_size);
+			unsigned long tot_reqd_mem = reqd_mem + (unsigned long)(rxloc_size + rxres_size);
+			double tot_reqd_mem_MB = (double)tot_reqd_mem / 1048576.0;
 			cudaSetDevice(device_id);
-			cudaError_t err = cudaMalloc(&(_d_Mem[i]),reqd_mem);
+			cudaError_t err = cudaMalloc(&(_d_Mem[i]),tot_reqd_mem);
 			if (err == cudaSuccess)
 			{
-				cudaMemset(_d_Mem[i], 0, reqd_mem);  // zero block, always do this
-				printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,reqd_mem_MB);
+				cudaMemset(_d_Mem[i], 0, tot_reqd_mem);  // zero block, always do this
+				printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 				unsigned long offset = 0;
 				for (int j = 0;  j < _num_buffers;  ++j)
 				{
@@ -445,11 +771,19 @@ void Elastic_Pipeline::Allocate_Device_Memory()
 						offset = _buffers[j]->Allocate_Device_Blocks(_d_Mem[i],offset);
 					}
 				}
+				_d_RxLoc[i] = ((char*)_d_Mem[i]) + reqd_mem;
+				_d_RxRes[i] = ((char*)_d_RxLoc[i]) + rxloc_size;
+				gpuErrchk( cudaHostAlloc(&(_h_RxRes_curr[i]), rxres_size, cudaHostAllocDefault) );
+				gpuErrchk( cudaHostAlloc(&(_h_RxRes_prev[i]), rxres_size, cudaHostAllocDefault) );
 			}
 			else
 			{
 				_d_Mem[i] = 0L;
-				printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,reqd_mem_MB);
+				_d_RxLoc[i] = 0L;
+				_d_RxRes[i] = 0L;
+				_h_RxRes_curr[i] = 0L;
+				_h_RxRes_prev[i] = 0L;
+				printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 			}
 		}
 

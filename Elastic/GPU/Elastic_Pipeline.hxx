@@ -19,6 +19,8 @@ public:
 
 	~Elastic_Pipeline();
 
+	int Get_ID() {return _pipe_id;}
+
 	void Append_Buffer(Elastic_Buffer* new_buffer);
 	void Add_EM_Buffer(Elastic_Buffer* new_buffer);
 	
@@ -43,6 +45,7 @@ public:
 
 	// Compute total memory requirement for one device
 	unsigned long Compute_Device_Memory_Requirement(int device_id);
+	void Compute_RX_Device_Memory_Requirement(int device_id, int& rxloc_size, int& rxres_size);
 
 	// get the input and output block offsets for the pinned buffers for current, past or future iteration.
 	// returns -1 if block offsets are not valid yet.
@@ -71,9 +74,17 @@ public:
 	void Allocate_Device_Memory();
 	void Free_Device_Memory();
 
+	void Allocate_RxLoc_Buffer(Elastic_Shot* shot);
+	void Free_RxLoc_Buffer(Elastic_Shot* shot);
+
+	void Launch_Receiver_Data_Transfers(Elastic_Shot* shot);
+	void Launch_Receiver_Extraction_Kernels(Elastic_Shot* shot);
 	void Launch_Data_Transfers();	
 	void Launch_Simple_Copy_Kernel();
 	void Launch_Compute_Kernel(float dti, Elastic_Shot* shot);
+
+	void DEMUX_Receiver_Values(Elastic_Shot* shot);
+	void Resample_Receiver_Traces(Elastic_Shot* shot, double dti);
 
 private:
 	friend class Elastic_Propagator;
@@ -91,7 +102,31 @@ private:
 
 	int _num_devices;
 	int* _device_IDs;
-	void** _d_Mem;
+
+	void** _d_Mem;				// pointer to ALL the device memory allocated
+
+	void** _d_RxLoc;			// points to device memory reserved for receiver locations
+	void*** _d_RxLoc_block;			// receiver locations are organized into blocks
+	int** _h_RxLoc_block_Offset;		// block_offset for each receiver location block
+	int* _h_RxLoc_num_blocks;
+
+	void** _d_RxRes;			// points to device memory reserved for receiver results
+
+	void** _h_RxRes_curr;			// points to host memory reserved for receiver results
+	int** _h_RxRes_curr_block_offset;	// block offsets for receiver results
+	int** _h_RxRes_curr_timestep;		// timesteps for receiver results
+	int** _h_RxRes_curr_num_rx;		// number of receivers for receiver results
+	int** _h_RxRes_curr_flags;		// flag for receiver results
+	int* _h_RxRes_curr_num_blocks;		// number of blocks
+	
+	void** _h_RxRes_prev;			// points to host memory reserved for receiver results
+	int** _h_RxRes_prev_block_offset;	// block offsets for receiver results
+	int** _h_RxRes_prev_timestep;		// timesteps for receiver results
+	int** _h_RxRes_prev_num_rx;		// number of receivers for receiver results
+	int** _h_RxRes_prev_flags;		// flag for receiver results
+	int* _h_RxRes_prev_num_blocks;		// number of blocks
+
+	void _Shift_Rx_Blocks();
 
 	// get a list containing the device IDs of every buffer.
 	// each device ID appears only once in this list.

@@ -33,39 +33,276 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_do_Vz = do_Vz;
 	_rcv_ranges = 0L;
 	_num_rcv_ranges = 0;
-	_nWF = 0;
-	if (_do_P) ++_nWF;
-	if (_do_Vx) ++_nWF;
-	if (_do_Vy) ++_nWF;
-	if (_do_Vz) ++_nWF;
-	_totSteps = 0;
-	_h_transfer = 0L;
-	_h_rx = 0L;
-	_nBlks = 0;
-	_num_pipes = 0;
-	_rcv_x = 0L;
-	_rcv_y = 0L;
-	_rcv_z = 0L;
-	_rcv_n = 0L;
-	_rcv_i = 0L;
-	_rcv_nn = 0L;
-	_max_rx = 0L;
-	_tot_rx = 0L;
-	_h_prev_ts = 0L;
-	_h_curr_ts = 0L;
-	_device2pipe = 0L;
-	_d_rcv_loc = 0L;
-	_d_rcv_x = 0L;
-	_d_rcv_y = 0L;
-	_d_rcv_z = 0L;
-	_d_transfer = 0L;
-	_max_device_id = -1;
 }
 
 Elastic_SEGY_File::~Elastic_SEGY_File()
 {
 	if (_base_filename != 0L) free(_base_filename);
-	_Destroy_Buffers();
+}
+
+int Elastic_SEGY_File::Get_Selection_Flags()
+{
+        int flags = 0;
+        if (_do_P ) flags |= 1;
+        if (_do_Vx) flags |= 2;
+        if (_do_Vy) flags |= 4;
+        if (_do_Vz) flags |= 8;
+        return flags;
+}
+
+/***** swap2bytes ba --> ab *****/
+void Elastic_SEGY_File::swap2bytes(short *i2, int n)
+{
+	int i;
+	short a,b;
+	for (i=0; i<n; i++)
+	{
+		a = i2[i] << 8;
+		b = (i2[i] >> 8) & 255;
+		i2[i] = a | b;
+	}
+}
+
+
+/***** swap4bytes:  dcba --> abcd *****/
+void Elastic_SEGY_File::swap4bytes(int *i4, int n)
+{
+	int k, i, a, b, c, d, bmask = 16711680, cmask = 65280, dmask = 255;
+	for(k=0; k<n; k++)
+	{ i = i4[k];
+		a =  i << 24;          b = (i << 8)  & bmask;
+		c = (i >> 8) & cmask;  d = (i >> 24) & dmask;
+		i4[k] = a | b | c | d ;
+	}
+}
+
+void Elastic_SEGY_File::Write_SEGY_File(
+	float** traces,
+	double srcx,
+	double srcy,
+	double srcz,
+	double* recx,
+	double* recy,
+	double* recz,
+	int* iline,
+	int* xline,
+	int* trcens,
+	int num_traces,
+	int nsamp,
+	int flag
+	)
+{
+	const int swapflag = 1;
+	const double r2d = 57.295779513082320876798154814105;
+
+	/* SEGY DATA TYPES ***/
+        char reel_id_hdr1[3200];
+        memset((void*)reel_id_hdr1, 0, 3200);
+
+        struct
+        {
+                int jobid;
+                int lineid;
+                int reelid;
+                short ntrc_per_record;
+                short nauxtrc;
+                short dtreel;
+                short dtfield;
+                short nsampreel;
+                short nsampfield;
+                short datafmt;
+                short cmpfold;
+                short sortcode;
+                char skip[370];
+        } reel_id_hdr2;
+        memset((void*)&reel_id_hdr2, 0, sizeof(reel_id_hdr2));
+
+        struct
+        {
+                int trcseqno;
+                int skip0;
+                int isrc;
+                int ichan;
+                int skip1;
+                int cmpbin;
+                int trcensemb;
+                short code;
+                char skip3[6];
+                int offset;
+                int recelev;
+                int elevatsrc;
+                int srcdepth;
+                char skip4[16];
+                short scalar1;
+                short scalar2;
+                int srcx;
+                int srcy;
+                int recx;
+                int recy;
+                short lenunit;
+                char skip5[18];
+                short tstartrec;
+                char skip6[4];
+                short nsamp;
+                short dtmicro;
+                char skip7[82];
+                float cmp_x;
+                float cmp_y;
+                int iline_no;
+                int xline_no;
+                float xoff;
+                float yoff;
+                float azim;
+                char skip8[12];
+        } trc_id_hdr;
+        memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
+	/* cmp_x starts at byte position 201 */
+
+	char* trace_type_str;
+	if (flag == 1)
+		trace_type_str = "P";
+	else if (flag == 2)
+		trace_type_str = "Vx";
+	else if (flag == 4)
+		trace_type_str = "Vy";
+	else if (flag == 8)
+		trace_type_str = "Vz";
+	else
+		trace_type_str = "??";
+
+	char filename[4096];
+	sprintf(filename,"%s_%05d_%s.segy",_base_filename,_fileidx,trace_type_str);
+	FILE* fp = fopen(filename, "wb");
+	if (fp != 0L)
+	{
+		/*** FILL REEL ID HEADER 1 ***/
+		char hdrstring[4096];
+		sprintf(hdrstring,"Variable density elastic tilted orthorhombic seismic wave propagation.\nGPU code v0.9\n");
+		strcpy(reel_id_hdr1, hdrstring);
+		fwrite((void*)reel_id_hdr1,1,3200,fp);
+
+		/*** FILL REEL ID HEADER 2 ***/
+		int dtmicro = (int)(1000000.*_sample_rate + 0.5);
+		short trc_sortcode2 = 1;  /* as recorded, no sorting */
+		short fold2 = 1;
+		short one2 = 1;       
+		int one4 = 1;
+		short five2 = 5;
+		short nrec2 = num_traces;     
+		short dtmicro2 = dtmicro;
+		short nsamp2 = nsamp;
+
+		if(swapflag)
+		{
+			swap2bytes(&one2, 1);        swap2bytes(&five2, 1);  swap4bytes(&one4, 1);
+			swap2bytes(&nrec2, 1);       swap2bytes(&dtmicro2, 1);
+			swap2bytes(&nsamp2, 1);      swap2bytes(&trc_sortcode2, 1);
+			swap2bytes(&fold2, 1);
+		}
+		reel_id_hdr2.jobid = reel_id_hdr2.lineid = reel_id_hdr2.reelid = one4;
+		reel_id_hdr2.ntrc_per_record = nrec2;
+		reel_id_hdr2.dtreel = reel_id_hdr2.dtfield = dtmicro2;
+		reel_id_hdr2.nsampreel = reel_id_hdr2.nsampfield = nsamp2;
+		reel_id_hdr2.datafmt = five2;
+		reel_id_hdr2.cmpfold = fold2;
+		reel_id_hdr2.sortcode = trc_sortcode2;
+		fwrite((void*)&reel_id_hdr2,1,400,fp);
+
+		/*** FILL SOURCE-RELATED PART OF TRACE HEADER ***/
+		int ffid = _fileidx;
+		int elevatsrc = 0;
+		int srcdepth = (int)(100.*srcz);
+		int xsrc = (int)(100.*srcx);
+		int ysrc = (int)(100.*srcy);
+		short tstartrec2 = (int)(_tshift*1000. + 0.5);
+		short neg100 = -100;
+		if(swapflag)
+		{
+			swap4bytes(&ffid, 1);
+			swap4bytes(&elevatsrc, 1);     swap4bytes(&srcdepth, 1);
+			swap4bytes(&xsrc, 1);          swap4bytes(&ysrc, 1);
+			swap2bytes(&tstartrec2, 1);
+			swap2bytes(&neg100, 1);
+		}
+		trc_id_hdr.isrc = ffid;
+		trc_id_hdr.elevatsrc = elevatsrc; 
+		trc_id_hdr.srcdepth = srcdepth;
+		trc_id_hdr.srcx = xsrc;           
+		trc_id_hdr.srcy = ysrc;
+		trc_id_hdr.nsamp = nsamp2;
+		trc_id_hdr.tstartrec = tstartrec2;
+		trc_id_hdr.dtmicro = dtmicro2;
+		trc_id_hdr.scalar1 = neg100;
+		trc_id_hdr.scalar2 = neg100;
+
+		float* trcbuf = new float[nsamp];
+		for (int iTrc = 0;  iTrc < num_traces;  ++iTrc)
+		{
+			int recelev = -(int)(100.*recz[iTrc]);
+			if(swapflag) swap4bytes(&recelev, 1);
+			trc_id_hdr.recelev = recelev;
+
+			int yrec = (int)(100.*recy[iTrc]);
+			int xl = xline[iTrc];
+			if(swapflag) { swap4bytes(&yrec, 1); swap4bytes(&xl, 1); }
+			trc_id_hdr.recy = yrec;
+                        trc_id_hdr.iline_no = xl; /* yes, this is correct */
+
+			int trcseq = iTrc+1;       
+			int ichan = iTrc+1;      
+			int trce = trcens[iTrc];
+			int xrec = (int)(100.*recx[iTrc]);
+			double xoff = recx[iTrc] - srcx;        
+			double yoff = recy[iTrc] - srcy;
+			double cmpx = 0.5*(srcx + recx[iTrc]);  
+			double cmpy = 0.5*(srcy + recy[iTrc]);
+			int il = iline[iTrc];
+			int offset = (int)round(sqrt(yoff*yoff + xoff*xoff));
+			double azim = r2d*atan2(yoff, xoff);
+
+			if(swapflag)
+			{
+				swap4bytes(&trcseq, 1);  swap4bytes(&ichan, 1);  swap4bytes(&trce, 1);
+				swap4bytes(&xrec, 1);
+				swap4bytes((int*)(&cmpx), 1); swap4bytes((int*)(&cmpy), 1);
+				swap4bytes(&il, 1);
+				swap4bytes((int*)(&xoff), 1); swap4bytes((int*)(&yoff), 1);
+				swap4bytes(&offset, 1);       swap4bytes((int*)(&azim), 1);
+			}
+
+			/* Assign & Write Trace Header */
+			trc_id_hdr.trcseqno = trcseq;
+			trc_id_hdr.ichan = ichan;
+			trc_id_hdr.trcensemb = trce;
+			trc_id_hdr.offset = offset;
+			trc_id_hdr.recx = xrec;
+			trc_id_hdr.cmp_x = cmpx;
+			trc_id_hdr.cmp_y = cmpy;
+			trc_id_hdr.xline_no = il; /* yes, this is correct */
+			trc_id_hdr.xoff = xoff;
+			trc_id_hdr.yoff = yoff;
+			trc_id_hdr.azim = azim;
+			fwrite((void*)&trc_id_hdr,1,240,fp);
+
+			if (swapflag)
+			{
+				for (int i = 0;  i < nsamp;  ++i)
+				{
+					float v = traces[iTrc][i];
+					swap4bytes((int*)&v, 1);
+					trcbuf[i] = v;
+				}
+				fwrite((void*)trcbuf,4,nsamp,fp);
+			}
+			else
+			{
+				fwrite((void*)traces[iTrc],4,nsamp,fp);
+			}
+		}
+		delete [] trcbuf;
+
+		fclose(fp);
+	}
 }
 
 void Elastic_SEGY_File::Add_Receiver_Range_X(
@@ -98,399 +335,41 @@ void Elastic_SEGY_File::Add_Receiver_Range_Z(
 	_Get_Receiver_Range(range_idx)->Add_Z(start,end,interval);
 }
 
-void Elastic_SEGY_File::_Destroy_Buffers()
+int Elastic_SEGY_File::Compute_Receiver_Locations(
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z
+		)
 {
-	if (_nBlks > 0 && _num_pipes > 0)
-	{
-		for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
-		{
-			delete [] _h_rx[iBlk];
-			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-			{
-				if (_rcv_n[iBlk][iPipe] > 0)
-				{
-					delete [] _rcv_x[iBlk][iPipe];
-					delete [] _rcv_y[iBlk][iPipe];
-					delete [] _rcv_z[iBlk][iPipe];
-				}
-			}
-			delete [] _rcv_x[iBlk];
-			delete [] _rcv_y[iBlk];
-			delete [] _rcv_z[iBlk];
-			delete [] _rcv_n[iBlk];
-			delete [] _rcv_i[iBlk];
-		}
-		delete [] _device2pipe;
-		delete [] _h_prev_ts;
-		delete [] _h_curr_ts;
-		delete [] _h_rx;
-		delete [] _rcv_x;
-		delete [] _rcv_y;
-		delete [] _rcv_z;
-		delete [] _rcv_n;
-		delete [] _rcv_i;
-		delete [] _rcv_nn;
-		delete [] _max_rx;
-		delete [] _tot_rx;
-	}
-	_totSteps = 0;
-	_device2pipe = 0L;
-	_h_prev_ts = 0L;
-	_h_curr_ts = 0L;
-	if (_h_transfer != 0L) gpuErrchk( cudaFreeHost(_h_transfer) );
-	_h_transfer = 0L;
-	_h_rx = 0L;
-	_nBlks = 0;
-	_num_pipes = 0;
-	_rcv_x = 0L;
-	_rcv_y = 0L;
-	_rcv_z = 0L;
-	_rcv_n = 0L;
-	_rcv_i = 0L;
-	_rcv_nn = 0L;
-	_max_rx = 0L;
-	_tot_rx = 0L;
-	if (_max_device_id >= 0)
-	{
-		for (int device_id = 0;  device_id <= _max_device_id;  ++device_id)
-		{
-			if (_d_rcv_loc[device_id] != 0L)
-			{
-				cudaSetDevice(device_id);
-				gpuErrchk( cudaFree(_d_rcv_loc[device_id]) );
-				_d_rcv_loc[device_id] = 0L;
-			}
-			if (_d_rcv_x[device_id] != 0L) {delete [] _d_rcv_x[device_id];  _d_rcv_x[device_id]=0L;}
-			if (_d_rcv_y[device_id] != 0L) {delete [] _d_rcv_y[device_id];  _d_rcv_y[device_id]=0L;}
-			if (_d_rcv_z[device_id] != 0L) {delete [] _d_rcv_z[device_id];  _d_rcv_z[device_id]=0L;}
-			if (_d_transfer[device_id] != 0L)
-			{
-				for (int iStep = 0;  iStep < _totSteps;  ++iStep)
-				{
-					for (int iWF = 0;  iWF < 4;  ++iWF)
-					{
-						delete [] _d_transfer[device_id][iStep][iWF];
-					}
-					delete [] _d_transfer[device_id][iStep];
-				}
-				delete [] _d_transfer[device_id];
-				_d_transfer[device_id] = 0L;
-			}
-		}
-		delete [] _d_rcv_loc;
-		delete [] _d_rcv_x;
-		delete [] _d_rcv_y;
-		delete [] _d_rcv_z;
-		delete [] _d_transfer;
-	}
-	_max_device_id = -1;
-}
-
-void Elastic_SEGY_File::Shift_Receiver_Transfer_Buffers()
-{
-	for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
-	{
-		_h_prev_ts[iBlk] = _h_curr_ts[iBlk];
-		// leave _h_curr_ts unchanged
-	}
-}
-
-bool Elastic_SEGY_File::Create_New_Device_To_Host_Transfer(
-	int device_id,
-	int block_number,
-	int timestep,
-	float*& dst_buf,
-	int& dst_size
-	)
-{
-	if (block_number >= 0 && block_number < _nBlks)
-        {
-		int pipe_id = _device2pipe[device_id];
-		dst_buf = _h_rx[block_number][timestep%_totSteps] + _rcv_i[block_number][pipe_id];
-		dst_size = _rcv_n[block_number][pipe_id];
-		_h_curr_ts[block_number] = timestep;
-		return true;
-	}
-	return false;
-}
-
-void Elastic_SEGY_File::Create_Receiver_Transfer_Buffers(
-	Elastic_Propagator* prop
-	)
-{
-	// delete old buffer structures
-	_Destroy_Buffers();
-
-	// create new buffer structures
-	float *rcv_x, *rcv_y, *rcv_z;
-	int num_rx = Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
-	if (num_rx > 0)
-	{
-		// sort into blocks and pipes
-		_totSteps = prop->Get_Total_Number_Of_Timesteps();
-		_nBlks = prop->Get_Number_Of_Blocks();
-		_num_pipes = prop->Get_Number_Of_Pipelines();
-		_rcv_x = new float**[_nBlks];
-		_rcv_y = new float**[_nBlks];
-		_rcv_z = new float**[_nBlks];
-		_rcv_n = new int*[_nBlks];
-		_rcv_i = new int*[_nBlks];
-		_rcv_nn = new int[_nBlks];
-		_trc_idx = new int**[_nBlks];
-		_max_rx = new int[_num_pipes];
-		_tot_rx = new int[_num_pipes];
-		_max_device_id = 0;
-		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-		{
-			_max_rx[iPipe] = 0;
-			_tot_rx[iPipe] = 0;
-			Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-			for (int iDev = 0;  iDev < pipe->Get_Device_Count();  ++iDev) if (pipe->Get_All_Device_IDs()[iDev] > _max_device_id) _max_device_id = pipe->Get_All_Device_IDs()[iDev];
-		}
-		_device2pipe = new int[_max_device_id+1];
-		for (int i = 0;  i <= _max_device_id;  ++i) _device2pipe[i] = -1;
-		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-                {
-			Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-			for (int iDev = 0;  iDev < pipe->Get_Device_Count();  ++iDev)
-			{
-				int device_id = pipe->Get_All_Device_IDs()[iDev];
-				_device2pipe[device_id] = iPipe;
-			}
-		}
-		for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
-		{
-			_rcv_nn[iBlk] = 0;
-			_rcv_x[iBlk] = new float*[_num_pipes];
-			_rcv_y[iBlk] = new float*[_num_pipes];
-			_rcv_z[iBlk] = new float*[_num_pipes];
-			_rcv_n[iBlk] = new int[_num_pipes];
-			_rcv_i[iBlk] = new int[_num_pipes];
-			_trc_idx[iBlk] = new int*[_num_pipes];
-			for (int iPipe = 0, rxIdx = 0;  iPipe < _num_pipes;  ++iPipe)
-			{
-				Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-
-				// count number of receivers that fall into this block
-				int x0 = iBlk * prop->Get_Block_Size_X();
-				int x1 = x0 + prop->Get_Block_Size_X() - 1;
-				int y0 = pipe->Get_Y0();
-				int y1 = pipe->Get_Y1();
-				
-				int rxCnt = 0;
-				for (int iRx = 0;  iRx < num_rx;  ++iRx)
-				{
-					int ix = (int)round(rcv_x[iRx]) + 1;
-					int iy = (int)round(rcv_y[iRx]) + 1;
-					int iz = (int)round(rcv_z[iRx]) + 1;
-					if (ix >= x0 && ix <= x1 && iy >= y0 && iy <= y1)
-					{
-						++rxCnt;
-					}
-				}
-				if (rxCnt > 0)
-				{
-					_rcv_nn[iBlk] += rxCnt;
-					_rcv_n[iBlk][iPipe] = rxCnt;
-					_rcv_i[iBlk][iPipe] = rxIdx;
-					rxIdx += rxCnt;
-					_rcv_x[iBlk][iPipe] = new float[rxCnt];
-					_rcv_y[iBlk][iPipe] = new float[rxCnt];
-					_rcv_z[iBlk][iPipe] = new float[rxCnt];
-					_trc_idx[iBlk][iPipe] = new int[rxCnt];
-					if (rxCnt > _max_rx[iPipe]) _max_rx[iPipe] = rxCnt;
-					_tot_rx[iPipe] += rxCnt;
-				}
-				else
-				{
-					_rcv_n[iBlk][iPipe] = 0;
-					_rcv_i[iBlk][iPipe] = -1;
-					_rcv_x[iBlk][iPipe] = 0L;
-					_rcv_y[iBlk][iPipe] = 0L;
-					_rcv_z[iBlk][iPipe] = 0L;
-					_trc_idx[iBlk][iPipe] = 0L;
-				}
-				rxCnt = 0;
-				for (int iRx = 0;  iRx < num_rx;  ++iRx)
-                                {
-                                        int ix = (int)round(rcv_x[iRx]) + 1;
-                                        int iy = (int)round(rcv_y[iRx]) + 1;
-                                        int iz = (int)round(rcv_z[iRx]) + 1;
-                                        if (ix >= x0 && ix <= x1 && iy >= y0 && iy <= y1)
-                                        {
-						_rcv_x[iBlk][iPipe][rxCnt] = rcv_x[iRx];
-						_rcv_y[iBlk][iPipe][rxCnt] = rcv_y[iRx];
-						_rcv_z[iBlk][iPipe][rxCnt] = rcv_z[iRx];
-						_trc_idx[iBlk][iPipe][rxCnt] = iRx;
-						++rxCnt;
-					}
-				}
-			}
-		}
-
-		delete [] rcv_x;
-		delete [] rcv_y;
-		delete [] rcv_z;
-
-		// create pinned input transfer buffer
-		int HostTransferBufSize = _nWF * num_rx * prop->Get_Total_Number_Of_Timesteps() * sizeof(float);
-		gpuErrchk( cudaHostAlloc((void**)&_h_transfer, HostTransferBufSize, cudaHostAllocDefault) );
-		_h_rx = new float**[_nBlks];
-		_h_prev_ts = new int[_nBlks];
-		_h_curr_ts = new int[_nBlks];
-		for (int iBlk = 0, hidx = 0;  iBlk < _nBlks;  ++iBlk)
-		{
-			_h_rx[iBlk] = new float*[prop->Get_Total_Number_Of_Timesteps()];
-			for (int iStep = 0;  iStep < prop->Get_Total_Number_Of_Timesteps();  ++iStep)
-			{
-				_h_rx[iBlk][iStep] = _h_transfer + hidx;
-				hidx += _rcv_nn[iBlk];
-			}
-		}
-
-		// create work buffers for each device
-		_d_rcv_loc = new float*[_max_device_id+1];
-		_d_rcv_x = new float**[_max_device_id+1];
-		_d_rcv_y = new float**[_max_device_id+1];
-		_d_rcv_z = new float**[_max_device_id+1];
-		_d_transfer = new float****[_max_device_id+1];  // _d_transfers[device_id][timestep][0->P,1->Vx,2->Vy,3->Vz][0->comp,1->transfer_out]
-		for (int i = 0;  i <= _max_device_id;  ++i)
-		{
-			_d_rcv_x[i] = 0L;
-			_d_rcv_y[i] = 0L;
-			_d_rcv_z[i] = 0L;
-			_d_rcv_loc[i] = 0L;
-			_d_transfer[i] = 0L;
-		}
-		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-                {
-			// create tempoary host buffer and pack receiver locations into it.
-			// this buffer is copied to each device.
-			int RxLocPipeBufSize = _tot_rx[iPipe] * 3 * sizeof(float);
-			float* h_rcv_locs = 0L;
-			gpuErrchk( cudaHostAlloc((void**)&h_rcv_locs, RxLocPipeBufSize, cudaHostAllocDefault) );
-			for (int iBlk = 0, idx = 0;  iBlk < _nBlks;  ++iBlk)
-			{
-				for (int iRx = 0;  iRx < _rcv_n[iBlk][iPipe];  ++iRx) h_rcv_locs[idx+iRx] = _rcv_x[iBlk][iPipe][iRx];		idx+=_rcv_n[iBlk][iPipe];
-				for (int iRx = 0;  iRx < _rcv_n[iBlk][iPipe];  ++iRx) h_rcv_locs[idx+iRx] = _rcv_y[iBlk][iPipe][iRx];           idx+=_rcv_n[iBlk][iPipe];
-				for (int iRx = 0;  iRx < _rcv_n[iBlk][iPipe];  ++iRx) h_rcv_locs[idx+iRx] = _rcv_z[iBlk][iPipe][iRx];           idx+=_rcv_n[iBlk][iPipe];
-			}
-
-			// allocate buffer on device side, copy over flattened rx locations, create ptr structure on host side
-			Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-			for (int iDev = 0;  iDev < pipe->Get_Device_Count();  ++iDev)
-			{
-				int device_id = pipe->Get_All_Device_IDs()[iDev];
-				if (_d_transfer[device_id] == 0L)
-				{
-					_d_transfer[device_id] = new float***[_totSteps+1];
-					for (int iStep = 0;  iStep <= _totSteps;  ++iStep)
-					{
-						_d_transfer[device_id][iStep] = new float**[4];
-						for (int iWF = 0;  iWF < 4;  ++iWF)
-						{
-							_d_transfer[device_id][iStep][iWF] = new float*[2];
-							for (int ii = 0;  ii < 2;  ++ii)
-							{
-								_d_transfer[device_id][iStep][iWF][ii] = 0L;
-							}
-						}
-					}
-				}
-				
-				// figure out how much device memory is needed for rx transfer buffer(s)
-				int RxTransferBufSize = 0;
-				for (int iBuf = 0;  iBuf < pipe->Get_Number_Of_Buffers();  ++iBuf)
-				{
-					Elastic_Buffer* buffer = pipe->Get_Buffer(iBuf);
-					if (buffer->Get_Device_ID() == device_id && buffer->Is_Compute() && !buffer->Is_Partial_Compute())
-					{
-						if (buffer->Is_Particle_Velocity())
-						{
-							if (_do_P) ++RxTransferBufSize;
-						}
-						else
-						{
-							if (_do_Vx) ++RxTransferBufSize;
-							if (_do_Vy) ++RxTransferBufSize;
-							if (_do_Vz) ++RxTransferBufSize;
-						}
-					}
-				}
-				RxTransferBufSize = RxTransferBufSize * 2 * _max_rx[iPipe] * sizeof(float);
-
-				cudaSetDevice(device_id);
-				int RxTotBufSize = RxLocPipeBufSize + RxTransferBufSize;
-				gpuErrchk( cudaMalloc((void**)&(_d_rcv_loc[device_id]), RxTotBufSize) );
-				gpuErrchk( cudaMemcpy((void*)_d_rcv_loc[device_id], (const void*)h_rcv_locs, RxLocPipeBufSize, cudaMemcpyHostToDevice) );
-				gpuErrchk( cudaMemset((void*)((char*)(_d_rcv_loc[device_id])+RxLocPipeBufSize), 0, RxTransferBufSize) );
-
-				_d_rcv_x[device_id] = new float*[_nBlks];
-				_d_rcv_y[device_id] = new float*[_nBlks];
-				_d_rcv_z[device_id] = new float*[_nBlks];
-				for (int iBlk = 0, idx = 0;  iBlk < _nBlks;  ++iBlk)
-				{
-					_d_rcv_x[device_id][iBlk] = _d_rcv_loc[device_id] + idx;		idx+=_rcv_n[iBlk][iPipe];
-					_d_rcv_y[device_id][iBlk] = _d_rcv_loc[device_id] + idx;		idx+=_rcv_n[iBlk][iPipe];
-					_d_rcv_z[device_id][iBlk] = _d_rcv_loc[device_id] + idx;		idx+=_rcv_n[iBlk][iPipe];
-				}
-
-				float* d_rx_out = (float*)((char*)(_d_rcv_loc[device_id]) + RxLocPipeBufSize);
-				for (int iBuf = 0, idx = 0;  iBuf < pipe->Get_Number_Of_Buffers();  ++iBuf)
-                                {
-                                        Elastic_Buffer* buffer = pipe->Get_Buffer(iBuf);
-                                        if (buffer->Get_Device_ID() == device_id && buffer->Is_Compute() && !buffer->Is_Partial_Compute())
-                                        {
-                                                if (buffer->Is_Particle_Velocity())
-                                                {
-                                                        if (_do_P)
-							{
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][0][0] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][0][1] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-							}
-                                                }
-                                                else
-                                                {
-                                                        if (_do_Vx)
-							{
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][1][0] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][1][1] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-							}
-                                                        if (_do_Vy)
-							{
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][2][0] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][2][1] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-							}
-                                                        if (_do_Vz)
-							{
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][3][0] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-								_d_transfer[device_id][buffer->Get_Relative_Timestep()][3][1] = d_rx_out + idx;	idx+=_max_rx[iPipe];
-							}
-                                                }
-                                        }
-                                }
-			}
-
-			// release pinned memory
-			gpuErrchk( cudaFreeHost((void*)h_rcv_locs) );
-		}
-	}
+	int *iline, *xline, *trcens;
+	int num_rx = Compute_Receiver_Locations(rcv_x,rcv_y,rcv_z,iline,xline,trcens);
+	delete [] iline;
+	delete [] xline;
+	delete [] trcens;
+	return num_rx;
 }
 
 int Elastic_SEGY_File::Compute_Receiver_Locations(
-		float*& rcv_x,
-		float*& rcv_y,
-		float*& rcv_z
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z,
+		int*& iline,
+		int*& xline,
+		int*& trcens
 		)
 {
 	int num = 0;
 	rcv_x = 0L;
 	rcv_y = 0L;
 	rcv_z = 0L;
+	iline = 0L;
+	xline = 0L;
+	trcens = 0L;
 	for (int i = 0;  i < _num_rcv_ranges;  ++i)
 	{
-		float *x,*y,*z;
-		int nn = _rcv_ranges[i]->Compute_Receiver_Locations(x,y,z);
+		double *x,*y,*z;
+		int *il,*xl,*trce;
+		int nn = _rcv_ranges[i]->Compute_Receiver_Locations(x,y,z,il,xl,trce);
 		if (nn > 0)
 		{
 			if (num == 0)
@@ -498,30 +377,54 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 				rcv_x = x;
 				rcv_y = y;
 				rcv_z = z;
+				iline = il;
+				xline = xl;
+				trcens = trce;
 				num = nn;
 			}
 			else
 			{
-				float* tmp = new float[num+nn];
+				double* tmp = new double[num+nn];
 				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_x[j];
 				for (int j = 0;  j < nn;  ++j) tmp[j+num] = x[j];
 				delete [] rcv_x;
 				delete [] x;
 				rcv_x = tmp;
 
-				tmp = new float[num+nn];
+				tmp = new double[num+nn];
 				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_y[j];
 				for (int j = 0;  j < nn;  ++j) tmp[j+num] = y[j];
 				delete [] rcv_y;
 				delete [] y;
 				rcv_y = tmp;
 
-				tmp = new float[num+nn];
+				tmp = new double[num+nn];
 				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_z[j];
 				for (int j = 0;  j < nn;  ++j) tmp[j+num] = z[j];
 				delete [] rcv_z;
 				delete [] z;
 				rcv_z = tmp;
+
+				int* itmp = new int[num+nn];
+				for (int j = 0;  j < num;  ++j) itmp[j] = iline[j];
+				for (int j = 0;  j < nn;  ++j) itmp[j+num] = il[j];
+				delete [] iline;
+				delete [] il;
+				iline = itmp;
+
+				itmp = new int[num+nn];
+				for (int j = 0;  j < num;  ++j) itmp[j] = xline[j];
+				for (int j = 0;  j < nn;  ++j) itmp[j+num] = xl[j];
+				delete [] xline;
+				delete [] xl;
+				xline = itmp;
+
+				itmp = new int[num+nn];
+				for (int j = 0;  j < num;  ++j) itmp[j] = trcens[j];
+				for (int j = 0;  j < nn;  ++j) itmp[j+num] = trce[j];
+				delete [] trcens;
+				delete [] trce;
+				trcens = itmp;
 
 				num = num + nn;
 			}

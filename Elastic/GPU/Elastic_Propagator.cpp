@@ -62,12 +62,14 @@ void Elastic_Propagator::_init(
 	_cmp_streams = new cudaStream_t[_num_devices];
 	_inp_streams = new cudaStream_t[_num_devices];
 	_out_streams = new cudaStream_t[_num_devices];
+	_rxx_streams = new cudaStream_t[_num_devices];
 	for (int i = 0;  i < _num_devices;  ++i)
 	{
 		_device_id[i] = device_id[i];
 		_cmp_streams[i] = 0L;
 		_inp_streams[i] = 0L;
 		_out_streams[i] = 0L;
+		_rxx_streams[i] = 0L;
 	}
 
 	_stencil_order = Stencil_Order;
@@ -355,10 +357,16 @@ Elastic_Propagator::~Elastic_Propagator()
 			cudaStreamDestroy(_out_streams[i]);
 			_out_streams[i] = 0L;
 		}
+		if (_rxx_streams[i] != 0L)
+		{
+			cudaStreamDestroy(_rxx_streams[i]);
+			_rxx_streams[i] = 0L;
+		}
 	}
 	delete [] _cmp_streams;
 	delete [] _inp_streams;
 	delete [] _out_streams;
+	delete [] _rxx_streams;
 	delete [] _device_id;
 	Free_Host_Memory();
 	if (_pipes != 0L)
@@ -844,6 +852,22 @@ cudaStream_t Elastic_Propagator::Get_Output_Stream(int device_id)
 	return 0L;
 }
 
+cudaStream_t Elastic_Propagator::Get_Receiver_Stream(int device_id)
+{
+	int device_index = Get_Device_Index(device_id);
+	if (device_index >= 0)
+	{
+		if (_rxx_streams[device_index] == 0L)
+		{
+			cudaSetDevice(device_id);
+			cudaStreamCreate(&(_rxx_streams[device_index]));
+		}
+		return _rxx_streams[device_index];
+	}
+	printf("Warning! Get_Receiver_Stream returned nil!\n");
+	return 0L;
+}
+
 void Elastic_Propagator::_Compare(char* src, char* dst, size_t len)
 {
 	for (size_t i = 0;  i < len;  ++i)
@@ -1012,14 +1036,26 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot)
 	_num_timesteps = (int)ceil(shot->Get_Propagation_Time()/_dti);
 	printf("%d timesteps.\n",_num_timesteps);
 
+	for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe) _pipes[iPipe]->Allocate_RxLoc_Buffer(shot);
 	shot->Prepare_Source_Wavelet(_dti);
-	shot->Create_Receiver_Transfer_Buffers(this);
+	shot->Allocate_Pinned_Host_Memory(this);
+	shot->Create_Trace_Resample_Buffers(this);
+}
+
+void Elastic_Propagator::Release_Resources_After_Propagation(Elastic_Shot* shot)
+{
+	for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe) _pipes[iPipe]->Free_RxLoc_Buffer(shot);
+	shot->Free_Pinned_Host_Memory(this);
+	shot->Free_Trace_Resample_Buffers();
 }
 
 void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot)
 {
 	Prepare_For_Propagation(shot);
 	while (!Propagate_One_Block(_num_timesteps, shot));
+	shot->Write_SEGY_Files();
+	Release_Resources_After_Propagation(shot);
+	printf("Finished Elastic_Propagator::Propagate_Shot\n");
 }
 
 // returns true if at least Number_Of_Timesteps timesteps have been completed
@@ -1036,19 +1072,23 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Shift_Buffers();
 	}
 	Shift_Pinned_Buffer();
-	shot->Shift_Receiver_Transfer_Buffers();
 
-	// launch data flow and compute kernels
+	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Receiver_Data_Transfers(shot);
 	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Data_Transfers();
-	//for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Simple_Copy_Kernel();
 	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot);
+	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Receiver_Extraction_Kernels(shot);
 
 	Copy_To_Pinned_Buffer(_pipes[0]->Get_Input_Block_Offset(1),_pipes[0]->Get_Output_Block_Offset(-1));
+
+	// demux receiver values from previous block
+	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->DEMUX_Receiver_Values(shot);
+	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Resample_Receiver_Traces(shot,_dti);
 
 	// wait for cuda streams
 	for (int i = 0;  i < _num_devices;  ++i) if (_cmp_streams[i] != 0L) cudaStreamSynchronize(_cmp_streams[i]);
 	for (int i = 0;  i < _num_devices;  ++i) if (_inp_streams[i] != 0L) cudaStreamSynchronize(_inp_streams[i]);
 	for (int i = 0;  i < _num_devices;  ++i) if (_out_streams[i] != 0L) cudaStreamSynchronize(_out_streams[i]);
+	for (int i = 0;  i < _num_devices;  ++i) if (_rxx_streams[i] != 0L) cudaStreamSynchronize(_rxx_streams[i]);
 
         gpuErrchk( cudaPeekAtLastError() );
 
@@ -1068,6 +1108,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		{
 			printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s);
 
+			/*
 			int iy = 411;
 			int iz = 960;
 			
@@ -1080,6 +1121,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 				sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xy_slice_Z=%04d_%04d_P",loc_iz,ts);
 				_job->Write_XY_Slice(path, 3, loc_iz);
 			}
+			*/
 
 			/*
 			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Vx", ts);

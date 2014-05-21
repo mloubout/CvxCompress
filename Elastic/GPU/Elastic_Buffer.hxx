@@ -101,6 +101,9 @@ public:
 	Elastic_Buffer* Get_Source_Buffer();
 	int Get_Source_Block_Relative_Offset();
 
+	Elastic_Buffer* Get_M1_Buffer();
+	Elastic_Buffer* Get_M2_Buffer();
+
 	int Get_Relative_Timestep();
 
 	int Get_Min_Relative_Block_Offset();
@@ -149,6 +152,9 @@ public:
 
 	int Get_Cmp_Y0();
 	int Get_Cmp_Y1();
+
+	int Get_Z0();
+	int Get_Z1();
 
 	double Get_Workload();
 

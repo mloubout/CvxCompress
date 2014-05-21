@@ -219,6 +219,18 @@ Elastic_Buffer* Elastic_Buffer::Get_Source_Buffer()
 	return _src;
 }
 
+// get input buffer once removed
+Elastic_Buffer* Elastic_Buffer::Get_M1_Buffer()
+{
+	return _inp_m1;
+}
+
+// get input buffer twice removed
+Elastic_Buffer* Elastic_Buffer::Get_M2_Buffer()
+{
+	return _inp_m2;
+}
+
 int Elastic_Buffer::Get_Source_Block_Relative_Offset()
 {
 	return Get_Relative_Block_Offset(_dst_block_id);
@@ -422,6 +434,16 @@ int Elastic_Buffer::Get_Cmp_Y0()
 int Elastic_Buffer::Get_Cmp_Y1()
 {
 	return _cmp_y1;
+}
+
+int Elastic_Buffer::Get_Z0()
+{
+	return _z0;
+}
+
+int Elastic_Buffer::Get_Z1()
+{
+	return _z1;
 }
 
 double Elastic_Buffer::Get_Workload()

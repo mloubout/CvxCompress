@@ -4669,7 +4669,7 @@ int main(int argc, char* argv[])
 
 		float fmax = earth_model->Get_FMAX();
 
-		float* stf = new float[2000];
+		float* stf = new float[20000];
 		int tsrc = 0;
 		src(4, dt, fmax, parmfile->sourcetype+1, parmfile->stfname, &tsrc, stf);
 		prop->Put_Source_Wavelet(stf,tsrc,xsrc,ysrc,zsrc,zsrcghost);

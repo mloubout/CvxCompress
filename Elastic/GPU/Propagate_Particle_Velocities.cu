@@ -85,6 +85,31 @@ float cuBessi0(float X)
 }
 
 __device__ 
+float cuGen_Single_Sinc_Weight(
+	int tx,
+	float dx_frac
+	)
+{
+	const float b = 4.14f; // optimal Kaiser window param for kmax = 2pi/3
+        const float r = 4.0f;  // half-width of sinc interpolator
+        const float pi = 3.1415926535897932384626433832795f;
+
+	int ix = tx + 1;
+
+	// cells at which to sample sinc func [normalized]
+	float x_cell = (float)ix - r - dx_frac;
+
+	// compute Kaiser window:
+	float b_x = (fabsf(x_cell) <= r) ? b*sqrtf(1.0f - ((x_cell*x_cell)/(r*r))) : 0.0f;
+	float win_x = cuBessi0(b_x) / cuBessi0(b);
+
+	// compute sinc interpolation function:
+	float fsinc_x = (x_cell == 0.0f) ? 1.0f : win_x * sin(x_cell*pi)/(x_cell*pi);
+
+	return fsinc_x;
+}
+
+__device__ 
 float cuGen_Sinc_Weight(
 	int tx,
 	int ty,
@@ -94,6 +119,9 @@ float cuGen_Sinc_Weight(
 	float dz_frac
 	)
 {
+	return cuGen_Single_Sinc_Weight(tx,dx_frac) * cuGen_Single_Sinc_Weight(ty,dy_frac) * cuGen_Single_Sinc_Weight(tz,dz_frac);
+
+	/*
 	const float b = 4.14f; // optimal Kaiser window param for kmax = 2pi/3
 	const float r = 4.0f;  // half-width of sinc interpolator
 	const float pi = 3.1415926535897932384626433832795f;
@@ -133,10 +161,12 @@ float cuGen_Sinc_Weight(
 	float fsinc_x = (x_cell == 0.0f) ? 1.0f : win_x * sin(x_cell*pi)/(x_cell*pi);
 
 	return fsinc_x * fsinc_y * fsinc_z;
+	*/
 }
 
 __device__ 
 void _cuApply_Source_Term_To_VxVyVz(
+	int thr_z,
 	unsigned int* em,
 	float Q_min,
 	float Q_range,
@@ -165,12 +195,12 @@ void _cuApply_Source_Term_To_VxVyVz(
 {
 	int my_x = icell + threadIdx.x - 3 - x0;
 	int my_y = jcell + threadIdx.y - 3 - y0;
-	int my_z = kcell + threadIdx.z - 3;
+	int my_z = kcell + thr_z       - 3;
 	
 	if (
 			(my_x >= 0 && my_x < nx) && 
 			(my_y >= 0 && my_y < ny) && 
-			(my_z >= 0 && my_z < nz) 
+			(my_z > -4 && my_z < nz) 
 	   )
 	{
 		// ..fractional distance from grid pt to sou:
@@ -185,12 +215,15 @@ void _cuApply_Source_Term_To_VxVyVz(
 		// (fz/vz sou need to be shifted -0.5kcell to colloc w/ pr)
 		float vz_dz_frac = zs - 0.5 - (float)(kcell - 1);
 
-		float vx_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,threadIdx.z,vx_dx_frac,dy_frac,dz_frac);
-		float vy_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,threadIdx.z,dx_frac,vy_dy_frac,dz_frac);
-		float vz_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,threadIdx.z,dx_frac,dy_frac,vz_dz_frac);
+		float vx_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,vx_dx_frac,dy_frac,dz_frac);
+		float vy_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,vy_dy_frac,dz_frac);
+		float vz_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,dy_frac,vz_dz_frac);
 
 		if (vx_fsinc != 0.0 || vy_fsinc != 0.0 || vz_fsinc != 0.0)
 		{
+			// mirror source if necessary
+			my_z = my_z < 0 ? -my_z : my_z;
+
 			int one_wf_size_f = nx * nz;
 			int one_y_size_f = one_wf_size_f * 6;
 			int idx = my_x + my_y * one_y_size_f + my_z * 4;
@@ -253,7 +286,10 @@ void cuApply_Source_Term_To_VxVyVz(
 	int jcell = (int)lrintf(ys) + 1;
 	int kcell = (int)lrintf(zs) + 1; // above interp pt:
 
-	_cuApply_Source_Term_To_VxVyVz((unsigned int*)em,Q_min,Q_range,Density_min,Density_range,(float*)cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,icell,jcell,kcell);
+	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
+	{
+		_cuApply_Source_Term_To_VxVyVz(thr_z,(unsigned int*)em,Q_min,Q_range,Density_min,Density_range,(float*)cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,icell,jcell,kcell);
+	}
 }
 
 __global__ 
@@ -707,6 +743,7 @@ cuPropagate_Particle_Velocities_Kernel(
 	}
 }
 
+#ifdef GPU_DEBUG
 __global__ 
 void 
 cuNon_Zeros_Kernel(
@@ -775,6 +812,7 @@ cuNon_Zeros_Kernel(
 		}
 	}
 }
+#endif
 
 //
 // Relative Y is the Y current Y coordinate relative to the first Y position in block.
@@ -873,7 +911,8 @@ Host_Propagate_Particle_Velocities_Kernel(
 	//
 	if (inject_source && (is_force || is_velocity))
 	{
-		dim3 blockShape2(8,8,8);
+		// use only one thread along z to prevent possible race condition
+		dim3 blockShape2(8,8,1);
 		dim3 gridShape2(1,1,1);
 		cuApply_Source_Term_To_VxVyVz<<<gridShape2,blockShape2,0,stream>>>(em,Q_min,Q_range,Density_min,Density_range,cmp,x0,y0,0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample);
 	}

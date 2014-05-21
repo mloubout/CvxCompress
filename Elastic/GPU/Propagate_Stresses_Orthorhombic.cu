@@ -5,6 +5,7 @@
 
 __device__ 
 void _cuApply_Source_Term_To_TxxTyyTzz(
+	int thr_z,
 	int timestep,
 	float* cmp,
 	int x0,
@@ -26,7 +27,7 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
 {
 	int my_x = icell + threadIdx.x - 3 - x0;
 	int my_y = jcell + threadIdx.y - 3 - y0;
-	int my_z = kcell + threadIdx.z - 3;
+	int my_z = kcell + thr_z       - 3;
 	
 	if (
 			(my_x >= 0 && my_x < nx) &&
@@ -39,7 +40,7 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
 		float dy_frac = (float)ys - (float)(jcell - 1);
                 float dz_frac = (float)zs - (float)(kcell - 1);
 
-                float fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,threadIdx.z,dx_frac,dy_frac,dz_frac);
+                float fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,dy_frac,dz_frac);
 		/*
 		if (timestep == 3) printf("TIMESTEP %d :: dx_frac ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,dx_frac);
 		if (timestep == 3) printf("TIMESTEP %d :: dy_frac ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,dy_frac);
@@ -52,6 +53,10 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
                 {
 			// mirror source if necessary
 			my_z = my_z < 0 ? -my_z : my_z;
+		
+			// TMJ 05/06/14
+			// Mirroring introduces a potential race condition, two threads will update same cell
+			// The way to solve this is to let same thread handle all the z indexes
 
                         int one_wf_size_f = nx * nz;
                         int one_y_size_f = one_wf_size_f * 6;
@@ -89,7 +94,10 @@ void cuApply_Source_Term_To_TxxTyyTzz(
         int jcell = (int)lrintf(ys) + 1;
         int kcell = (int)lrintf(zs) + 1; // above interp pt:
 
-        _cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell);
+	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
+	{
+        	_cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell);
+	}
 }
 
 __device__ 
@@ -598,7 +606,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	//
 	if (inject_source && is_pressure && ampl1 != 0.0f)
 	{
-		dim3 blockShape2(8,8,8);
+		// use only one thread along z to prevent possible race condition
+		dim3 blockShape2(8,8,1);
 		dim3 gridShape2(1,1,1);
 		cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
 	}

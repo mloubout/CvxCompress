@@ -16,10 +16,13 @@ public:
 	void Add_Z(double start, double end, double interval);
 
 	int Compute_Receiver_Locations(
-		float*& rcv_x,
-		float*& rcv_y,
-		float*& rcv_z
-		);	
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z,
+		int*& iline,
+		int*& xline,
+		int*& trcens  // trace number within ensemble
+		);
 
 private:
 	int _range_idx;
