@@ -10,6 +10,8 @@
 
 int main(int argc, char* argv[])
 {
+	printf("\n%s v0.8\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
+
 #ifdef GPU_DEBUG
 	printf("Warning! This executable was compiled with -DGPU_DEBUG.\n\n");
 	printf("GPU kernels will be serialized and performance will be slow.\n\n");
