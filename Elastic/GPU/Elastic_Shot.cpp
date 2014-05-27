@@ -1124,6 +1124,7 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 						_h_trace_in[iTrc] = new float[nsamp_in];
 						for (int i = 0;  i < nsamp_in;  ++i) _h_trace_in[iTrc][i] = 0.0f;
 						_h_trace_out[iTrc] = new float[nsamp_out];
+						for (int i = 0;  i < nsamp_out;  ++i) _h_trace_out[iTrc][i] = 0.0f;
 						_h_trace_iFile[iTrc] = iFile;
 						++iTrc;
 					}

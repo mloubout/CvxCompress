@@ -1101,6 +1101,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					}
 					if (_pck_min[i] == _pck_max[i]) _pck_max[i] = _pck_min[i] + fabs(0.1f * _pck_min[i]);
 					_pck_range[i] = _pck_max[i] - _pck_min[i];
+					//printf("%s - Min=%f, Range=%f\n",_pck_moniker[i],_pck_min[i],_pck_range[i]);
 				}
 			}
 			if (_Is_Valid)

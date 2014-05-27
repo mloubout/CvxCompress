@@ -21,6 +21,8 @@ public:
 
 	int Get_ID() {return _pipe_id;}
 
+	void Reset();
+
 	void Append_Buffer(Elastic_Buffer* new_buffer);
 	void Add_EM_Buffer(Elastic_Buffer* new_buffer);
 	

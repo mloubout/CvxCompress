@@ -222,6 +222,11 @@ private:
 	cudaStream_t* _out_streams;
 	cudaStream_t* _rxx_streams;
 
+	double _timer1;
+	double _timer2;
+	double _timer3;
+	double _timer4;
+
 	// pipe, gpu, timestep, substep, variable
 	Elastic_Pipeline** _pipes;
 };

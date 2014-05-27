@@ -30,10 +30,10 @@ int main(int argc, char** argv)
 				float v = f[i];
 				if (v < min) min = v;
 				if (v > max) max = v;
-				if (v == 0.0f)
-				{
-					printf("Perfect ZERO at idx %ld\n",idx+i);
-				}
+				//if (v == 0.0f)
+				//{
+				//	printf("Perfect ZERO at idx %ld\n",idx+i);
+				//}
 			}
 			idx += nread;
 		}

@@ -70,6 +70,8 @@ public:
 
 	int Get_Device_ID();
 
+	void Reset();
+
 	void Add_EM_Buffer(Elastic_Buffer* new_buffer);
 
 	//

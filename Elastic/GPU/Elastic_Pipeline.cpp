@@ -68,6 +68,14 @@ Elastic_Pipeline::~Elastic_Pipeline()
 	}
 }
 
+void Elastic_Pipeline::Reset()
+{
+	for (int i = 0;  i < _num_buffers;  ++i)
+	{
+		_buffers[i]->Reset();
+	}
+}
+
 void Elastic_Pipeline::Append_Buffer(Elastic_Buffer* new_buffer)
 {
 	_buffers[_num_buffers] = new_buffer;
@@ -149,6 +157,7 @@ void Elastic_Pipeline::_Shift_Rx_Blocks()
 
 void Elastic_Pipeline::Launch_Receiver_Extraction_Kernels(Elastic_Shot* shot)
 {
+#pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
 		int device_id = _device_IDs[iDev];
@@ -172,6 +181,7 @@ void Elastic_Pipeline::Launch_Receiver_Data_Transfers(Elastic_Shot* shot)
 	_h_RxRes_curr_flags = new int*[_num_devices];
 	_h_RxRes_curr_num_blocks = new int[_num_devices];
 
+#pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
 		int device_id = _device_IDs[iDev];
@@ -256,6 +266,7 @@ void Elastic_Pipeline::Launch_Receiver_Data_Transfers(Elastic_Shot* shot)
 
 void Elastic_Pipeline::DEMUX_Receiver_Values(Elastic_Shot* shot)
 {
+#pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
 		int device_id = _device_IDs[iDev];
@@ -287,6 +298,7 @@ void Elastic_Pipeline::Resample_Receiver_Traces(Elastic_Shot* shot, double dti)
 
 void Elastic_Pipeline::Launch_Data_Transfers()
 {
+#pragma omp parallel for
 	for (int i = 0;  i < _num_buffers;  ++i)
         {
                 _buffers[i]->Launch_Data_Transfers();
@@ -303,10 +315,19 @@ void Elastic_Pipeline::Launch_Simple_Copy_Kernel()
 
 void Elastic_Pipeline::Launch_Compute_Kernel(float dti, Elastic_Shot* shot)
 {
-	for (int i = 0;  i < _num_buffers;  ++i)
-        {
-                _buffers[i]->Launch_Compute_Kernel(false, dti, shot);
-        }
+	int* device_ids = Get_All_Device_IDs();
+#pragma omp parallel for
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_id = device_ids[iDev];
+		for (int i = 0;  i < _num_buffers;  ++i)
+		{
+			if (_buffers[i]->Get_Device_ID() == device_id)
+			{
+				_buffers[i]->Launch_Compute_Kernel(false, dti, shot);
+			}
+		}
+	}
 }
 
 int Elastic_Pipeline::Get_Number_Of_Buffers()

@@ -845,6 +845,16 @@ void Elastic_Buffer::Free_Device_Blocks()
 	}
 }
 
+// Reset block off offset and timestep counters, thus preparing for next shot.
+void Elastic_Buffer::Reset()
+{
+	for (int i = 0;  i < _num_blocks;  ++i)
+        {
+		_current_block_offset[i] = Get_Relative_Block_Offset(i);
+		_current_block_timestep[i] = _timestep;
+	}
+}
+
 unsigned long Elastic_Buffer::Allocate_Device_Blocks(void* d_Mem, unsigned long offset)
 {
 	Free_Device_Blocks();
