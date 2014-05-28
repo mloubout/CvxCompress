@@ -102,6 +102,13 @@ private:
 	Elastic_Buffer** _buffers;
 	void Shift_Buffers();
 
+	int* _optseq_launch;
+	int* _optseq_data_in;
+	int* _optseq_data_out;
+	int _num_optseq_launch;
+	int _num_optseq_data_in;
+	int _num_optseq_data_out;
+
 	int _num_devices;
 	int* _device_IDs;
 

@@ -27,6 +27,13 @@ Elastic_Pipeline::Elastic_Pipeline(
 	_num_devices = 0;
 	_device_IDs = 0L;
 
+	_optseq_launch = 0L;
+	_optseq_data_in = 0L;
+	_optseq_data_out = 0L;
+	_num_optseq_launch = 0;
+	_num_optseq_data_in = 0;
+	_num_optseq_data_out = 0;
+
 	_d_Mem = 0L;
 
 	_d_RxLoc = 0L;
@@ -298,7 +305,16 @@ void Elastic_Pipeline::Resample_Receiver_Traces(Elastic_Shot* shot, double dti)
 
 void Elastic_Pipeline::Launch_Data_Transfers()
 {
-#pragma omp parallel for
+	/*
+	for (int i = 0;  i < _num_optseq_data_in;  ++i)
+	{
+		_buffers[_optseq_data_in[i]]->Launch_Data_Transfers();
+	}
+	for (int i = 0;  i < _num_optseq_data_out;  ++i)
+	{
+		_buffers[_optseq_data_out[i]]->Launch_Data_Transfers();
+	}
+	*/
 	for (int i = 0;  i < _num_buffers;  ++i)
         {
                 _buffers[i]->Launch_Data_Transfers();
@@ -315,18 +331,9 @@ void Elastic_Pipeline::Launch_Simple_Copy_Kernel()
 
 void Elastic_Pipeline::Launch_Compute_Kernel(float dti, Elastic_Shot* shot)
 {
-	int* device_ids = Get_All_Device_IDs();
-#pragma omp parallel for
-	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	for (int i = 0;  i < _num_optseq_launch;  ++i)
 	{
-		int device_id = device_ids[iDev];
-		for (int i = 0;  i < _num_buffers;  ++i)
-		{
-			if (_buffers[i]->Get_Device_ID() == device_id)
-			{
-				_buffers[i]->Launch_Compute_Kernel(false, dti, shot);
-			}
-		}
+		_buffers[_optseq_launch[i]]->Launch_Compute_Kernel(false, dti, shot);
 	}
 }
 
@@ -619,6 +626,15 @@ bool Elastic_Pipeline::Block_Is_Output_By_Relative_Offset(Elastic_Buffer* buffer
 
 void Elastic_Pipeline::Free_Device_Memory()
 {
+	delete [] _optseq_launch;
+	delete [] _optseq_data_in;
+	delete [] _optseq_data_out;
+	_optseq_launch = 0L;
+	_optseq_data_in = 0L;
+	_optseq_data_out = 0L;
+	_num_optseq_launch = 0;
+	_num_optseq_data_in = 0;
+	_num_optseq_data_out = 0;
 	for (int i = 0;  i < _num_buffers;  ++i)
 	{
 		_buffers[i]->Free_Device_Blocks();
@@ -812,6 +828,71 @@ void Elastic_Pipeline::Allocate_Device_Memory()
 		{
 			_buffers[i]->Enable_Peer_Access();
 		}
-	}	
+
+		// determine optimal iteration sequences for the CUDA kernel launches and data transfers
+		// ..go wide before deep
+		int* idx_launch = new int[_num_devices];
+		int* idx_data_in = new int[_num_devices];
+		int* idx_data_out = new int[_num_devices];
+		for (int i = 0;  i < _num_devices;  ++i)
+		{
+			idx_launch[i] = 0;
+			idx_data_in[i] = 0;
+			idx_data_out[i] = 0;
+		}
+		_optseq_launch = new int[_num_buffers];
+		_optseq_data_in = new int[_num_buffers];
+		_optseq_data_out = new int[_num_buffers];
+		_num_optseq_launch = 0;
+		_num_optseq_data_in = 0;
+		_num_optseq_data_out = 0;
+		bool not_done;
+		do
+		{
+			not_done = false;
+			for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+			{
+				int device_id = _device_IDs[iDev];
+				// kernel launches
+				for (int i = idx_launch[iDev];  i < _num_buffers;  ++i)
+				{
+					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Compute())
+					{
+						_optseq_launch[_num_optseq_launch++] = i;
+						idx_launch[iDev] = i+1;
+						//char namestr[4096];
+						//printf("OPTIMAL LAUNCH :: %s (device %d)\n",_buffers[i]->Get_Name_String(namestr),device_id);
+						not_done = true;
+						break;
+					}
+				}
+				// data in
+				for (int i = idx_data_in[iDev];  i < _num_buffers;  ++i)
+				{
+					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Input())
+                                        {
+                                                _optseq_data_in[_num_optseq_data_in++] = i;
+						idx_data_in[iDev] = i+1;
+                                                not_done = true;
+                                                break;
+                                        }
+                                }
+				// data out
+				for (int i = idx_data_out[iDev];  i < _num_buffers;  ++i)
+				{
+					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Device2Host())
+                                        {
+                                                _optseq_data_out[_num_optseq_data_out++] = i;
+						idx_data_out[iDev] = i+1;
+                                                not_done = true;
+                                                break;
+                                        }
+				}
+			}
+		} while (not_done);
+		delete [] idx_data_out;
+		delete [] idx_data_in;
+		delete [] idx_launch;
+	}
 }
 
