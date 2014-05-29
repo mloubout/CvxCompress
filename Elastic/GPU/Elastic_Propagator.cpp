@@ -708,6 +708,7 @@ void Elastic_Propagator::_NABC_SDY_Extend(int y0, int y1)
 				}
 				if (do_hi)
 				{
+					Get_EM_Cell(x,y1,z,word0,word1,word2,word3);
 					for (int y = y1+1;  y < _ny;  ++y)
 					{
 						Set_EM_Cell(x,y,z,word0,word1,word2,word3);
