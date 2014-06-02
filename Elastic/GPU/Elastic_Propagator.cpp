@@ -1170,8 +1170,8 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s);
 #endif
 
-			/*
-			int iy = 771;
+#ifdef DEBUG_TMJ
+			int iy = 354;
 			char path[4096];
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_P",iy,ts);
                         _job->Write_XZ_Slice(path, 3, iy);
@@ -1184,7 +1184,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vz",iy,ts);
                         _job->Write_XZ_Slice(path, 2, iy);
-			*/
+#endif
 
 			/*
 			int iy = 411;

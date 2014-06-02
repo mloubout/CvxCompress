@@ -160,6 +160,10 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt)
 		//for (int i = 0;  i < _tsrc;  ++i) _stf[i] = 0.0f;
 		//_stf[3] = 1.0f;
 	}
+	else if(_wavetype == 2)
+	{
+		_generate_ricker_wavelet(dt, _max_freq, &_tsrc, _stf);
+	}
 }
 
 bool Elastic_Shot::Use_Builtin_Source_Wavelet(const char* wavetype, double max_freq, const char* parmfile_path, int line_num)
@@ -170,11 +174,36 @@ bool Elastic_Shot::Use_Builtin_Source_Wavelet(const char* wavetype, double max_f
 		_max_freq = max_freq;
 		return false;
 	}
+	else if (strcmp(wavetype, "ricker") == 0)
+	{
+		_wavetype = 2;
+		_max_freq = max_freq;
+		return false;
+	}
 	else
 	{
 		printf("%s (line %d): Error - SOURCE_WAVELET unknown wavelet type %s.\n", parmfile_path, line_num, wavetype);
 		return true;
 	}
+}
+
+void Elastic_Shot::_generate_ricker_wavelet(double dt, double fmax, int* tsrc, double* stf)
+{
+	if (_log_level >= 4)
+	{
+		printf("_generate_ricker_wavelet(dt=%e, fmax=%e, tsrc=%s, stf=%s)\n",dt,fmax,tsrc!=0L?"ok":"nil",stf!=0L?"ok":"nil");
+		fflush(stdout);
+	}
+	double fpeak = fmax / 2.0;
+	double tshift = 3.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+	*tsrc = (int)round((2.0 * tshift) / dt);
+	for (int i = 0;  i < *tsrc;  ++i)
+	{
+		double t = (double)i * dt - tshift;
+		double arg = -9.8696044010893586188344909998762 * fpeak * fpeak * t * t;
+		stf[i] = (1.0 + 2.0 * arg) * exp(arg);
+	}
+	if (_log_level >= 4) printf("SOURCE TYPE 2 : imax=%d\n",*tsrc);
 }
 
 void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* tsrc, double* stf)
@@ -936,7 +965,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                                                         int off = 1 + 2 * _num_segy_files + 3 * (blk_offset + file_offset);
                                                         floc[off  ] = rcv_x[iRx] - _job->Get_Propagation_X0();
                                                         floc[off+1] = rcv_y[iRx] - _job->Get_Propagation_Y0();
-                                                        floc[off+2] = rcv_z[iRx];
+                                                        floc[off+2] = rcv_z[iRx] - _job->Get_Propagation_Z0();
 							++file_offset;
 						
 							for (int iSel = 0;  iSel < 4;  ++iSel)
@@ -967,61 +996,70 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                 }
         }
 
-        FILE* fp = fopen("/panfs07/esdrd/tjhc/ELA_on_GPU/rx_locs.txt", "w");
-        fprintf(fp,"\n");
-        for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-        {
-                Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-                int y0 = pipe->Get_Y0();
-                int y1 = pipe->Get_Y1();
-                fprintf(fp,"P I P E   %d\n\n",iPipe);
+#ifdef DEBUG_TMJ
+	FILE* fp = fopen("/panfs07/esdrd/tjhc/ELA_on_GPU/rx_locs.txt", "w");
+	if (fp != 0L)
+	{
+		fprintf(fp,"\n");
+		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+		{
+			Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
+			int y0 = pipe->Get_Y0();
+			int y1 = pipe->Get_Y1();
+			fprintf(fp,"P I P E   %d\n\n",iPipe);
 
-                for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
-                {
-                        int x0 = iBlk * prop->Get_Block_Size_X();
-                        int x1 = x0 + prop->Get_Block_Size_X() - 1;
-                        fprintf(fp,"   B L O C K   %d\n\n",iBlk);
+			for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
+			{
+				int x0 = iBlk * prop->Get_Block_Size_X();
+				int x1 = x0 + prop->Get_Block_Size_X() - 1;
+				fprintf(fp,"   B L O C K   %d\n\n",iBlk);
 
-                        float* floc = _h_rcv_binned[iPipe][iBlk];
-                        int* iloc = (int*)floc;
-                        int* trcidx = _h_rcv_trcidx[iPipe][iBlk];
-			int* trcflag = _h_rcv_trcflag[iPipe][iBlk];
+				float* floc = _h_rcv_binned[iPipe][iBlk];
+				int* iloc = (int*)floc;
+				int* trcidx = _h_rcv_trcidx[iPipe][iBlk];
+				int* trcflag = _h_rcv_trcflag[iPipe][iBlk];
 
-                        int num_files = iloc[0];
-                        int bulk_offset = 1 + 2 * num_files;
+				int num_files = iloc[0];
+				int bulk_offset = 1 + 2 * num_files;
 
-                        for (int iFile = 0, trace_no_idx = 0;  iFile < num_files;  ++iFile)
-                        {
-                                int num_rx = iloc[1+2*iFile];
-                                int flags = iloc[1+2*iFile+1];
-                                fprintf(fp,"      F I L E   %d - %d receivers, %s%s%s%s selected\n\n",iFile,num_rx,(flags&1)?"P ":"",(flags&2)?"Vx ":"",(flags&4)?"Vy ":"",(flags&8)?"Vz ":"");
-                                for (int iRx = 0;  iRx < num_rx;  ++iRx)
-                                {
-                                        float x = floc[bulk_offset+3*iRx  ];
-                                        float y = floc[bulk_offset+3*iRx+1];
-                                        float z = floc[bulk_offset+3*iRx+2];
-					fprintf(fp,"         %.2f %.2f %.2f :: trace",x,y,z);
-					for (int iSel = 0;  iSel < 4;  ++iSel)
+				for (int iFile = 0, trace_no_idx = 0;  iFile < num_files;  ++iFile)
+				{
+					int num_rx = iloc[1+2*iFile];
+					int flags = iloc[1+2*iFile+1];
+					fprintf(fp,"      F I L E   %d - %d receivers, %s%s%s%s selected\n\n",iFile,num_rx,(flags&1)?"P ":"",(flags&2)?"Vx ":"",(flags&4)?"Vy ":"",(flags&8)?"Vz ":"");
+					for (int iRx = 0;  iRx < num_rx;  ++iRx)
 					{
-						if (flags & (1 << iSel))
+						float x = floc[bulk_offset+3*iRx  ];
+						float y = floc[bulk_offset+3*iRx+1];
+						float z = floc[bulk_offset+3*iRx+2];
+						fprintf(fp,"         %.2f %.2f %.2f :: trace",x,y,z);
+						for (int iSel = 0;  iSel < 4;  ++iSel)
 						{
-							char* FlagStr = "";
-							if (trcflag[trace_no_idx] & 1) FlagStr = "P";
-							else if (trcflag[trace_no_idx] & 2) FlagStr = "Vx";
-							else if (trcflag[trace_no_idx] & 4) FlagStr = "Vy";
-							else if (trcflag[trace_no_idx] & 8) FlagStr = "Vz";
-							fprintf(fp," %d(%s)",trcidx[trace_no_idx],FlagStr);
-							++trace_no_idx;
+							if (flags & (1 << iSel))
+							{
+								char* FlagStr = "";
+								if (trcflag[trace_no_idx] & 1) FlagStr = "P";
+								else if (trcflag[trace_no_idx] & 2) FlagStr = "Vx";
+								else if (trcflag[trace_no_idx] & 4) FlagStr = "Vy";
+								else if (trcflag[trace_no_idx] & 8) FlagStr = "Vz";
+								fprintf(fp," %d(%s)",trcidx[trace_no_idx],FlagStr);
+								++trace_no_idx;
+							}
 						}
+						fprintf(fp,"\n");
 					}
+					bulk_offset += 3 * num_rx;
 					fprintf(fp,"\n");
-                                }
-                                bulk_offset += 3 * num_rx;
-                                fprintf(fp,"\n");
-                        }
-                }
-        }
-        fclose(fp);
+				}
+			}
+		}
+		fclose(fp);
+	}
+	else
+	{
+		printf("Warning! Unable to write to %s.\n","/panfs07/esdrd/tjhc/ELA_on_GPU/rx_locs.txt");
+	}
+#endif
 }
 
 void Elastic_Shot::Free_Trace_Resample_Buffers()
@@ -1167,8 +1205,8 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 			{
 				for (int i = -3;  i <= 4;  ++i)
 				{
-					double x = 3.1415926535897932384626433832795 * (remainder - (double)i);
-					_h_trace_out_sinc_coeffs[iFile][idx][i+3] = (float)(sin(x)/x);
+					double x = 3.1415926535897932384626433832795 * ((double)i - remainder);
+					_h_trace_out_sinc_coeffs[iFile][idx][i+3] = x == 0.0 ? 1.0 : (float)(sin(x)/x);
 				}
 			}
 		}

@@ -41,7 +41,7 @@ void Voxet::_Read(const char* voxet_path)
 			if (sscanf(s, "PROPERTY %d %s", &id, moniker) == 2)
 			{
 				if (_log_level > 3) printf("PROPERTY %d %s\n",id,moniker);
-				_properties[_num_properties] = new Voxet_Property(moniker,id);
+				_properties[_num_properties] = new Voxet_Property(_log_level,moniker,id);
 				++_num_properties;
 			}
 			char prop_path[4096];
@@ -52,7 +52,7 @@ void Voxet::_Read(const char* voxet_path)
 				sprintf(scratch, "%s", voxet_path);  // dirname() overwrites its input string
 				sprintf(fullpath, "%s/%s", dirname(scratch),prop_path);
 				if (_log_level > 3) printf("PROP_FILE %d %s\n",id,fullpath);
-				Voxet_Property* prop = Get_Property(id);
+				Voxet_Property* prop = Get_Property_By_ID(id);
 				if (prop != 0L)
 				{
 					prop->Set_Path(prop_path,fullpath);
@@ -73,7 +73,16 @@ int Voxet::Get_Number_Of_Properties()
 	return _num_properties;
 }
 
-Voxet_Property* Voxet::Get_Property(int id)
+Voxet_Property* Voxet::Get_Property_By_Index(int index)
+{
+	if (index >= 0 && index < _num_properties)
+	{
+		return _properties[index];
+	}
+	return 0L;
+}
+
+Voxet_Property* Voxet::Get_Property_By_ID(int id)
 {
 	for (int i = 0;  i < _num_properties;  ++i)
 	{
@@ -85,7 +94,7 @@ Voxet_Property* Voxet::Get_Property(int id)
 	return 0L;
 }
 
-Voxet_Property* Voxet::Get_Property(const char* moniker)
+Voxet_Property* Voxet::Get_Property_By_Moniker(const char* moniker)
 {
 	for (int i = 0;  i < _num_properties;  ++i)
         {

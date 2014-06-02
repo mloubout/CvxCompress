@@ -124,7 +124,9 @@ private:
 	int _tsrc;
 	double* _stf;
 	void _src(double dt, double fmax, int type, char* stfname, int* tsrc, double* stf);
-
+	// Ricker wavelet
+	void _generate_ricker_wavelet(double dt, double fmax, int* tsrc, double* stf);
+	
 	Elastic_SEGY_File** _segy_files;
 	int _num_segy_files;
 

@@ -232,7 +232,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			char property[4096];
 			char moniker[4096];
-			double min, max;
+			double min=0.0, max=-1.0;
 			if (!error && sscanf(s, "PROPERTY %s = %s %lf %lf", property, moniker, &min, &max) == 4)
 			{
 				if (_voxet == 0L)
@@ -257,14 +257,14 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					}
 					else
 					{
-						Voxet_Property* prop = _voxet->Get_Property(moniker);
+						Voxet_Property* prop = _voxet->Get_Property_By_Moniker(moniker);
 						if (prop == 0L)
 						{
 							printf("%s (line %d): Error - Voxet file does not have property %s.\n",parmfile_path,line_num,moniker);
 							printf("The voxet has the following properties:\n");
 							for (int i = 0;  i < _voxet->Get_Number_Of_Properties();  ++i)
 							{
-								printf("  %s\n",_voxet->Get_Property(i)->Get_Moniker());
+								printf("  %s\n",_voxet->Get_Property_By_Index(i)->Get_Moniker());
 							}
 							error = true;
 							break;
@@ -278,7 +278,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 								min = tmp;
 							}
 							_props[attr_idx] = prop;
-							_props[attr_idx]->Set_MinMax(min,max);
+							if (min < max) _props[attr_idx]->Set_MinMax(min,max);
 							continue;
 						}
 					}					
@@ -1096,6 +1096,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					}
 					else
 					{
+						if (!prop->Has_MinMax()) prop->Get_MinMax_From_File();
 						_pck_min[i] = prop->Get_Min();
 						_pck_max[i] = prop->Get_Max();
 					}

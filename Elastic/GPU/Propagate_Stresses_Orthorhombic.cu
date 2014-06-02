@@ -392,24 +392,6 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 			&c11, &c22, &c33, &c44, &c55, &c66, &c12, &c13, &c23
 			);
 
-		float Vp,Vs,density,delta1,delta2,delta3,epsilon1,epsilon2,gamma1,gamma2;
-		cuUnpack_Everything(
-			em[emIdx], em[emIdx+em_one_word_size_f], em[emIdx+2*em_one_word_size_f], em[emIdx+3*em_one_word_size_f],
-			Vp_min, Vp_range, &Vp,
-			Vs_min, Vs_range, &Vs,
-			Density_min, Density_range, &density,
-			Dip_min, Dip_range, &dip,
-			Azimuth_min, Azimuth_range, &azimuth,
-			Rake_min, Rake_range, &rake,
-			Delta1_min, Delta1_range, &delta1,
-			Delta2_min, Delta2_range, &delta2,
-			Delta3_min, Delta3_range, &delta3,
-			Epsilon1_min, Epsilon1_range, &epsilon1,
-			Epsilon2_min, Epsilon2_range, &epsilon2,
-			Gamma1_min, Gamma1_range, &gamma1,
-			Gamma2_min, Gamma2_range, &gamma2
-			);
-
 		// Absorbing boundary decay funct (for Maxwell viscoelastic model):
 		int x = x0 + (threadIdx.x & 3);
 		int y = y0 + (threadIdx.y + blockIdx.y * 8);
@@ -446,9 +428,12 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 			tzz = 0.0f;
 		}
 
-		cmp[offset] = txx;
-		cmp[offset+one_wf_size_f] = tyy;
-		cmp[offset+2*one_wf_size_f] = tzz;
+		float FAKE = c12;
+		FAKE = -FAKE / 3.0f;
+
+		cmp[offset] = FAKE; //txx;
+		cmp[offset+one_wf_size_f] = FAKE; //tyy;
+		cmp[offset+2*one_wf_size_f] = FAKE; //tzz;
 		cmp[offset+3*one_wf_size_f] = txy;
 
 		float old_txz = m2C[offset+4*one_wf_size_f];

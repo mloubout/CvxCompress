@@ -15,8 +15,9 @@ public:
 	Global_Coordinate_System* Get_Global_Coordinate_System();
 
 	int Get_Number_Of_Properties();
-	Voxet_Property* Get_Property(int index);
-	Voxet_Property* Get_Property(const char* moniker);
+	Voxet_Property* Get_Property_By_Index(int index);
+	Voxet_Property* Get_Property_By_ID(int ID);
+	Voxet_Property* Get_Property_By_Moniker(const char* moniker);
 
 private:
 	static const int MAX_PROPERTIES = 2048;
