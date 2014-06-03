@@ -2746,7 +2746,7 @@ void Compute_VTI_Next_PQ_T2(
 	
 	int rb_idx = 256 + threadIdx.y * 64;
 
-	__shared__ float rb[768];
+	__shared__ float rb[896];
 
  	float2* dyed1and2 = ((float2*)d_dyed1and2) + (thr_z>>2) * 4 * stride_z_dy + (thr_z&3) * 64 + (threadIdx.y + 4) * stride_y_dy;
 	float2* V4_V5 = ((float2*)d_V4_V5) + (thr_z>>2) * 4 * stride_z_dy + (thr_z&3) * 64 + threadIdx.y * stride_y_dy;
@@ -2860,9 +2860,12 @@ void Compute_VTI_Next_PQ_T2(
 			// shuffle deltas through shared memory
 			rb[512+idx    ] = (float)delta_p;
 			rb[512+idx+128] = (float)delta_q;
+			rb[512+idx+256] = inv_Q;
 			__syncthreads();
 			float delta1 = rb[512+(threadIdx.x&1)*128+(threadIdx.x>>1)+threadIdx.y*32];
 			float delta2 = rb[512+16+(threadIdx.x&1)*128+(threadIdx.x>>1)+threadIdx.y*32];
+			float inv_Q_1 = rb[768+(threadIdx.x>>1)+threadIdx.y*32];
+			float inv_Q_2 = rb[768+16+(threadIdx.x>>1)+threadIdx.y*32];
 
 			const int stride_z = 32;
 			const int stride_y = stride_z * dimz;
@@ -2884,17 +2887,14 @@ void Compute_VTI_Next_PQ_T2(
 			//npq1 = inv_Q * spgxyz1 * npq1;
 			double npq1 = (double)(2.0f * curr_pq1) - (double)(spgxyz1 * prev_pq1);
 			npq1 = npq1 + (double)delta1;
-			npq1 = (double)(inv_Q * spgxyz1) * npq1;
+			npq1 = (double)(inv_Q_1 * spgxyz1) * npq1;
 
 			//float npq2 = delta2 + 2.0f * curr_pq2;
 			//npq2 = npq2 - spgxyz2 * prev_pq2;
 			//npq2 = inv_Q * spgxyz2 * npq2;
 			double npq2 = (double)(2.0f * curr_pq2) - (double)(spgxyz2 * prev_pq2);
                         npq2 = npq2 + (double)delta2;
-                        npq2 = (double)(inv_Q * spgxyz2) * npq2;
-
-			// TMJ 09/05/13
-			// invQ should be applied before shuffle, or should be shuffled.
+                        npq2 = (double)(inv_Q_2 * spgxyz2) * npq2;
 
 			//float npq1 = 2.0f * curr_pq1 - spgxyz * prev_pq1;
 			//float npq2 = 2.0f * curr_pq2 - spgxyz * prev_pq2;
@@ -2984,7 +2984,7 @@ void Compute_Next_PQ_T2(
 	
 	int rb_idx = 512 + threadIdx.y * 128;
 
-	__shared__ float rb[1280];
+	__shared__ float rb[1408];
 
  	float2* dyed1and2 = ((float2*)d_dyed1and2) + (thr_z>>2) * 4 * stride_z_dy + (thr_z&3) * 64 + (threadIdx.y + 4) * stride_y_dy;
 	float2* V4_V5 = ((float2*)d_V4_V5) + (thr_z>>2) * 4 * stride_z_dy + (thr_z&3) * 64 + threadIdx.y * stride_y_dy;
@@ -3128,9 +3128,12 @@ void Compute_Next_PQ_T2(
 			// shuffle deltas through shared memory
 			rb[1024+idx    ] = (float)delta_p;
 			rb[1024+idx+128] = (float)delta_q;
+			rb[1024+idx+256] = inv_Q;
 			__syncthreads();
 			float delta1 = rb[1024+(threadIdx.x&1)*128+(threadIdx.x>>1)+threadIdx.y*32];
 			float delta2 = rb[1024+16+(threadIdx.x&1)*128+(threadIdx.x>>1)+threadIdx.y*32];
+			float inv_Q_1 = rb[1280+(threadIdx.x>>1)+threadIdx.y*32];
+			float inv_Q_2 = rb[1280+16+(threadIdx.x>>1)+threadIdx.y*32];
 
 			const int stride_z = 32;
 			const int stride_y = stride_z * dimz;
@@ -3152,14 +3155,14 @@ void Compute_Next_PQ_T2(
 			//npq1 = inv_Q * spgxyz1 * npq1;
 			double npq1 = (double)(2.0f * curr_pq1) - (double)(spgxyz1 * prev_pq1);
 			npq1 = npq1 + (double)delta1;
-			npq1 = (double)(inv_Q * spgxyz1) * npq1;
+			npq1 = (double)(inv_Q_1 * spgxyz1) * npq1;
 
 			//float npq2 = delta2 + 2.0f * curr_pq2;
 			//npq2 = npq2 - spgxyz2 * prev_pq2;
 			//npq2 = inv_Q * spgxyz2 * npq2;
 			double npq2 = (double)(2.0f * curr_pq2) - (double)(spgxyz2 * prev_pq2);
                         npq2 = npq2 + (double)delta2;
-                        npq2 = (double)(inv_Q * spgxyz2) * npq2;
+                        npq2 = (double)(inv_Q_2 * spgxyz2) * npq2;
 
 			// TMJ 09/05/13
 			// invQ should be applied before shuffle, or should be shuffled.

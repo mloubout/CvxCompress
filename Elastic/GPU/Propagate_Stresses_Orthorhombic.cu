@@ -428,12 +428,12 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 			tzz = 0.0f;
 		}
 
-		float FAKE = c12;
-		FAKE = -FAKE / 3.0f;
+		//float FAKE = c12;
+		//FAKE = -FAKE / 3.0f;
 
-		cmp[offset] = FAKE; //txx;
-		cmp[offset+one_wf_size_f] = FAKE; //tyy;
-		cmp[offset+2*one_wf_size_f] = FAKE; //tzz;
+		cmp[offset] = txx;
+		cmp[offset+one_wf_size_f] = tyy;
+		cmp[offset+2*one_wf_size_f] = tzz;
 		cmp[offset+3*one_wf_size_f] = txy;
 
 		float old_txz = m2C[offset+4*one_wf_size_f];
