@@ -37,7 +37,7 @@ int cuCompTYYIdx_2(int offset)
 }
 
 __device__ 
-float cuTransposeXZY2XYZ(__volatile__ float* buf, float v)
+float cuTransposeXZY2XYZ(float* buf, float v)
 {
 	__syncthreads();  // wait for previous step to finish using buf
 	buf[threadIdx.x+((threadIdx.x&28)*8)+threadIdx.y*4] = v;
@@ -354,7 +354,7 @@ cuPropagate_Particle_Velocities_Kernel(
 	const bool do_Lo_YHalo = (blockIdx.y > 0 || has_low_YHalo) ? true : false;
 	//const bool do_Hi_YHalo = ((blockIdx.y*8+threadIdx.y) < (has_high_YHalo?ny+3:ny-1)) ? true : false;
 
-	__shared__ __volatile__ float buf[768];	// NON-persistent buffer
+	__shared__ float buf[768];	// NON-persistent buffer
 
 	__shared__ float tzzbuf[384];	// persistent buffers
 	__shared__ float txzbuf[384];   // some values are transferred from one iZ to the next
@@ -427,7 +427,7 @@ cuPropagate_Particle_Velocities_Kernel(
 			tmp6 = txy_p4 = 0.0f;
 		}
 
-		int em_word3 = em[threadIdx.x+threadIdx.y*em_one_y_size_f+3*em_one_word_size_f];
+		unsigned int em_word3 = em[(threadIdx.y + blockIdx.y*8) * em_one_y_size_f + (iZ*32) + threadIdx.x + 3*em_one_word_size_f];
 
 		float txx_p0 = m1C[offset];
                 float txy_p0 = m1C[offset+txy_off];

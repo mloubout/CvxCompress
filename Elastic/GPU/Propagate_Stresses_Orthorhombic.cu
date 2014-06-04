@@ -125,7 +125,7 @@ void cuCompute_DXDYDZ_LoBuf(
         bool do_Lo_YHalo,
 	bool has_high_YHalo,
 	int one_y_size_f,
-	__volatile__ float* buf,
+	float* buf,
 	float* vx_prev,
 	int offset
 	)
@@ -245,7 +245,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	)
 {
 	// work buffer
-	__shared__ __volatile__ float buf[768];
+	__shared__ float buf[768];
 	
 	// two persistent buffers used to hold Vx, Vy or Vz values from previous loop iteration
 	__shared__ float vx_prev[384];
