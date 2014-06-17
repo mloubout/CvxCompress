@@ -6,6 +6,7 @@
 void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	int timestep,
 	cudaStream_t stream,
+	int num_z,		// number of blocks along z axis
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
 	int y1,

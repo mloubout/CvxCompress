@@ -659,6 +659,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Particle_Velocities_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
+				4,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
 				_cmp_y1,
@@ -716,6 +717,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Stresses_Orthorhombic_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
+				4,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
 				_cmp_y1,

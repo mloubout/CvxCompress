@@ -7,6 +7,7 @@ void
 Host_Propagate_Particle_Velocities_Kernel(
 	int timestep,
 	cudaStream_t stream,
+	int num_z,
 	int x0,
 	int y0,
 	int y1,
