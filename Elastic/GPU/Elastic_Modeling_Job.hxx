@@ -32,9 +32,14 @@ public:
 	double Get_DY();
 	double Get_DZ();
 
-	bool Freesurface_Enabled();
+	bool Freesurface_Enabled();	
 	bool Source_Ghost_Enabled();
 	bool Receiver_Ghost_Enabled();
+
+	bool Use_Isotropic_Sphere_During_Source_Injection() {return _use_isotropic_sphere_during_source_injection;}
+
+	// z index in propagation volume corresponding to sea surface level.
+	// this will be zero if freesurface is enabled and a positive value otherwise.
 
 	float Get_Vpvert_Avg_Top();
 	float Get_Vpvert_Avg_Bot();
@@ -70,6 +75,9 @@ public:
 	float Get_Earth_Model_Attribute_Min(int attr_idx);
 	float Get_Earth_Model_Attribute_Max(int attr_idx);
 	float Get_Earth_Model_Attribute_Range(int attr_idx);
+
+	float Get_IsoOrEarth_Model_Attribute_Min(int attr_idx, bool isosphere);
+	float Get_IsoOrEarth_Model_Attribute_Range(int attr_idx, bool isosphere);
 
 	void Write_Earth_Model_Attribute_XZ_Slice(const char* path, int attr_idx, int iy);
 	void Write_Earth_Model_XZ_Slice(const char* path, int iy);
@@ -133,6 +141,9 @@ private:
 	float* _pck_min;
 	float* _pck_max;
 	float* _pck_range;
+	float* _pck_iso;
+
+	bool _use_isotropic_sphere_during_source_injection;
 
 	void _Pack_Earth_Model_Attribute(unsigned int& word, int attr_idx, float val);
 	float _Unpack_Earth_Model_Attribute(unsigned int word, int attr_idx);
@@ -162,6 +173,7 @@ private:
 	bool _freesurface_enabled;
 	bool _source_ghost_enabled;
 	bool _receiver_ghost_enabled;
+	int _sea_surface_z;
 
 	Elastic_Shot** _shots;
 	int _num_shots;

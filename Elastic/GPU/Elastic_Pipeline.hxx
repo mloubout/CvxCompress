@@ -86,7 +86,6 @@ public:
 	void Launch_Compute_Kernel(float dti, Elastic_Shot* shot);
 
 	void DEMUX_Receiver_Values(Elastic_Shot* shot);
-	void Resample_Receiver_Traces(Elastic_Shot* shot, double dti);
 
 private:
 	friend class Elastic_Propagator;

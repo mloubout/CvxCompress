@@ -1,6 +1,8 @@
 #ifndef CVX_ESDRD_MI_TMJ_ELASTIC_SHOT_HXX
 #define CVX_ESDRD_MI_TMJ_ELASTIC_SHOT_HXX
 
+#include "Elastic_Interpolation.hxx"
+
 class Elastic_Modeling_Job;
 class Elastic_SEGY_File;
 class Elastic_Propagator;
@@ -17,6 +19,9 @@ public:
 	int Get_Source_Index() {return _souidx;}
 
 	int Get_Ordertime() {return _ordertime;}
+
+	Elastic_Interpolation_t Get_Source_Interpolation_Method() {return _souintrp;}
+	void Set_Source_Interpolation_Method(Elastic_Interpolation_t intrp) {_souintrp = intrp;}
 
 	double Get_Source_X() {return _x;}
 	double Get_Source_Y() {return _y;}
@@ -49,6 +54,8 @@ public:
 	bool Use_Builtin_Source_Wavelet(const char* wavetype, double max_freq, const char* parmfile_path, int line_num);
 
 	void Prepare_Source_Wavelet(double dt);
+
+	double Find_Deepest_Receiver();
 
 	void Add_SEGY_File(Elastic_SEGY_File* segy_file);
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
@@ -87,9 +94,7 @@ public:
 			float* h_rxres
 			);
 	void DEMUX_Receiver_Values(
-			Elastic_Propagator* prop,
 			Elastic_Pipeline* pipe,
-			int device_id, 
 			int* block_offsets, 
 			int* timesteps, 
 			int* num_rx,
@@ -97,11 +102,7 @@ public:
 			int num_blocks, 
 			float* h_rxres
 			);
-	void Resample_Receiver_Traces(
-			Elastic_Propagator* prop,
-			Elastic_Pipeline* pipe,
-			double dti
-			);
+	void Resample_Receiver_Traces();
 
 	void Write_SEGY_Files();
 
@@ -114,6 +115,7 @@ private:
 	double _y;
 	double _z;
 	int _soutype;
+	Elastic_Interpolation_t _souintrp;
 	double _ampl1, _ampl2, _ampl3;
 	int _ordertime;
 
@@ -131,7 +133,7 @@ private:
 	int _num_segy_files;
 
         bool _Range_Intersects(int x0, int x1, int x_lo, int x_hi);
-        bool _Receiver_Intersects(int x0, int x1, int y0, int y1, int ix, int iy);
+        bool _Receiver_Intersects(Elastic_Interpolation_t interpolation_method, int x0, int x1, int y0, int y1, float recx, float recy);
 	void _Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop);
 
         int _totSteps;

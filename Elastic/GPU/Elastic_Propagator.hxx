@@ -222,10 +222,12 @@ private:
 	cudaStream_t* _out_streams;
 	cudaStream_t* _rxx_streams;
 
+	bool _slow_data_transfers;
 	double _timer1;
 	double _timer2;
 	double _timer3;
 	double _timer4;
+	double _timer5;
 
 	// pipe, gpu, timestep, substep, variable
 	Elastic_Pipeline** _pipes;

@@ -276,29 +276,17 @@ void Elastic_Pipeline::DEMUX_Receiver_Values(Elastic_Shot* shot)
 #pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
-		int device_id = _device_IDs[iDev];
+		//int device_id = _device_IDs[iDev];
 		if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[iDev] > 0)
 		{
 			shot->DEMUX_Receiver_Values(
-					_prop, this, device_id,
+					this, 
 					_h_RxRes_prev_block_offset[iDev],
 					_h_RxRes_prev_timestep[iDev],
 					_h_RxRes_prev_num_rx[iDev],
 					_h_RxRes_prev_flags[iDev],
 					_h_RxRes_prev_num_blocks[iDev],
 					(float*)(_h_RxRes_prev[iDev]));
-		}
-	}
-}
-
-void Elastic_Pipeline::Resample_Receiver_Traces(Elastic_Shot* shot, double dti)
-{
-	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
-        {
-                int device_id = _device_IDs[iDev];
-                if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[iDev] > 0)
-                {
-			shot->Resample_Receiver_Traces(_prop, this, dti);
 		}
 	}
 }

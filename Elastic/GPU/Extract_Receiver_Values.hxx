@@ -11,6 +11,7 @@ Host_Extract_Receiver_Values(
         int* nx,
         int* ny,
         int* nz,
+	int ghost_sea_surface_z,
         float** rcv_binned,
         int* num_rx,
         float** res,

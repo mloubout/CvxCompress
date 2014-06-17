@@ -33,6 +33,7 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_do_Vz = do_Vz;
 	_rcv_ranges = 0L;
 	_num_rcv_ranges = 0;
+	_interpolation_method = Trilinear;
 }
 
 Elastic_SEGY_File::~Elastic_SEGY_File()

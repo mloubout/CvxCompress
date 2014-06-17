@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <omp.h>
@@ -109,9 +110,11 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_pck_min = new float[_num_em_props];
 	_pck_max = new float[_num_em_props];
 	_pck_range = new float[_num_em_props];
+	_pck_iso = new float[_num_em_props];
 	// initialization of these tables is done after parameter file has been read
 
 	bool error = false;
+	_use_isotropic_sphere_during_source_injection = false;
 	_Courant_Factor = 1.0f;
 	_voxet = 0L;
 	_shots = 0L;
@@ -229,6 +232,13 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 						break;
 					}
 				}
+			}
+			char isostr[4096];
+			if (!error && sscanf(s, "USE_ISOTROPIC_SPHERE_DURING_SOURCE_INJECTION %s", isostr) == 1)
+			{
+				_tolower(isostr);
+				if (strcmp(isostr, "enabled") == 0) _use_isotropic_sphere_during_source_injection = true;
+				if (_log_level >= 3) printf("Isotropic sphere will be used during source injection.\n");
 			}
 			char property[4096];
 			char moniker[4096];
@@ -1019,11 +1029,31 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			_Is_Valid = !error;
 			if (_Is_Valid)
 			{
+				int ghost_padding = 0;
 				if (_freesurface_enabled)
 				{
 					// force to zero if freesurface is enabled.
 					_nabc_top = 0;
 					_nabc_top_extend = false;
+				}
+				else
+				{
+					// force top sponge to extend
+					_nabc_top_extend = true;
+					for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+					{
+						Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+						if (_source_ghost_enabled)
+						{
+							int zs = (int)lrintf(shot->Get_Propagation_Source_Z()) + 1;
+							if (zs > ghost_padding) ghost_padding = zs;
+						}
+						if (_receiver_ghost_enabled)
+						{
+							int zr = (int)lrintf(shot->Find_Deepest_Receiver()) + 1;
+							if (zr > ghost_padding) ghost_padding = zr;
+						}
+					}
 				}
 				Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 				if (_log_level > 3)
@@ -1063,8 +1093,8 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 				_prop_z0 = _sub_iz0;
 				if (_nabc_top_extend)
 				{
-					_prop_nz += _nabc_top;
-					_prop_z0 -= _nabc_top;
+					_prop_nz += _nabc_top + ghost_padding;
+					_prop_z0 -= (_nabc_top + ghost_padding);
 				}
 				if (_nabc_bot_extend)
 				{
@@ -1093,12 +1123,21 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					{
 						_pck_min[i] = _const_vals[i];
 						_pck_max[i] = _const_vals[i];
+						_pck_iso[i] = _const_vals[i];
 					}
 					else
 					{
-						if (!prop->Has_MinMax()) prop->Get_MinMax_From_File();
+						if (!prop->Has_MinMax())
+						{
+							prop->Get_MinMax_From_File();
+							if (i == Attr_Idx_Q) prop->Set_MinMax(1.0f/prop->Get_Max(), 1.0f/prop->Get_Min()); // for Q we pack reciprocal of Q
+						}
 						_pck_min[i] = prop->Get_Min();
 						_pck_max[i] = prop->Get_Max();
+						if (i == Attr_Idx_Vp || i == Attr_Idx_Density || i == Attr_Idx_Q)
+							_pck_iso[i] = prop->Get_Min();
+						else
+							_pck_iso[i] = 0.0f;
 					}
 					if (_pck_min[i] == _pck_max[i]) _pck_max[i] = _pck_min[i] + fabs(0.1f * _pck_min[i]);
 					_pck_range[i] = _pck_max[i] - _pck_min[i];
@@ -1592,6 +1631,30 @@ float Elastic_Modeling_Job::Get_Earth_Model_Attribute_Range(int attr_idx, bool& 
 	else
 	{
 		error = true;
+		return 0.0f;
+	}
+}
+
+float Elastic_Modeling_Job::Get_IsoOrEarth_Model_Attribute_Min(int attr_idx, bool isosphere)
+{
+	if (attr_idx >= 0 && attr_idx < _num_em_props)
+        {
+		return isosphere ? _pck_iso[attr_idx] : _pck_min[attr_idx];
+	}
+	else
+	{
+		return 0.0f;
+	}
+}
+
+float Elastic_Modeling_Job::Get_IsoOrEarth_Model_Attribute_Range(int attr_idx, bool isosphere)
+{
+	if (attr_idx >= 0 && attr_idx < _num_em_props)
+        {
+		return isosphere ? _pck_iso[attr_idx] : _pck_range[attr_idx];
+	}
+	else
+	{
 		return 0.0f;
 	}
 }

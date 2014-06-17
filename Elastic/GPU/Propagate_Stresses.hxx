@@ -1,11 +1,16 @@
 #ifndef CVX_ESDRD_MI_TMJ_PROPAGATE_STRESSES_HXX
 #define CVX_ESDRD_MI_TMJ_PROPAGATE_STRESSES_HXX
 
+#include "Elastic_Interpolation.hxx"
+
 void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	int timestep,
 	cudaStream_t stream,
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
+	int y1,
+	int m1_y0,
+	int m1_y1,
 	int vol_nx,		// dimensions of global volume
 	int vol_ny,
 	int vol_nz,
@@ -23,11 +28,6 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
-	bool has_low_YHalo,	// true if m1 has low yhalo
-	bool has_high_YHalo,	// true if m1 has high yhalo
-	int nx,
-	int ny,
-	int nz,
 	float vpvert_avtop,
 	float vpvert_avbot,
 	int nabc_sdx,
@@ -62,6 +62,7 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float Gamma2_range,
 	int one_y_size,
 	bool inject_source,
+	Elastic_Interpolation_t source_interpolation_method,
 	bool is_pressure,
 	float ampl1,
 	float svaw_sample,

@@ -1,4 +1,5 @@
 #include <cuda_runtime_api.h>
+#include "Elastic_Interpolation.hxx"
 
 //
 // CUDA kernel that propagates particle velocity wavefield and memory variable.
@@ -293,6 +294,64 @@ void cuApply_Source_Term_To_VxVyVz(
 }
 
 __global__ 
+void cuApply_Point_Source_To_VxVyVz(
+	int* em,
+	float Q_min,
+        float Q_range,
+        float Density_min,
+        float Density_range,
+        float* cmp,
+        int x0,
+        int y0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        bool is_force,
+        float ampl1,
+        float ampl2,
+        float ampl3,
+        float xs,
+        float ys,
+        float zs,
+        float val
+        )
+{
+	int ix = (int)lrintf(xs) - x0;
+	int iy = (int)lrintf(ys) - y0;
+	int iz = (int)lrintf(zs);
+	if (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	{
+		int one_wf_size_f = nx * nz;
+		int one_y_size_f = one_wf_size_f * 6;
+		int idx = ix + iy * one_y_size_f + iz * 4;
+
+		if (is_force)
+		{
+			int em_one_word_size_f = one_wf_size_f;
+			int em_one_y_size_f = em_one_word_size_f * 4;
+			int em_word3 = em[ix+iy*em_one_y_size_f+iz*4+3*em_one_word_size_f];
+			float Q, Density;
+			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+
+			cmp[idx                ] = cmp[idx                ] + dti * (val * ampl1) / Density;
+			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + dti * (val * ampl2) / Density;
+			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + dti * (val * ampl3) / Density;
+
+			//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val/Density,my_x+x0,my_y+y0,my_z);
+		}
+		else
+		{
+			cmp[idx                ] = cmp[idx                ] + dti * val * ampl1;
+			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + dti * val * ampl2;
+			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + dti * val * ampl3;
+
+			//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val,my_x+x0,my_y+y0,my_z);
+		}
+	}
+}
+
+__global__ 
 #if __CUDA_ARCH__ >= 300
 __launch_bounds__(1280)
 #elif __CUDA_ARCH__ >= 200
@@ -303,6 +362,9 @@ cuPropagate_Particle_Velocities_Kernel(
 	int timestep,
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
+	int y1,
+	int m1_y0,
+	int m1_y1,
 	int vol_nx,		// dimensions of global volume
 	int vol_ny,
 	int vol_nz,
@@ -320,11 +382,6 @@ cuPropagate_Particle_Velocities_Kernel(
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
-	bool has_low_YHalo,	// true if m1 has low yhalo
-	bool has_high_YHalo,	// true if m1 has high yhalo
-	int nx,
-	int ny,
-	int nz,
 	float vpvert_avtop,
 	float vpvert_avbot,
 	int nabc_sdx,
@@ -347,27 +404,11 @@ cuPropagate_Particle_Velocities_Kernel(
 	int tyz_off
 	)
 {
-	//const int thr_x = threadIdx.x & 3;
-	//const int thr_z = threadIdx.x / 4;
-	//const int thr_y = threadIdx.y;
-
-	const bool do_Lo_YHalo = (blockIdx.y > 0 || has_low_YHalo) ? true : false;
-	//const bool do_Hi_YHalo = ((blockIdx.y*8+threadIdx.y) < (has_high_YHalo?ny+3:ny-1)) ? true : false;
-
 	__shared__ float buf[768];	// NON-persistent buffer
 
 	__shared__ float tzzbuf[384];	// persistent buffers
 	__shared__ float txzbuf[384];   // some values are transferred from one iZ to the next
 	__shared__ float tyzbuf[384];
-
-	//const int txx_off = 0;
-	/*
-	const int tyy_off = one_wf_size_f;
-	const int tzz_off = 2 * one_wf_size_f;
-	const int txy_off = 3 * one_wf_size_f;
-	const int txz_off = 4 * one_wf_size_f;
-	const int tyz_off = 5 * one_wf_size_f;
-	*/
 
 	int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x;
 
@@ -386,14 +427,14 @@ cuPropagate_Particle_Velocities_Kernel(
 		tzzbuf[threadIdx.x+4*32] = 0.0f;
 	}
 
-	for (int iZ = 0;  iZ < (nz/8);  ++iZ)
+	for (int iZ = 0;  iZ < (vol_nz/8);  ++iZ)
 	{
 		int x = x0 + (threadIdx.x & 3);
 		int y = y0 + (threadIdx.y + blockIdx.y * 8);
 		int z = iZ * 8 + (threadIdx.x / 4);
 
 		float tmp3, tmp7, tmp8;
-		if (iZ < ((nz/8)-1))
+		if (z < vol_nz-8)
 		{
 			tmp3 = m1C[offset+tzz_off+32];
 			tmp7 = m1C[offset+txz_off+32];
@@ -427,7 +468,7 @@ cuPropagate_Particle_Velocities_Kernel(
 			tmp6 = txy_p4 = 0.0f;
 		}
 
-		unsigned int em_word3 = em[(threadIdx.y + blockIdx.y*8) * em_one_y_size_f + (iZ*32) + threadIdx.x + 3*em_one_word_size_f];
+		unsigned int em_word3 = (y <= y1) ? em[(threadIdx.y + blockIdx.y*8) * em_one_y_size_f + (iZ*32) + threadIdx.x + 3*em_one_word_size_f] : 0;
 
 		float txx_p0 = m1C[offset];
                 float txy_p0 = m1C[offset+txy_off];
@@ -437,7 +478,7 @@ cuPropagate_Particle_Velocities_Kernel(
 		float tmp1, tmp9, tmp10;
 		if (threadIdx.y < 4)
 		{
-			if (do_Lo_YHalo)
+			if (y-4 >= m1_y0)
 			{
 				tmp1 = m1C[offset+tyy_off-4*one_y_size_f];
 				tmp9 = m1C[offset+txy_off-4*one_y_size_f];
@@ -450,7 +491,7 @@ cuPropagate_Particle_Velocities_Kernel(
 		}
 		else
 		{
-			if ((blockIdx.y*8+threadIdx.y+4) < (has_high_YHalo ? ny+4 : ny))
+			if (y+4 <= m1_y1)
 			{
 				tmp1 = m1C[offset+tyy_off+4*one_y_size_f];
 				tmp9 = m1C[offset+txy_off+4*one_y_size_f];
@@ -625,118 +666,121 @@ cuPropagate_Particle_Velocities_Kernel(
 		// TMJ 02/11/14 - Works
 		//if (timestep == 1 && dztyz != 0.0f) printf("TIMESTEP 1 :: DZTYZ ( %d,%d,%d ) = %e\n",x,y,z,dztyz);
 
-		// get word3 from earth model
-		float Q, Density;
-		cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
-		Q = 1.0f / Q;  // compressed model actually stores inverse of Q.
-
-		// ..compute itausig and difitau
-		float wq = 6.2831853072f * fq;
-		float te = (1.0f + sqrtf(1.0f + Q*Q)) / (Q*wq);
-     		float tt = 1.0f / (te * wq * wq);
-		float itausig = 1.0f / tt;
-      		float difitau = ((1.0f / te) - itausig);
-
-		// Update viscoelastic(SLS) vector field:
-		float const1 = 1.0f / (1.0f + 0.5f*dti*itausig);
-		float const2 = (1.0f - 0.5f*dti*itausig);
-		float const3 = dti*difitau;
-
-		float old_sx = m2C[offset+3*one_wf_size_f];
-		float old_sy = m2C[offset+4*one_wf_size_f];
-		float old_sz = m2C[offset+5*one_wf_size_f];
-
-		float sx = const3*(dxtxx + dytxy + dztxz);
-		sx = sx + const2*old_sx;
-		sx = const1*sx;
-		
-		float sy = const3*(dxtxy + dytyy + dztyz);
-		sy = sy + const2*old_sy;
-		sy = const1*sy;
-
-		float sz = const3*(dxtxz + dytyz + dztzz);
-		sz = sz + const2*old_sz;
-		sz = const1*sz;
-
-		//if (timestep == 1 && sx != 0.0f) printf("TIMESTEP 1 :: SX ( %d,%d,%d ) = %e\n",x,y,z,sx);
-		//if (timestep == 1 && sy != 0.0f) printf("TIMESTEP 1 :: SY ( %d,%d,%d ) = %e\n",x,y,z,sy);
-		//if (timestep == 1 && sz != 0.0f) printf("TIMESTEP 1 :: SZ ( %d,%d,%d ) = %e\n",x,y,z,sz);
-
-		cmp[offset+3*one_wf_size_f] = sx;
-		cmp[offset+4*one_wf_size_f] = sy;
-		cmp[offset+5*one_wf_size_f] = sz;
-
-		// Absorbing boundary decay funct (for Maxwell viscoelastic model):
-		//int x = x0 + (threadIdx.x & 3);
-		//int y = y0 + (threadIdx.y + blockIdx.y * 8);
-		//int z = iZ * 8 + (threadIdx.x / 4);
-		float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
-		float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
-
-		//if (x == 400 && y == 400 && z == 400)
-		//{
-		//	printf("Q=%e, Density=%e, wq=%e, te=%e, tt=%e, itausig=%e, difitau=%e, const1=%e, const2=%e, const3=%e, deta=%e, dabc=%e\n",
-		//		Q,Density,wq,te,tt,itausig,difitau,const1,const2,const3,deta,dabc);
-		//}
-
-		// Update viscoelastic particle velocities:
-		float old_vx = m2C[offset];
-		float old_vy = m2C[offset+one_wf_size_f];
-		float old_vz = m2C[offset+2*one_wf_size_f];
-
-		float factor = dti / Density;
-
-		float vx = dabc*old_vx + factor*dxtxx + factor*dytxy + factor*dztxz + factor*sx;
-		float vy = dabc*old_vy + factor*dxtxy + factor*dytyy + factor*dztyz + factor*sy;
-		float vz = dabc*old_vz + factor*dxtxz + factor*dytyz + factor*dztzz + factor*sz;
-
-		//if (timestep == 1 && vx != 0.0f) printf("TIMESTEP 1 :: VX ( %d,%d,%d ) = %e\n",x,y,z,vx);
-		//if (timestep == 1 && vy != 0.0f) printf("TIMESTEP 1 :: VY ( %d,%d,%d ) = %e\n",x,y,z,vy);
-		//if (timestep == 1 && vz != 0.0f) printf("TIMESTEP 1 :: VZ ( %d,%d,%d ) = %e\n",x,y,z,vz);
-
-		cmp[offset] = vx;
-		cmp[offset+one_wf_size_f] = vy;
-		cmp[offset+2*one_wf_size_f] = vz;
-
-		/*
-		if (x == 501 && y == 401 && z == 401)
+		if (y <= y1)
 		{
-			printf("\nPropagate_Particle_Velocities\n");
-			printf("-----------------------------\n");
-			printf("timestep = %d\n",timestep);
-			printf("dti=%e\n",dti);
-			printf("dxtxx=%e\n",dxtxx);
-			printf("dytxy=%e\n",dytxy);
-			printf("dztxz=%e\n",dztxz);
-			printf("dxtxy=%e\n",dxtxy);
-			printf("dytyy=%e\n",dytyy);
-			printf("dztyz=%e\n",dztyz);
-			printf("dxtxz=%e\n",dxtxz);
-			printf("dytyz=%e\n",dytyz);
-			printf("dztzz=%e\n",dztzz);
-			printf("wq=%e\n",wq);
-			printf("te=%e\n",te);
-			printf("tt=%e\n",tt);
-			printf("itausig=%e\n",itausig);
-			printf("difitau=%e\n",difitau);
-			printf("const1=%e\n",const1);
-			printf("const2=%e\n",const2);
-			printf("const3=%e\n",const3);
-			
-			printf("rho=%e\n",Density);
-			printf("dabc=%e\n",dabc);
-			printf("deta=%e\n",deta);
+			// get word3 from earth model
+			float Q, Density;
+			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+			Q = 1.0f / Q;  // compressed model actually stores inverse of Q.
 
-			printf("sx=%e\n",sx);
-			printf("sy=%e\n",sy);
-			printf("sz=%e\n",sz);
-			printf("vx=%e\n",vx);
-			printf("vy=%e\n",vy);
-			printf("vz=%e\n",vz);
+			// ..compute itausig and difitau
+			float wq = 6.2831853072f * fq;
+			float te = (1.0f + sqrtf(1.0f + Q*Q)) / (Q*wq);
+			float tt = 1.0f / (te * wq * wq);
+			float itausig = 1.0f / tt;
+			float difitau = ((1.0f / te) - itausig);
 
-			printf("\n");
+			// Update viscoelastic(SLS) vector field:
+			float const1 = 1.0f / (1.0f + 0.5f*dti*itausig);
+			float const2 = (1.0f - 0.5f*dti*itausig);
+			float const3 = dti*difitau;
+
+			float old_sx = m2C[offset+3*one_wf_size_f];
+			float old_sy = m2C[offset+4*one_wf_size_f];
+			float old_sz = m2C[offset+5*one_wf_size_f];
+
+			float sx = const3*(dxtxx + dytxy + dztxz);
+			sx = sx + const2*old_sx;
+			sx = const1*sx;
+
+			float sy = const3*(dxtxy + dytyy + dztyz);
+			sy = sy + const2*old_sy;
+			sy = const1*sy;
+
+			float sz = const3*(dxtxz + dytyz + dztzz);
+			sz = sz + const2*old_sz;
+			sz = const1*sz;
+
+			//if (timestep == 1 && sx != 0.0f) printf("TIMESTEP 1 :: SX ( %d,%d,%d ) = %e\n",x,y,z,sx);
+			//if (timestep == 1 && sy != 0.0f) printf("TIMESTEP 1 :: SY ( %d,%d,%d ) = %e\n",x,y,z,sy);
+			//if (timestep == 1 && sz != 0.0f) printf("TIMESTEP 1 :: SZ ( %d,%d,%d ) = %e\n",x,y,z,sz);
+
+			cmp[offset+3*one_wf_size_f] = sx;
+			cmp[offset+4*one_wf_size_f] = sy;
+			cmp[offset+5*one_wf_size_f] = sz;
+
+			// Absorbing boundary decay funct (for Maxwell viscoelastic model):
+			//int x = x0 + (threadIdx.x & 3);
+			//int y = y0 + (threadIdx.y + blockIdx.y * 8);
+			//int z = iZ * 8 + (threadIdx.x / 4);
+			float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
+			float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
+
+			//if (x == 400 && y == 400 && z == 400)
+			//{
+			//	printf("Q=%e, Density=%e, wq=%e, te=%e, tt=%e, itausig=%e, difitau=%e, const1=%e, const2=%e, const3=%e, deta=%e, dabc=%e\n",
+			//		Q,Density,wq,te,tt,itausig,difitau,const1,const2,const3,deta,dabc);
+			//}
+
+			// Update viscoelastic particle velocities:
+			float old_vx = m2C[offset];
+			float old_vy = m2C[offset+one_wf_size_f];
+			float old_vz = m2C[offset+2*one_wf_size_f];
+
+			float factor = dti / Density;
+
+			float vx = dabc*old_vx + factor*dxtxx + factor*dytxy + factor*dztxz + factor*sx;
+			float vy = dabc*old_vy + factor*dxtxy + factor*dytyy + factor*dztyz + factor*sy;
+			float vz = dabc*old_vz + factor*dxtxz + factor*dytyz + factor*dztzz + factor*sz;
+
+			//if (timestep == 1 && vx != 0.0f) printf("TIMESTEP 1 :: VX ( %d,%d,%d ) = %e\n",x,y,z,vx);
+			//if (timestep == 1 && vy != 0.0f) printf("TIMESTEP 1 :: VY ( %d,%d,%d ) = %e\n",x,y,z,vy);
+			//if (timestep == 1 && vz != 0.0f) printf("TIMESTEP 1 :: VZ ( %d,%d,%d ) = %e\n",x,y,z,vz);
+
+			cmp[offset] = vx;
+			cmp[offset+one_wf_size_f] = vy;
+			cmp[offset+2*one_wf_size_f] = vz;
+
+			/*
+			   if (x == 501 && y == 401 && z == 401)
+			   {
+			   printf("\nPropagate_Particle_Velocities\n");
+			   printf("-----------------------------\n");
+			   printf("timestep = %d\n",timestep);
+			   printf("dti=%e\n",dti);
+			   printf("dxtxx=%e\n",dxtxx);
+			   printf("dytxy=%e\n",dytxy);
+			   printf("dztxz=%e\n",dztxz);
+			   printf("dxtxy=%e\n",dxtxy);
+			   printf("dytyy=%e\n",dytyy);
+			   printf("dztyz=%e\n",dztyz);
+			   printf("dxtxz=%e\n",dxtxz);
+			   printf("dytyz=%e\n",dytyz);
+			   printf("dztzz=%e\n",dztzz);
+			   printf("wq=%e\n",wq);
+			   printf("te=%e\n",te);
+			   printf("tt=%e\n",tt);
+			   printf("itausig=%e\n",itausig);
+			   printf("difitau=%e\n",difitau);
+			   printf("const1=%e\n",const1);
+			   printf("const2=%e\n",const2);
+			   printf("const3=%e\n",const3);
+
+			   printf("rho=%e\n",Density);
+			   printf("dabc=%e\n",dabc);
+			   printf("deta=%e\n",deta);
+
+			   printf("sx=%e\n",sx);
+			   printf("sy=%e\n",sy);
+			   printf("sz=%e\n",sz);
+			   printf("vx=%e\n",vx);
+			   printf("vy=%e\n",vy);
+			   printf("vz=%e\n",vz);
+
+			   printf("\n");
+			   }
+			 */
 		}
-		*/
 
 		// increase offsets
 		offset += 32;
@@ -831,6 +875,9 @@ Host_Propagate_Particle_Velocities_Kernel(
 	cudaStream_t stream,
 	int x0,
 	int y0,
+	int y1,
+	int m1_y0,
+	int m1_y1,
 	int vol_nx,
 	int vol_ny,
 	int vol_nz,
@@ -848,11 +895,6 @@ Host_Propagate_Particle_Velocities_Kernel(
         float inv_DX,           // 1 / DX
         float inv_DY,           // 1 / DY
         float inv_DZ,           // 1 / DZ
-        bool has_low_YHalo,     // true if m1 has low yhalo
-        bool has_high_YHalo,    // true if m1 has high yhalo
-        int nx,
-        int ny,
-        int nz,
 	float vpvert_avtop,
 	float vpvert_avbot,
 	int nabc_sdx,
@@ -866,6 +908,7 @@ Host_Propagate_Particle_Velocities_Kernel(
 	float Density_range,
 	int one_y_size,
 	bool inject_source,
+	Elastic_Interpolation_t source_interpolation_method,
 	bool is_force,
 	bool is_velocity,
 	float ampl1,
@@ -887,6 +930,10 @@ Host_Propagate_Particle_Velocities_Kernel(
 	const int txz_off = 4 * tyy_off;
 	const int tyz_off = 5 * tyy_off;
 
+	int nx = 4;
+	int ny = y1 - y0 + 1;
+	int nz = vol_nz;
+
 	dim3 blockShape(32,8,1);
 	dim3 gridShape(1,(ny+7)/8,1);
 
@@ -894,10 +941,9 @@ Host_Propagate_Particle_Velocities_Kernel(
 
 	cuPropagate_Particle_Velocities_Kernel<<<gridShape,blockShape,0,stream>>>(
 		timestep,
-		x0,y0,vol_nx,vol_ny,vol_nz,dti,
+		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti,
 		(unsigned int*)em,(float*)cmp,(float*)m1L,(float*)m1C,(float*)m1R,(float*)m2C,
-		C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,has_low_YHalo,has_high_YHalo,
-		nx,ny,nz,
+		C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,
 		vpvert_avtop,vpvert_avbot,nabc_sdx,nabc_sdy,nabc_top,nabc_bot,Q_min,Q_range/255.0f,fq,Density_min,Density_range/255.0f,
 		one_wf_size/4,one_y_size/4,em_one_word_size/4,em_one_y_size/4,
 		tyy_off,tzz_off,txy_off,txz_off,tyz_off);
@@ -911,10 +957,24 @@ Host_Propagate_Particle_Velocities_Kernel(
 	//
 	if (inject_source && (is_force || is_velocity))
 	{
-		// use only one thread along z to prevent possible race condition
-		dim3 blockShape2(8,8,1);
-		dim3 gridShape2(1,1,1);
-		cuApply_Source_Term_To_VxVyVz<<<gridShape2,blockShape2,0,stream>>>(em,Q_min,Q_range,Density_min,Density_range,cmp,x0,y0,0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample);
+		if (source_interpolation_method == Point)
+		{
+			dim3 blockShape3(1,1,1);
+			dim3 gridShape3(1,1,1);
+			cuApply_Point_Source_To_VxVyVz<<<gridShape3,blockShape3,0,stream>>>((int*)em,Q_min,Q_range,Density_min,Density_range,(float*)cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample);
+		}
+		else if(source_interpolation_method == Trilinear)
+		{
+			printf("Trilinear source interpolation not implemented yet!\n");
+			exit(-1);
+		}
+		else if(source_interpolation_method == Sinc)
+		{
+			// use only one thread along z to prevent possible race condition
+			dim3 blockShape2(8,8,1);
+			dim3 gridShape2(1,1,1);
+			cuApply_Source_Term_To_VxVyVz<<<gridShape2,blockShape2,0,stream>>>(em,Q_min,Q_range,Density_min,Density_range,cmp,x0,y0,0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample);
+		}
 	}
 #ifdef GPU_DEBUG
 	gpuErrchk( cudaPeekAtLastError() );

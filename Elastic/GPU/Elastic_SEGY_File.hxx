@@ -1,6 +1,8 @@
 #ifndef CVX_ESDRD_MI_TMJ_ELASTIC_SEGY_FILE_HXX
 #define CVX_ESDRD_MI_TMJ_ELASTIC_SEGY_FILE_HXX
 
+#include "Elastic_Interpolation.hxx"
+
 class Elastic_SEGY_File_Receiver_Range;
 class Elastic_Propagator;
 
@@ -23,6 +25,9 @@ public:
 	bool Is_Valid() {return _Is_Valid;}
 
 	int Get_File_Index() {return _fileidx;}
+
+	Elastic_Interpolation_t Get_Interpolation_Method() {return _interpolation_method;}
+	void Set_Interpolation_Method(Elastic_Interpolation_t interpolation_method) {_interpolation_method = interpolation_method;}
 	
 	double Get_Sample_Rate() {return _sample_rate;}
 	double Get_Timeshift() {return _tshift;}
@@ -90,6 +95,7 @@ private:
 	bool _do_Vx;
 	bool _do_Vy;
 	bool _do_Vz;
+	Elastic_Interpolation_t _interpolation_method;
 
 	void swap2bytes(short *i2, int n);
 	void swap4bytes(int *i4, int n);

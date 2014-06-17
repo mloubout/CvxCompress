@@ -100,6 +100,37 @@ void cuApply_Source_Term_To_TxxTyyTzz(
 	}
 }
 
+__global__ 
+void cuApply_Point_Source_To_TxxTyyTzz(
+	float* cmp,
+	int x0,
+        int y0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        float ampl1,
+        float xs,
+        float ys,
+        float zs,
+        float val
+        )
+{
+	int ix = (int)lrintf(xs) - x0;
+	int iy = (int)lrintf(ys) - y0;
+	int iz = (int)lrintf(zs);
+	if (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	{
+		int one_wf_size_f = nx * nz;
+		int one_y_size_f = one_wf_size_f * 6;
+		int idx = ix + iy * one_y_size_f + iz * 4;
+
+		cmp[idx                ] = cmp[idx                ] - dti * val * ampl1;
+		cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - dti * val * ampl1;
+		cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - dti * val * ampl1;
+	}
+}
+
 __device__ 
 void cuCompute_DXDYDZ_LoBuf(
 	int xoff,
@@ -119,11 +150,6 @@ void cuCompute_DXDYDZ_LoBuf(
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
-	int ny,
-	int nz,
-	int iZ,
-        bool do_Lo_YHalo,
-	bool has_high_YHalo,
 	int one_y_size_f,
 	float* buf,
 	float* vx_prev,
@@ -184,6 +210,9 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	int timestep,
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
+	int y1,
+	int m1_y0,
+	int m1_y1,
 	int vol_nx,		// dimensions of global volume
 	int vol_ny,
 	int vol_nz,
@@ -201,11 +230,6 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
-	bool has_low_YHalo,	// true if m1 has low yhalo
-	bool has_high_YHalo,	// true if m1 has high yhalo
-	int nx,
-	int ny,
-	int nz,
 	float vpvert_avtop,
 	float vpvert_avbot,
 	int nabc_sdx,
@@ -252,8 +276,6 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	__shared__ float vy_prev[384];
 	__shared__ float vz_prev[384];
 
-        const bool do_Lo_YHalo = (blockIdx.y > 0 || has_low_YHalo) ? true : false;
-
         int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x;
 
         // populate persistent buffers
@@ -268,11 +290,11 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
         }
 	__syncthreads();
 
-	for (int iZ = 0;  iZ < nz/8;  ++iZ)
+	for (int iZ = 0;  iZ < vol_nz/8;  ++iZ)
 	{
-		//int x = x0 + (threadIdx.x & 3);
-		//int y = y0 + (threadIdx.y + blockIdx.y * 8);
-		//int z = iZ * 8 + (threadIdx.x / 4);
+		int x = x0 + (threadIdx.x & 3);
+		int y = y0 + (threadIdx.y + blockIdx.y * 8);
+		int z = iZ * 8 + (threadIdx.x / 4);
 
 		float tmp1, tmp5, tmp9;
 		if (m1L != 0L)
@@ -299,7 +321,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 
 		float tmp3, tmp7, tmpB;
-		if (iZ < ((nz/8)-1))
+		if (z < vol_nz-8)
 		{
 			tmp3 = m1C[offset+32];
 			tmp7 = m1C[offset+one_wf_size_f+32];
@@ -313,7 +335,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		float tmp4, tmp8, tmpC;
 		if (threadIdx.y < 4)
 		{
-			if (do_Lo_YHalo)
+			if (y-4 >= m1_y0)
 			{
 				tmp4 = m1C[offset-4*one_y_size_f];
 				tmp8 = m1C[offset+one_wf_size_f-4*one_y_size_f];
@@ -326,7 +348,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 		else
 		{
-			if ((blockIdx.y*8+threadIdx.y+4) < (has_high_YHalo ? ny+4 : ny))
+			if (y+4 <= m1_y1)
 			{
 				tmp4 = m1C[offset+4*one_y_size_f];
 				tmp8 = m1C[offset+one_wf_size_f+4*one_y_size_f];
@@ -339,23 +361,23 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 
 		float dxVx, dyVx, dzVx;
-		cuCompute_DXDYDZ_LoBuf(0,0,0,&dxVx,&dyVx,&dzVx,tmp1,tmp2,tmp3,tmp4,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,ny,nz,iZ,do_Lo_YHalo,has_high_YHalo,one_y_size_f,buf,vx_prev,offset);
-                //if (dxVx != 0.0f) printf("x=%d,y=%d,z=%d - dxVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVx);
-                //if (dyVx != 0.0f) printf("x=%d,y=%d,z=%d - dyVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVx);
-                //if (dzVx != 0.0f) printf("x=%d,y=%d,z=%d - dzVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVx);
+		cuCompute_DXDYDZ_LoBuf(0,0,0,&dxVx,&dyVx,&dzVx,tmp1,tmp2,tmp3,tmp4,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vx_prev,offset);
+		//if (dxVx != 0.0f) printf("x=%d,y=%d,z=%d - dxVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVx);
+		//if (dyVx != 0.0f) printf("x=%d,y=%d,z=%d - dyVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVx);
+		//if (dzVx != 0.0f) printf("x=%d,y=%d,z=%d - dzVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVx);
 
 		float dxVy, dyVy, dzVy;
-		cuCompute_DXDYDZ_LoBuf(-1,-1,0,&dxVy,&dyVy,&dzVy,tmp5,tmp6,tmp7,tmp8,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,ny,nz,iZ,do_Lo_YHalo,has_high_YHalo,one_y_size_f,buf,vy_prev,offset);
-                //if (dxVy != 0.0f) printf("x=%d,y=%d,z=%d - dxVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVy);
-                //if (dyVy != 0.0f) printf("x=%d,y=%d,z=%d - dyVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVy);
-                //if (dzVy != 0.0f) printf("x=%d,y=%d,z=%d - dzVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVy);
+		cuCompute_DXDYDZ_LoBuf(-1,-1,0,&dxVy,&dyVy,&dzVy,tmp5,tmp6,tmp7,tmp8,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vy_prev,offset);
+		//if (dxVy != 0.0f) printf("x=%d,y=%d,z=%d - dxVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVy);
+		//if (dyVy != 0.0f) printf("x=%d,y=%d,z=%d - dyVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVy);
+		//if (dzVy != 0.0f) printf("x=%d,y=%d,z=%d - dzVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVy);
 
 		float dxVz, dyVz, dzVz;
-		cuCompute_DXDYDZ_LoBuf(-1,0,-1,&dxVz,&dyVz,&dzVz,tmp9,tmpA,tmpB,tmpC,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,ny,nz,iZ,do_Lo_YHalo,has_high_YHalo,one_y_size_f,buf,vz_prev,offset);
-                //if (dxVz != 0.0f) printf("x=%d,y=%d,z=%d - dxVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVz);
-                //if (dyVz != 0.0f) printf("x=%d,y=%d,z=%d - dyVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVz);
-                //if (dzVz != 0.0f) printf("x=%d,y=%d,z=%d - dzVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVz);
-		
+		cuCompute_DXDYDZ_LoBuf(-1,0,-1,&dxVz,&dyVz,&dzVz,tmp9,tmpA,tmpB,tmpC,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vz_prev,offset);
+		//if (dxVz != 0.0f) printf("x=%d,y=%d,z=%d - dxVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVz);
+		//if (dyVz != 0.0f) printf("x=%d,y=%d,z=%d - dyVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVz);
+		//if (dzVz != 0.0f) printf("x=%d,y=%d,z=%d - dzVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVz);
+
 		float dtexx = dxVx;
 		float dteyy = dyVy;
 		float dtezz = dzVz;
@@ -370,122 +392,121 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		//if (dtexz2 != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEXZ2 (%d, %d, %d) = %e\n",x,y,z,dtexz2);
 		//if (dtexy2 != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEXY2 (%d, %d, %d) = %e\n",x,y,z,dtexy2);
 
-		int emIdx = (threadIdx.y + blockIdx.y * 8) * em_one_y_size_f + (iZ*32) + threadIdx.x;
-		float c11, c22, c33, c44, c55, c66, c12, c13, c23;
-		float dip, azimuth, rake;
-		cuUnpack_And_Compute_On_Kite_CIJs(
-			em[emIdx], em[emIdx+em_one_word_size_f], em[emIdx+2*em_one_word_size_f], em[emIdx+3*em_one_word_size_f],
-			Vp_min, Vp_range,
-			Vs_min, Vs_range,
-			Density_min, Density_range,
-			Dip_min, Dip_range,
-			Azimuth_min, Azimuth_range,
-			Rake_min, Rake_range,
-			Delta1_min, Delta1_range,
-			Delta2_min, Delta2_range,
-			Delta3_min, Delta3_range,
-			Epsilon1_min, Epsilon1_range,
-			Epsilon2_min, Epsilon2_range,
-			Gamma1_min, Gamma1_range,
-			Gamma2_min, Gamma2_range,
-			&dip, &azimuth, &rake,
-			&c11, &c22, &c33, &c44, &c55, &c66, &c12, &c13, &c23
-			);
-
-		// Absorbing boundary decay funct (for Maxwell viscoelastic model):
-		int x = x0 + (threadIdx.x & 3);
-		int y = y0 + (threadIdx.y + blockIdx.y * 8);
-		int z = iZ * 8 + (threadIdx.x / 4);
-
-		float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
-		float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
-
-		float old_txx = m2C[offset];
-		float txx = c11 * dtexx + c12 * dteyy + c13 * dtezz;
-		txx = (dabc + 1.0f) * dti * txx + dabc * dabc * old_txx;
-
-		float old_tyy = m2C[offset+one_wf_size_f];
-		float tyy = c12 * dtexx + c22 * dteyy + c23 * dtezz;
-		tyy = (dabc + 1.0f) * dti * tyy + dabc * dabc * old_tyy;
-
-		float old_tzz = m2C[offset+2*one_wf_size_f];
-		float tzz = c13 * dtexx + c23 * dteyy + c33 * dtezz;
-		tzz = (dabc + 1.0f) * dti * tzz + dabc * dabc * old_tzz;
-
-		float old_txy = m2C[offset+3*one_wf_size_f];
-		float txy = c66 * dtexy2;
-		txy = (dabc + 1.0f) * dti * txy + dabc * dabc * old_txy;
-
-		if (z == 0)
+		if (y <= y1)
 		{
-			float c13_ = c33 - 2.0f * c55;
-			float dum1 = (c13_ * c13_) / c33;
-			float dum2 = c13_ - dum1;
-			dum1 = c11 - dum1;
-			txx = old_txx + dti * (dum1 * dxVx + dum2 * dyVy);
-			tyy = old_tyy + dti * (dum2 * dxVx + dum1 * dyVy);
-			txy = 0.0f;
-			tzz = 0.0f;
+			int emIdx = (threadIdx.y + blockIdx.y * 8) * em_one_y_size_f + (iZ*32) + threadIdx.x;
+			float c11, c22, c33, c44, c55, c66, c12, c13, c23;
+			float dip, azimuth, rake;
+			cuUnpack_And_Compute_On_Kite_CIJs(
+					em[emIdx], em[emIdx+em_one_word_size_f], em[emIdx+2*em_one_word_size_f], em[emIdx+3*em_one_word_size_f],
+					Vp_min, Vp_range,
+					Vs_min, Vs_range,
+					Density_min, Density_range,
+					Dip_min, Dip_range,
+					Azimuth_min, Azimuth_range,
+					Rake_min, Rake_range,
+					Delta1_min, Delta1_range,
+					Delta2_min, Delta2_range,
+					Delta3_min, Delta3_range,
+					Epsilon1_min, Epsilon1_range,
+					Epsilon2_min, Epsilon2_range,
+					Gamma1_min, Gamma1_range,
+					Gamma2_min, Gamma2_range,
+					&dip, &azimuth, &rake,
+					&c11, &c22, &c33, &c44, &c55, &c66, &c12, &c13, &c23
+					);
+
+			// Absorbing boundary decay funct (for Maxwell viscoelastic model):
+			float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
+			float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
+
+			float old_txx = m2C[offset];
+			float txx = c11 * dtexx + c12 * dteyy + c13 * dtezz;
+			txx = (dabc + 1.0f) * dti * txx + dabc * dabc * old_txx;
+
+			float old_tyy = m2C[offset+one_wf_size_f];
+			float tyy = c12 * dtexx + c22 * dteyy + c23 * dtezz;
+			tyy = (dabc + 1.0f) * dti * tyy + dabc * dabc * old_tyy;
+
+			float old_tzz = m2C[offset+2*one_wf_size_f];
+			float tzz = c13 * dtexx + c23 * dteyy + c33 * dtezz;
+			tzz = (dabc + 1.0f) * dti * tzz + dabc * dabc * old_tzz;
+
+			float old_txy = m2C[offset+3*one_wf_size_f];
+			float txy = c66 * dtexy2;
+			txy = (dabc + 1.0f) * dti * txy + dabc * dabc * old_txy;
+
+			if (z == 0)
+			{
+				float c13_ = c33 - 2.0f * c55;
+				float dum1 = (c13_ * c13_) / c33;
+				float dum2 = c13_ - dum1;
+				dum1 = c11 - dum1;
+				txx = old_txx + dti * (dum1 * dxVx + dum2 * dyVy);
+				tyy = old_tyy + dti * (dum2 * dxVx + dum1 * dyVy);
+				txy = 0.0f;
+				tzz = 0.0f;
+			}
+
+			//float FAKE = c12;
+			//FAKE = -FAKE / 3.0f;
+
+			cmp[offset] = txx;
+			cmp[offset+one_wf_size_f] = tyy;
+			cmp[offset+2*one_wf_size_f] = tzz;
+			cmp[offset+3*one_wf_size_f] = txy;
+
+			float old_txz = m2C[offset+4*one_wf_size_f];
+			float txz = c55 * dtexz2;
+			txz = (dabc + 1.0f) * dti * txz + dabc * dabc * old_txz;
+			cmp[offset+4*one_wf_size_f] = txz;
+
+			float old_tyz = m2C[offset+5*one_wf_size_f];
+			float tyz = c44 * dteyz2;
+			tyz = (dabc + 1.0f) * dti * tyz + dabc * dabc * old_tyz;
+			cmp[offset+5*one_wf_size_f] = tyz;
+
+			//if (txx != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXX (%d, %d, %d) = %e\n",x,y,z,txx);
+			//if (tyy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYY (%d, %d, %d) = %e\n",x,y,z,tyy);
+			//if (tzz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TZZ (%d, %d, %d) = %e\n",x,y,z,tzz);
+			//if (txy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXY (%d, %d, %d) = %e\n",x,y,z,txy);
+			//if (txz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXZ (%d, %d, %d) = %e\n",x,y,z,txz);
+			//if (tyz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYZ (%d, %d, %d) = %e\n",x,y,z,tyz);
+
+			/*
+			   if (x == 501 && y == 401 && z == 401)
+			   {
+			   printf("\nPropagate_Stress_Isotropic\n");
+			   printf("--------------------------\n");
+			   printf("timestep = %d\n",timestep);
+			   printf("dti = %e\n",dti);
+			   printf("dtexx = %e\n",dtexx);
+			   printf("dteyy = %e\n",dteyy);
+			   printf("dtezz = %e\n",dtezz);
+			   printf("dteyz2 = %e\n",dteyz2);
+			   printf("dtexz2 = %e\n",dtexz2);
+			   printf("dtexy2 = %e\n",dtexy2);
+			   printf("c11 = %e\n",c11);
+			   printf("c22 = %e\n",c22);
+			   printf("c33 = %e\n",c33);
+			   printf("c44 = %e\n",c44);
+			   printf("c55 = %e\n",c55);
+			   printf("c66 = %e\n",c66);
+			   printf("c12 = %e\n",c12);
+			   printf("c13 = %e\n",c13);
+			   printf("c23 = %e\n",c23);
+			   printf("dabc = %e\n",dabc);
+			   printf("deta = %e\n",deta);
+			   printf("txx = %e\n",txx);
+			   printf("tyy = %e\n",tyy);
+			   printf("tzz = %e\n",tzz);
+			   printf("txy = %e\n",txy);
+			   printf("txz = %e\n",txz);
+			   printf("tyz = %e\n",tyz);
+			   printf("\n");
+			   }
+			 */
 		}
-
-		//float FAKE = c12;
-		//FAKE = -FAKE / 3.0f;
-
-		cmp[offset] = txx;
-		cmp[offset+one_wf_size_f] = tyy;
-		cmp[offset+2*one_wf_size_f] = tzz;
-		cmp[offset+3*one_wf_size_f] = txy;
-
-		float old_txz = m2C[offset+4*one_wf_size_f];
-		float txz = c55 * dtexz2;
-		txz = (dabc + 1.0f) * dti * txz + dabc * dabc * old_txz;
-		cmp[offset+4*one_wf_size_f] = txz;
-
-		float old_tyz = m2C[offset+5*one_wf_size_f];
-		float tyz = c44 * dteyz2;
-		tyz = (dabc + 1.0f) * dti * tyz + dabc * dabc * old_tyz;
-		cmp[offset+5*one_wf_size_f] = tyz;
-
-		//if (txx != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXX (%d, %d, %d) = %e\n",x,y,z,txx);
-		//if (tyy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYY (%d, %d, %d) = %e\n",x,y,z,tyy);
-		//if (tzz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TZZ (%d, %d, %d) = %e\n",x,y,z,tzz);
-		//if (txy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXY (%d, %d, %d) = %e\n",x,y,z,txy);
-		//if (txz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXZ (%d, %d, %d) = %e\n",x,y,z,txz);
-		//if (tyz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYZ (%d, %d, %d) = %e\n",x,y,z,tyz);
-
-		/*
-		if (x == 501 && y == 401 && z == 401)
-		{
-			printf("\nPropagate_Stress_Isotropic\n");
-			printf("--------------------------\n");
-			printf("timestep = %d\n",timestep);
-			printf("dti = %e\n",dti);
-			printf("dtexx = %e\n",dtexx);
-			printf("dteyy = %e\n",dteyy);
-			printf("dtezz = %e\n",dtezz);
-			printf("dteyz2 = %e\n",dteyz2);
-			printf("dtexz2 = %e\n",dtexz2);
-			printf("dtexy2 = %e\n",dtexy2);
-			printf("c11 = %e\n",c11);
-			printf("c22 = %e\n",c22);
-			printf("c33 = %e\n",c33);
-			printf("c44 = %e\n",c44);
-			printf("c55 = %e\n",c55);
-			printf("c66 = %e\n",c66);
-			printf("c12 = %e\n",c12);
-			printf("c13 = %e\n",c13);
-			printf("c23 = %e\n",c23);
-			printf("dabc = %e\n",dabc);
-			printf("deta = %e\n",deta);
-			printf("txx = %e\n",txx);
-			printf("tyy = %e\n",tyy);
-			printf("tzz = %e\n",tzz);
-			printf("txy = %e\n",txy);
-			printf("txz = %e\n",txz);
-			printf("tyz = %e\n",tyz);
-			printf("\n");
-		}
-		*/
 
 		offset += 32;
 	}
@@ -496,6 +517,9 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	cudaStream_t stream,
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
+	int y1,
+	int m1_y0,
+	int m1_y1,
 	int vol_nx,		// dimensions of global volume
 	int vol_ny,
 	int vol_nz,
@@ -513,11 +537,6 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
-	bool has_low_YHalo,	// true if m1 has low yhalo
-	bool has_high_YHalo,	// true if m1 has high yhalo
-	int nx,
-	int ny,
-	int nz,
 	float vpvert_avtop,
 	float vpvert_avbot,
 	int nabc_sdx,
@@ -552,6 +571,7 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float Gamma2_range,
 	int one_y_size,
 	bool inject_source,
+	Elastic_Interpolation_t source_interpolation_method,
 	bool is_pressure,
 	float ampl1,
 	float svaw_sample,
@@ -570,17 +590,19 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	//printf("vpvert_avtop = %f, vpvert_avbot = %f\n",vpvert_avtop,vpvert_avbot);
 	//printf("has_low_YHalo = %s, has_high_YHalo = %s\n",has_low_YHalo?"Y":"N",has_high_YHalo?"Y":"N");
 
+	int nx = 4;
+	int ny = y1 - y0 + 1;
+	int nz = vol_nz;
+
 	dim3 blockShape(32,8,1);
 	dim3 gridShape(1,(ny+7)/8,1);
 
 	cuPropagate_Stresses_Orthorhombic_Kernel<<<gridShape,blockShape,0,stream>>>(
 		timestep,
-		x0,y0,vol_nx,vol_ny,vol_nz,dti/2.0f,  // TMJ - divide dti by two for the abc
+		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti/2.0f,  // TMJ - divide dti by two for the abc
 		em,cmp,m1L,m1C,m1R,m2C,
 		C0,C1,C2,C3,
 		inv_DX,inv_DY,inv_DZ,
-		has_low_YHalo,has_high_YHalo,
-		nx,ny,nz,
 		vpvert_avtop,vpvert_avbot,
 		nabc_sdx,nabc_sdy,nabc_top,nabc_bot,
 		Vp_min,Vp_range/65535.0f,
@@ -609,10 +631,24 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	//
 	if (inject_source && is_pressure && ampl1 != 0.0f)
 	{
-		// use only one thread along z to prevent possible race condition
-		dim3 blockShape2(8,8,1);
-		dim3 gridShape2(1,1,1);
-		cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+		if (source_interpolation_method == Point)
+		{
+			dim3 blockShape3(1,1,1);
+			dim3 gridShape3(1,1,1);
+			cuApply_Point_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+		}
+		else if(source_interpolation_method == Trilinear)
+		{
+			printf("Trilinear source interpolation not implemented yet!\n");
+			exit(-1);
+		}
+		else if(source_interpolation_method == Sinc)
+		{
+			// use only one thread along z to prevent possible race condition
+			dim3 blockShape2(8,8,1);
+			dim3 gridShape2(1,1,1);
+			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+		}
 	}
 #ifdef GPU_DEBUG
 	gpuErrchk( cudaPeekAtLastError() );
