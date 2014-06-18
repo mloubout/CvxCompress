@@ -583,7 +583,7 @@ void Elastic_Buffer::Launch_Output_Transfers()
 }
 
 // launch a simple GPU kernel that copies data from src to dst buffer
-void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_Shot* shot)
+void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_Shot* shot, int num_z)
 {
 	if (_Is_Compute)
 	{
@@ -659,7 +659,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Particle_Velocities_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
-				4,
+				num_z,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
 				_cmp_y1,
@@ -717,7 +717,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Stresses_Orthorhombic_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
-				4,
+				num_z,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
 				_cmp_y1,
@@ -788,7 +788,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 
 void Elastic_Buffer::Launch_Simple_Copy_Kernel()
 {
-	Launch_Compute_Kernel(true, 0.0f, 0L);
+	Launch_Compute_Kernel(true, 0.0f, 0L, 1);
 }
 
 // compute block offset for future or past iteration

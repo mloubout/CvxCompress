@@ -216,6 +216,11 @@ private:
 
 	unsigned long _h2d;
 	unsigned long _d2h;
+ 
+	int* _num_z;
+	float* _num_z_throughput;
+	int _num_num_z;
+	int _curr_num_z;
 
 	cudaStream_t* _cmp_streams;
 	cudaStream_t* _inp_streams;

@@ -83,7 +83,7 @@ public:
 	void Launch_Receiver_Extraction_Kernels(Elastic_Shot* shot);
 	void Launch_Data_Transfers();	
 	void Launch_Simple_Copy_Kernel();
-	void Launch_Compute_Kernel(float dti, Elastic_Shot* shot);
+	void Launch_Compute_Kernel(float dti, Elastic_Shot* shot, int num_z);
 
 	void DEMUX_Receiver_Values(Elastic_Shot* shot);
 

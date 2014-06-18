@@ -237,7 +237,7 @@ private:
 
 	void Launch_Input_Transfers();
 	void Launch_Output_Transfers();
-	void Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_Shot* shot);
+	void Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_Shot* shot, int num_z);
 };
 
 #endif

@@ -317,11 +317,11 @@ void Elastic_Pipeline::Launch_Simple_Copy_Kernel()
 	}
 }
 
-void Elastic_Pipeline::Launch_Compute_Kernel(float dti, Elastic_Shot* shot)
+void Elastic_Pipeline::Launch_Compute_Kernel(float dti, Elastic_Shot* shot, int num_z)
 {
 	for (int i = 0;  i < _num_optseq_launch;  ++i)
 	{
-		_buffers[_optseq_launch[i]]->Launch_Compute_Kernel(false, dti, shot);
+		_buffers[_optseq_launch[i]]->Launch_Compute_Kernel(false, dti, shot, num_z);
 	}
 }
 

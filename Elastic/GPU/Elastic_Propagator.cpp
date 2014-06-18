@@ -58,6 +58,10 @@ void Elastic_Propagator::_init(
 	)
 {
 	_log_level = log_level;
+	_num_z = 0L;
+	_num_z_throughput = 0L;
+	_num_num_z = 0;
+	_curr_num_z = 0;
 	_dti = 0.0;
 	_slow_data_transfers;
 	_timer1 = 0.0;
@@ -983,6 +987,24 @@ void Elastic_Propagator::Shift_Pinned_Buffer()
 
 void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot)
 {
+	int vol_nz = _job->Get_Propagation_NZ() / 8;
+	_num_z = new int[vol_nz];
+	_num_z_throughput = new float[vol_nz];
+	_num_num_z = 0;
+	for (int num_z = 2;  num_z < vol_nz;  ++num_z)
+	{
+		int z_per_block = (vol_nz + num_z - 1) / num_z;
+		int z_remainder = vol_nz - (num_z-1) * z_per_block;
+		if (z_remainder > 0 && z_per_block >= 4)
+		{
+			_num_z[_num_num_z] = num_z;
+			_num_z_throughput[_num_num_z] = 0.0f;
+			printf("num_z = %d -> z_per_block = %d\n",_num_z[_num_num_z],z_per_block);
+			++_num_num_z;
+		}
+	}
+	_curr_num_z = 0;
+
 	const double courant_safe = 0.95;
  
 	// determine internal timestepping
@@ -1066,6 +1088,12 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot)
 
 void Elastic_Propagator::Release_Resources_After_Propagation(Elastic_Shot* shot)
 {
+	delete [] _num_z;
+	delete [] _num_z_throughput;
+	_num_z = 0L;
+	_num_z_throughput = 0L;
+	_num_num_z = 0;
+	_curr_num_z = 0;
 	for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe) _pipes[iPipe]->Free_RxLoc_Buffer(shot);
 	shot->Free_Pinned_Host_Memory(this);
 	shot->Free_Trace_Resample_Buffers();
@@ -1103,11 +1131,11 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 	if (_slow_data_transfers)
 	{
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Data_Transfers();
-		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot);
+		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot,_num_z[_curr_num_z]);
 	}
 	else
 	{
-		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot);
+		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot,_num_z[_curr_num_z]);
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Data_Transfers();
 	}
 	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Receiver_Data_Transfers(shot);
@@ -1183,12 +1211,58 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			_timer3 = 0.0;
 			_timer4 = 0.0;
 			_timer5 = 0.0;
-			printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+			if (_num_num_z > 1)
+			{
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+			}
+			else
+			{
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+			}
 #else
-			printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s);
+			if (_num_num_z > 1)
+			{
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s);
+			}
+			else
+			{
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s);
+			}
 #endif
+			if (_num_num_z > 1)
+			{
+				_num_z_throughput[_curr_num_z] = mcells_per_s;
+				if (_curr_num_z < _num_num_z-1)
+				{
+					++_curr_num_z;
+				}
+				else
+				{
+					// bubble sort throughput numbers and throw away bottom half
+					bool go_on = false;
+					do
+					{
+						go_on = false;
+						for (int i = 0;  i < _num_num_z-1;  ++i)
+						{
+							if (_num_z_throughput[i+1] > _num_z_throughput[i])
+							{
+								float tmp = _num_z_throughput[i];
+								_num_z_throughput[i] = _num_z_throughput[i+1];
+								_num_z_throughput[i+1] = tmp;
+								int itmp = _num_z[i];
+								_num_z[i] = _num_z[i+1];
+								_num_z[i+1] = itmp;
+								go_on = true;
+							}
+						}
+					} while (go_on);
+					_num_num_z = _num_num_z / 2;
+					_curr_num_z = 0;
+				}
+			}
 
-//#ifdef DEBUG_TMJ
+#ifdef DEBUG_TMJ
 			int iy = (int)round(shot->Get_Propagation_Source_Y());
 			char path[4096];
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_P",iy,ts);
@@ -1202,7 +1276,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vz",iy,ts);
                         _job->Write_XZ_Slice(path, 2, iy);
-//#endif
+#endif
 
 			/*
 			int iy = 411;
