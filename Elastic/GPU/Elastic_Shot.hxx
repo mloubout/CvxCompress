@@ -17,6 +17,7 @@ public:
 	double Get_Propagation_Time();
 
 	int Get_Source_Index() {return _souidx;}
+	void Set_Source_Index(int souidx){_souidx =souidx;}
 
 	int Get_Ordertime() {return _ordertime;}
 
@@ -26,6 +27,12 @@ public:
 	double Get_Source_X() {return _x;}
 	double Get_Source_Y() {return _y;}
 	double Get_Source_Z() {return _z;}
+
+	void Set_Source_X(double x){_x =x;}
+	void Set_Source_Y(double y){_y =y;}
+	void Set_Source_Z(double z){_z =z;}
+
+	void Set_Source(double x, double y, double z){_x=x;_y=y;_z=z;}
 
 	double Get_Propagation_Source_X();
 	double Get_Propagation_Source_Y();
