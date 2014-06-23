@@ -64,6 +64,7 @@ public:
 
 	double Find_Deepest_Receiver();
 
+
 	void Add_SEGY_File(Elastic_SEGY_File* segy_file);
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
 

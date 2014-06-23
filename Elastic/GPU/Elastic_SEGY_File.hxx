@@ -54,6 +54,11 @@ public:
 		double interval
 		);
 
+	void Add_Receiver_Array(int nrec, 
+		double* rec_x,
+		double* rec_y,
+		double* rec_z);
+
 	int Compute_Receiver_Locations(
 		double*& rcv_x,
 		double*& rcv_y,
@@ -102,6 +107,10 @@ private:
 
 	Elastic_SEGY_File_Receiver_Range** _rcv_ranges;
 	int _num_rcv_ranges;
+	double* _h_user_rcv_x;
+	double* _h_user_rcv_y;
+	double* _h_user_rcv_z;
+	int _num_user_rcv;
 
 	Elastic_SEGY_File_Receiver_Range* _Get_Receiver_Range(int range_idx);
 };

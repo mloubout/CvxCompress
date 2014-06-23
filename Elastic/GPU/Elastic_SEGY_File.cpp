@@ -34,10 +34,21 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_rcv_ranges = 0L;
 	_num_rcv_ranges = 0;
 	_interpolation_method = Trilinear;
+
+	_h_user_rcv_x = 0L;
+	_h_user_rcv_y = 0L;
+	_h_user_rcv_z = 0L;
 }
 
 Elastic_SEGY_File::~Elastic_SEGY_File()
 {
+	delete [] _h_user_rcv_x;
+	_h_user_rcv_x = 0L;
+	delete [] _h_user_rcv_y;
+	_h_user_rcv_y = 0L;
+	delete [] _h_user_rcv_z;
+	_h_user_rcv_z = 0L;
+
 	if (_base_filename != 0L) free(_base_filename);
 }
 
@@ -306,6 +317,22 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	}
 }
 
+/*Add an array of receivers that may not have a fixed range. Range is not set here!
+*/
+void Elastic_SEGY_File::Add_Receiver_Array(int nrec, double* rcv_x,double* rcv_y, double* rcv_z) {
+	_h_user_rcv_x = new double[nrec]; 
+	_h_user_rcv_y = new double[nrec]; 
+	_h_user_rcv_z = new double[nrec]; 
+	_num_user_rcv = nrec;
+	
+	for (int i=0;i<_num_user_rcv;i++) {
+		_h_user_rcv_x[i]=rcv_x[i];
+		_h_user_rcv_y[i]=rcv_y[i];
+		_h_user_rcv_z[i]=rcv_z[i];
+	}
+}
+
+
 void Elastic_SEGY_File::Add_Receiver_Range_X(
 		int range_idx,
 		double start,
@@ -366,6 +393,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 	iline = 0L;
 	xline = 0L;
 	trcens = 0L;
+
+	if(_h_user_rcv_x=0L) { //Array of receivers has not been specified by user, create arrays from range in parmfile
+	
 	for (int i = 0;  i < _num_rcv_ranges;  ++i)
 	{
 		double *x,*y,*z;
@@ -429,6 +459,13 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 
 				num = num + nn;
 			}
+		}
+	}
+	} else { //Array of receivers has been specified by the user
+		for (int i=0;i<_num_user_rcv;i++) {
+			rcv_x[i]=_h_user_rcv_x[i];
+			rcv_y[i]=_h_user_rcv_y[i];
+			rcv_z[i]=_h_user_rcv_z[i];
 		}
 	}
 	return num;
