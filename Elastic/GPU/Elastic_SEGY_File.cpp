@@ -38,6 +38,9 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_h_user_rcv_x = 0L;
 	_h_user_rcv_y = 0L;
 	_h_user_rcv_z = 0L;
+	_h_user_iline = 0L;
+	_h_user_xline = 0L;
+	_h_user_trcens = 0L;
 }
 
 Elastic_SEGY_File::~Elastic_SEGY_File()
@@ -48,6 +51,12 @@ Elastic_SEGY_File::~Elastic_SEGY_File()
 	_h_user_rcv_y = 0L;
 	delete [] _h_user_rcv_z;
 	_h_user_rcv_z = 0L;
+	delete [] _h_user_iline;
+	_h_user_iline = 0L;
+	delete [] _h_user_xline;
+	_h_user_xline = 0L;
+	delete [] _h_user_trcens;
+	_h_user_trcens = 0L;
 
 	if (_base_filename != 0L) free(_base_filename);
 }
@@ -86,6 +95,24 @@ void Elastic_SEGY_File::swap4bytes(int *i4, int n)
 		c = (i >> 8) & cmask;  d = (i >> 24) & dmask;
 		i4[k] = a | b | c | d ;
 	}
+}
+
+char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
+{
+	char* trace_type_str;
+	if (flag == 1)
+		trace_type_str = "P";
+	else if (flag == 2)
+		trace_type_str = "Vx";
+	else if (flag == 4)
+		trace_type_str = "Vy";
+	else if (flag == 8)
+		trace_type_str = "Vz";
+	else
+		trace_type_str = "??";
+
+	sprintf(buf,"%s_%05d_%s.segy",_base_filename,_fileidx,trace_type_str);
+	return buf;
 }
 
 void Elastic_SEGY_File::Write_SEGY_File(
@@ -170,20 +197,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
 	/* cmp_x starts at byte position 201 */
 
-	char* trace_type_str;
-	if (flag == 1)
-		trace_type_str = "P";
-	else if (flag == 2)
-		trace_type_str = "Vx";
-	else if (flag == 4)
-		trace_type_str = "Vy";
-	else if (flag == 8)
-		trace_type_str = "Vz";
-	else
-		trace_type_str = "??";
-
 	char filename[4096];
-	sprintf(filename,"%s_%05d_%s.segy",_base_filename,_fileidx,trace_type_str);
+	Get_Full_Path(filename,flag);
 	FILE* fp = fopen(filename, "wb");
 	if (fp != 0L)
 	{
@@ -319,16 +334,31 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 /*Add an array of receivers that may not have a fixed range. Range is not set here!
 */
-void Elastic_SEGY_File::Add_Receiver_Array(int nrec, double* rcv_x,double* rcv_y, double* rcv_z) {
+void Elastic_SEGY_File::Add_Receiver_Array(
+	int nrec, 
+	double* rcv_x,
+	double* rcv_y, 
+	double* rcv_z,
+	int* iline,
+	int* xline,
+	int* trcens
+	) 
+{
 	_h_user_rcv_x = new double[nrec]; 
 	_h_user_rcv_y = new double[nrec]; 
-	_h_user_rcv_z = new double[nrec]; 
+	_h_user_rcv_z = new double[nrec];
+	_h_user_iline = new int[nrec];
+	_h_user_xline = new int[nrec];
+	_h_user_trcens = new int[nrec];
 	_num_user_rcv = nrec;
 	
 	for (int i=0;i<_num_user_rcv;i++) {
 		_h_user_rcv_x[i]=rcv_x[i];
 		_h_user_rcv_y[i]=rcv_y[i];
 		_h_user_rcv_z[i]=rcv_z[i];
+		_h_user_iline[i]=iline[i];
+		_h_user_xline[i]=xline[i];
+		_h_user_trcens[i]=trcens[i];
 	}
 }
 
@@ -394,78 +424,87 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 	xline = 0L;
 	trcens = 0L;
 
-	if(_h_user_rcv_x=0L) { //Array of receivers has not been specified by user, create arrays from range in parmfile
-	
-	for (int i = 0;  i < _num_rcv_ranges;  ++i)
-	{
-		double *x,*y,*z;
-		int *il,*xl,*trce;
-		int nn = _rcv_ranges[i]->Compute_Receiver_Locations(x,y,z,il,xl,trce);
-		if (nn > 0)
+	if (_h_user_rcv_x == 0L) { //Array of receivers has not been specified by user, create arrays from range in parmfile
+
+		for (int i = 0;  i < _num_rcv_ranges;  ++i)
 		{
-			if (num == 0)
+			double *x,*y,*z;
+			int *il,*xl,*trce;
+			int nn = _rcv_ranges[i]->Compute_Receiver_Locations(x,y,z,il,xl,trce);
+			if (nn > 0)
 			{
-				rcv_x = x;
-				rcv_y = y;
-				rcv_z = z;
-				iline = il;
-				xline = xl;
-				trcens = trce;
-				num = nn;
-			}
-			else
-			{
-				double* tmp = new double[num+nn];
-				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_x[j];
-				for (int j = 0;  j < nn;  ++j) tmp[j+num] = x[j];
-				delete [] rcv_x;
-				delete [] x;
-				rcv_x = tmp;
+				if (num == 0)
+				{
+					rcv_x = x;
+					rcv_y = y;
+					rcv_z = z;
+					iline = il;
+					xline = xl;
+					trcens = trce;
+					num = nn;
+				}
+				else
+				{
+					double* tmp = new double[num+nn];
+					for (int j = 0;  j < num;  ++j) tmp[j] = rcv_x[j];
+					for (int j = 0;  j < nn;  ++j) tmp[j+num] = x[j];
+					delete [] rcv_x;
+					delete [] x;
+					rcv_x = tmp;
 
-				tmp = new double[num+nn];
-				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_y[j];
-				for (int j = 0;  j < nn;  ++j) tmp[j+num] = y[j];
-				delete [] rcv_y;
-				delete [] y;
-				rcv_y = tmp;
+					tmp = new double[num+nn];
+					for (int j = 0;  j < num;  ++j) tmp[j] = rcv_y[j];
+					for (int j = 0;  j < nn;  ++j) tmp[j+num] = y[j];
+					delete [] rcv_y;
+					delete [] y;
+					rcv_y = tmp;
 
-				tmp = new double[num+nn];
-				for (int j = 0;  j < num;  ++j) tmp[j] = rcv_z[j];
-				for (int j = 0;  j < nn;  ++j) tmp[j+num] = z[j];
-				delete [] rcv_z;
-				delete [] z;
-				rcv_z = tmp;
+					tmp = new double[num+nn];
+					for (int j = 0;  j < num;  ++j) tmp[j] = rcv_z[j];
+					for (int j = 0;  j < nn;  ++j) tmp[j+num] = z[j];
+					delete [] rcv_z;
+					delete [] z;
+					rcv_z = tmp;
 
-				int* itmp = new int[num+nn];
-				for (int j = 0;  j < num;  ++j) itmp[j] = iline[j];
-				for (int j = 0;  j < nn;  ++j) itmp[j+num] = il[j];
-				delete [] iline;
-				delete [] il;
-				iline = itmp;
+					int* itmp = new int[num+nn];
+					for (int j = 0;  j < num;  ++j) itmp[j] = iline[j];
+					for (int j = 0;  j < nn;  ++j) itmp[j+num] = il[j];
+					delete [] iline;
+					delete [] il;
+					iline = itmp;
 
-				itmp = new int[num+nn];
-				for (int j = 0;  j < num;  ++j) itmp[j] = xline[j];
-				for (int j = 0;  j < nn;  ++j) itmp[j+num] = xl[j];
-				delete [] xline;
-				delete [] xl;
-				xline = itmp;
+					itmp = new int[num+nn];
+					for (int j = 0;  j < num;  ++j) itmp[j] = xline[j];
+					for (int j = 0;  j < nn;  ++j) itmp[j+num] = xl[j];
+					delete [] xline;
+					delete [] xl;
+					xline = itmp;
 
-				itmp = new int[num+nn];
-				for (int j = 0;  j < num;  ++j) itmp[j] = trcens[j];
-				for (int j = 0;  j < nn;  ++j) itmp[j+num] = trce[j];
-				delete [] trcens;
-				delete [] trce;
-				trcens = itmp;
+					itmp = new int[num+nn];
+					for (int j = 0;  j < num;  ++j) itmp[j] = trcens[j];
+					for (int j = 0;  j < nn;  ++j) itmp[j+num] = trce[j];
+					delete [] trcens;
+					delete [] trce;
+					trcens = itmp;
 
-				num = num + nn;
+					num = num + nn;
+				}
 			}
 		}
-	}
 	} else { //Array of receivers has been specified by the user
+		rcv_x = new double[_num_user_rcv];
+		rcv_y = new double[_num_user_rcv];
+		rcv_z = new double[_num_user_rcv];
+		iline = new int[_num_user_rcv];
+		xline = new int[_num_user_rcv];
+		trcens = new int[_num_user_rcv];
 		for (int i=0;i<_num_user_rcv;i++) {
 			rcv_x[i]=_h_user_rcv_x[i];
 			rcv_y[i]=_h_user_rcv_y[i];
 			rcv_z[i]=_h_user_rcv_z[i];
+			iline[i]=_h_user_iline[i];
+			xline[i]=_h_user_xline[i];
+			trcens[i]=_h_user_trcens[i];
 		}
 	}
 	return num;

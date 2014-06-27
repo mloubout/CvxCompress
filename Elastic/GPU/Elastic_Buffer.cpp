@@ -701,7 +701,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				shot->Get_Amplitude1(),
 				shot->Get_Amplitude2(),
 				shot->Get_Amplitude3(),
-				shot->Get_Source_Wavelet_Sample(cmp_block_timestep),
+				shot->Get_Source_Wavelet_Sample(cmp_block_timestep,true),
 				shot->Get_Propagation_Source_X(),
 				shot->Get_Propagation_Source_Y(),
 				shot->Get_Propagation_Source_Z()
@@ -712,8 +712,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			// launch S-T kernel
 			float swav = 
 				cmp_block_timestep > 1 ? 
-				(shot->Get_Source_Wavelet_Sample(cmp_block_timestep-1) + shot->Get_Source_Wavelet_Sample(cmp_block_timestep))/2.0f : 
-				shot->Get_Source_Wavelet_Sample(cmp_block_timestep)/2.0f;
+				(shot->Get_Source_Wavelet_Sample(cmp_block_timestep-1,false) + shot->Get_Source_Wavelet_Sample(cmp_block_timestep,false))/2.0f : 
+				shot->Get_Source_Wavelet_Sample(cmp_block_timestep,false)/2.0f;
 			Host_Propagate_Stresses_Orthorhombic_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),

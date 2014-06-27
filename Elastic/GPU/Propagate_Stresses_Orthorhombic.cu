@@ -286,9 +286,6 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
         int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * 4;
 
         // populate persistent buffers
-        vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset]);
-        vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+one_wf_size_f]);
-	vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+2*one_wf_size_f]);
 	if (z0 == 0)
 	{
 		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset]);

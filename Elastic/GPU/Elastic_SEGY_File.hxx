@@ -35,6 +35,8 @@ public:
 
         int Get_Selection_Flags();
 
+	char* Get_Full_Path(char* buf, int flag);
+
 	void Add_Receiver_Range_X(
 		int range_idx,
 		double start,
@@ -54,10 +56,15 @@ public:
 		double interval
 		);
 
-	void Add_Receiver_Array(int nrec, 
+	void Add_Receiver_Array(
+		int nrec, 
 		double* rec_x,
 		double* rec_y,
-		double* rec_z);
+		double* rec_z,
+		int* iline,
+		int* xline,
+		int* trcens
+		);
 
 	int Compute_Receiver_Locations(
 		double*& rcv_x,
@@ -110,6 +117,9 @@ private:
 	double* _h_user_rcv_x;
 	double* _h_user_rcv_y;
 	double* _h_user_rcv_z;
+	int* _h_user_iline;
+	int* _h_user_xline;
+	int* _h_user_trcens;
 	int _num_user_rcv;
 
 	Elastic_SEGY_File_Receiver_Range* _Get_Receiver_Range(int range_idx);

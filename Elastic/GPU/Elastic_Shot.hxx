@@ -39,7 +39,24 @@ public:
 	double Get_Propagation_Source_Z();
 
 	bool Inject_Source(int discrete_timestep) {return discrete_timestep >= 0 && discrete_timestep < _tsrc ? true : false;}
-	double Get_Source_Wavelet_Sample(int discrete_timestep) {return discrete_timestep >= 0 && discrete_timestep < _tsrc ? _stf[discrete_timestep] : 0.0f;}
+	double Get_Source_Wavelet_Sample(int discrete_timestep, bool Is_Particle_Velocity)
+	{
+		if (discrete_timestep >= 0 && discrete_timestep < _tsrc)
+		{
+			if (Is_Particle_Velocity && _soutype == Source_Type_Force)
+			{
+				return _stf[discrete_timestep];
+			}
+			else
+			{
+				return _stf_int[discrete_timestep];
+			}
+		}
+		else
+		{
+			return 0.0;
+		}
+	}
 
 	static const int Source_Type_Unknown = 0;
 	static const int Source_Type_Force = 1;
@@ -59,6 +76,7 @@ public:
 	double Get_Amplitude3() {return _ampl3;}
 
 	bool Use_Builtin_Source_Wavelet(const char* wavetype, double max_freq, const char* parmfile_path, int line_num);
+	bool Read_Source_Wavelet_From_File(const char* wavelet_path, double max_freq, int filter_order);
 
 	void Prepare_Source_Wavelet(double dt);
 
@@ -129,10 +147,13 @@ private:
 
 	int _wavetype;
 	double _max_freq;
+	char* _wavelet_path;
+	int _filter_order;
 
 	// from Joe Stefani
 	int _tsrc;
 	double* _stf;
+	double* _stf_int;
 	void _src(double dt, double fmax, int type, char* stfname, int* tsrc, double* stf);
 	// Ricker wavelet
 	void _generate_ricker_wavelet(double dt, double fmax, int* tsrc, double* stf);

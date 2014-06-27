@@ -12,6 +12,7 @@
 #include "Extract_Receiver_Values.hxx"
 #include "Voxet.hxx"
 #include "Global_Coordinate_System.hxx"
+#include "DFT.hxx"
 #include "gpuAssert.h"
 
 //#define RESAMPLE_DEBUG
@@ -32,8 +33,11 @@ Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx,
 	_ampl3 = 0.0;
 	_wavetype = 0;
 	_max_freq = 10.0;
+	_wavelet_path = 0L;
+	_filter_order = 7;
 	_tsrc = 0;
-	_stf = new double[4096];
+	_stf = new double[65536];
+	_stf_int = new double[65536];
 	_segy_files = 0L;
 	_num_segy_files = 0;
         _totSteps = 0;
@@ -72,6 +76,7 @@ Elastic_Shot::~Elastic_Shot()
 {
 	Free_Trace_Resample_Buffers();
 	if (_stf != 0L) delete [] _stf;
+	if (_stf_int != 0L) delete [] _stf_int;
 	if (_num_segy_files > 0)
 	{
 		for (int i = 0;  i < _num_segy_files;  ++i)
@@ -106,6 +111,7 @@ Elastic_Shot::~Elastic_Shot()
 		delete [] _h_rcv_trcidx;
 		delete [] _h_rcv_trcflag;
 	}
+	if (_wavelet_path != 0L) free(_wavelet_path);
 }
 
 double Elastic_Shot::Get_Propagation_Source_X() 
@@ -162,9 +168,58 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt)
 		//for (int i = 0;  i < _tsrc;  ++i) _stf[i] = 0.0f;
 		//_stf[3] = 1.0f;
 	}
-	else if(_wavetype == 2)
+	else if (_wavetype == 2)
 	{
 		_generate_ricker_wavelet(dt, _max_freq, &_tsrc, _stf);
+	}
+	else if (_wavetype == 3)
+	{
+		_src(dt, _max_freq, 2, _wavelet_path, &_tsrc, _stf);
+	}
+	// find peak
+	int ipeak = 0;
+	float peak_val = _stf[0];
+	for (int i = 1;  i < _tsrc;  ++i) if (_stf[i] > peak_val) {ipeak = i;  peak_val = _stf[i];}
+	int ichoplo = ipeak;
+	while (_stf[ichoplo-1] > 0.0f) --ichoplo;
+	int ichophi = ipeak;
+	int nzc = 0;  // number of zero crossings
+	while (nzc < 2)
+	{
+		if (_stf[ichophi] > 0.0f && _stf[ichophi+1] <= 0.0f)
+		{
+			++nzc;
+		}
+		++ichophi;
+	};
+	printf("ipeak = %d, ichoplo = %d, ichophi = %d\n",ipeak,ichoplo,ichophi);
+	//for (int i = ichoplo-1;  i >= 0;  --i) _stf[i] = 0.0f;
+	//for (int i = ichophi+1;  i < _tsrc;  ++i) _stf[i] = 0.0f;
+
+	FILE* fp = fopen("filtered.txt", "w");
+	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp, "%e %e\n",(double)i*dt,_stf[i]);
+	fclose(fp);
+	Compute_Time_Integrated_Source_Wavelet(_log_level,_stf,_stf_int,_tsrc,dt);
+	fp = fopen("filtered_int.txt", "w");
+	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp,"%e %e\n",(double)i*dt,_stf_int[i]);
+	fclose(fp);
+}
+
+bool Elastic_Shot::Read_Source_Wavelet_From_File(const char* wavelet_path, double max_freq, int filter_order)
+{
+	FILE* fp = fopen(wavelet_path, "rb");
+	if (fp != 0L)
+	{
+		fclose(fp);
+		_wavelet_path = strdup(wavelet_path);
+		_max_freq = max_freq;
+		_filter_order = filter_order;
+		_wavetype = 3;
+		return false;
+	}
+	else
+	{
+		return true;
 	}
 }
 
@@ -278,6 +333,10 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
                 double* stffine = (double*)malloc((nfine+1)*sizeof(double));
                 for(int i=0; i<nfine; i++) fscanf(stffile,"%lf", &stffine[i]);
                 stffine[nfine] = 0.;
+		
+		double f_cut = Butterworth_Low_Pass_Filter_Find_Fcut_From_Fmax(_log_level,fmax,_filter_order);
+		if (_log_level >= 4) printf("Using f_cut = %.2lfHz for f_max = %.2lf\n",f_cut,fmax);
+		Apply_Butterworth_Low_Pass_Filter(_log_level,stffine,stffine,nfine,dtfine,f_cut,_filter_order);
 
                 int imax = (int)((nfine-1)*dtfine/dt) + 1;
                 double absmax = -1e37;
@@ -298,7 +357,7 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
                 for(int i=0; i<imax; i++)
                 {
                         stf[i] /= absmax;
-                        if (_log_level >= 4) printf("stf[%d] = %e\n",i,stf[i]);
+                        if (_log_level >= 5) printf("stf[%d] = %e\n",i,stf[i]);
                 }
         }
 }
@@ -357,7 +416,7 @@ void Elastic_Shot::Start_Extract_Receiver_Values_From_Device(
 	{
 		float* src = _h_pinned_rcv_loc[pipe->Get_ID()] + ((float*)(_h_rcv_binned[pipe->Get_ID()][max_block_offset]) - (float*)(_h_rcv_binned[pipe->Get_ID()][0]));
 		int length = _Comp_RxLoc_Length(_h_rcv_binned[pipe->Get_ID()][max_block_offset]);
-		gpuErrchk( cudaMemcpyAsync(d_rxloc_block[num_blocks-1], src, length, cudaMemcpyHostToDevice, prop->Get_Receiver_Stream(device_id)) );
+		if (length > 0) gpuErrchk( cudaMemcpyAsync(d_rxloc_block[num_blocks-1], src, length, cudaMemcpyHostToDevice, prop->Get_Receiver_Stream(device_id)) );
 	}
 }
 
@@ -745,6 +804,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 
 void Elastic_Shot::Write_SEGY_Files()
 {
+	printf("Elastic_Shot::Write_SEGY_Files\n");
 	Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
 	{
@@ -757,6 +817,8 @@ void Elastic_Shot::Write_SEGY_Files()
 			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
 				if (_h_trace_iFile[iTrc] == iFile && _h_trace_flag[iTrc] == flag)
 					++count;
+			char filename[4096];
+			printf("%s has %d traces.\n",_segy_files[iFile]->Get_Full_Path(filename,flag),count);
 
 			// gather output traces and write to file
 			if (count > 0)
@@ -799,36 +861,50 @@ void Elastic_Shot::Write_SEGY_Files()
 // compute the length of this rxloc buffer in bytes
 unsigned long Elastic_Shot::_Comp_RxLoc_Length(float* rxloc)
 {
-	int* iloc = (int*)rxloc;
-	int num_files = iloc[0];
-	unsigned long length = (unsigned long)(1+2*num_files);
-	for (int iFile = 0;  iFile < num_files;  ++iFile)
+	if (rxloc != 0L)
 	{
-		int nn = iloc[1+2*iFile];
-		length += 3 * nn;
+		int* iloc = (int*)rxloc;
+		int num_files = iloc[0];
+		unsigned long length = (unsigned long)(1+2*num_files);
+		for (int iFile = 0;  iFile < num_files;  ++iFile)
+		{
+			int nn = iloc[1+2*iFile];
+			length += 3 * nn;
+		}
+		return length * sizeof(float);
 	}
-	return length * sizeof(float);
+	else
+	{
+		return 0L;
+	}
 }
 
 // compute the maximum length needed for this rxres buffer in bytes.
 // receivers are filtered on flags
 unsigned long Elastic_Shot::_Comp_RxRes_Length(float* rxloc, int flags)
 {
-	int* iloc = (int*)rxloc;
-        int num_files = iloc[0];
-	unsigned long length = 0;
-	for (int iFile = 0;  iFile < num_files;  ++iFile)
-        {
-                int curr_nn = iloc[1+2*iFile];
-		int curr_flags = iloc[2+2*iFile] & flags;
-		int num_wf = 0;
-		if (curr_flags & 1) ++num_wf;
-		if (curr_flags & 2) ++num_wf;
-		if (curr_flags & 4) ++num_wf;
-		if (curr_flags & 8) ++num_wf;
-		length += num_wf * curr_nn;
+	if (rxloc != 0L)
+	{
+		int* iloc = (int*)rxloc;
+		int num_files = iloc[0];
+		unsigned long length = 0;
+		for (int iFile = 0;  iFile < num_files;  ++iFile)
+		{
+			int curr_nn = iloc[1+2*iFile];
+			int curr_flags = iloc[2+2*iFile] & flags;
+			int num_wf = 0;
+			if (curr_flags & 1) ++num_wf;
+			if (curr_flags & 2) ++num_wf;
+			if (curr_flags & 4) ++num_wf;
+			if (curr_flags & 8) ++num_wf;
+			length += num_wf * curr_nn;
+		}
+		return length * sizeof(float);
 	}
-	return length * sizeof(float);
+	else
+	{
+		return 0L;
+	}
 }
 
 // Calculate the maximum size of the buffer on the GPU side used to hold rx locations
@@ -1027,7 +1103,6 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                                 delete [] rcv_z;
                         }
                 }
-                printf("Total of %d receivers, %d traces in pipe %d.\n",tot_rx,tot_traces,iPipe);
 
                 // ..bin receiver locations
                 _h_rcv_loc_size_f[iPipe] = _nBlks * (1 + 2 * _num_segy_files) + 3 * tot_rx;
@@ -1077,11 +1152,12 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                                                         floc[off+2] = rcv_z[iRx] - _job->Get_Propagation_Z0();
 							++file_offset;
 						
-							for (int iSel = 0;  iSel < 4;  ++iSel)
+							for (int iSel = 0, trace_no_off = 0;  iSel < 4;  ++iSel)
 							{
 								if (flags & (1 << iSel))
 								{
-									trcidx[trace_no_idx] = trace_no + iSel;
+									trcidx[trace_no_idx] = trace_no + trace_no_off;
+									++trace_no_off;
 									trcflag[trace_no_idx] = 1 << iSel;
 									++trace_no_idx;
 								}

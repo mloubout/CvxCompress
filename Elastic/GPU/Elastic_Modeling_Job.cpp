@@ -672,6 +672,30 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			if (!error)
 			{
+				int souidx;
+				char wavelet_path[4096];
+				double fmax;
+				int filter_order;
+				int matched = sscanf(s, "SHOT %d SOURCE_WAVELET FILE %s %lf %d", &souidx, wavelet_path, &fmax, &filter_order);
+				if (matched == 4)
+				{
+					Elastic_Shot* shot = Get_Shot(souidx);
+                                        if (shot == 0L)
+                                        {
+                                                printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+                                                error = true;
+                                                break;
+                                        }
+                                        else
+                                        {
+						error = shot->Read_Source_Wavelet_From_File(wavelet_path,fmax,filter_order);
+                                                if (error) break;
+                                                if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s and filtered to comply with F_max=%.2fHz.\n",shot->Get_Source_Index(),wavelet_path,fmax);
+                                        }
+				}
+			}
+			if (!error)
+			{
 				int souidx, fileidx;
 				char base_filename[4096];
 				double sample_rate;
