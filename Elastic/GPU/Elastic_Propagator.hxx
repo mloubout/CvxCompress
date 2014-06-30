@@ -169,6 +169,7 @@ private:
 			int inc_z
 			);
 	unsigned int _Get_Earth_Model_Word(int widx, int x,int y,int z);
+	void _Set_Earth_Model_Word(int widx, int x,int y,int z, unsigned int new_word);
 
 	void _NABC_TOP_Extend(int z0);
 	void _NABC_BOT_Extend(int z1);

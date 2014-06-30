@@ -67,6 +67,8 @@ public:
 	const char* Get_Earth_Model_Attribute_Moniker(int attr_idx);
 
 	float Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool& error);
+	void Set_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, float new_value, bool& error);
+
 	float Get_Earth_Model_Attribute_Min(int attr_idx, bool& error);
 	float Get_Earth_Model_Attribute_Max(int attr_idx, bool& error);
 	float Get_Earth_Model_Attribute_Range(int attr_idx, bool& error);
@@ -84,6 +86,10 @@ public:
 
 	void Write_Earth_Model_Attribute_XY_Slice(const char* path, int attr_idx, int iz);
 	void Write_Earth_Model_XY_Slice(const char* path, int iz);
+
+	// as name implies, a hack to test what happens if we manipulate Qp to mute Scholte waves
+	// traveling along the sea floor.
+	void HACK_Mute_Sea_Floor();
 
 	//
 	// wf_type : 0->Vx, 1->Vy, 2->Vz, 3->P

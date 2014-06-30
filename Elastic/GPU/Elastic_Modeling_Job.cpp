@@ -1514,6 +1514,41 @@ float Elastic_Modeling_Job::Get_Earth_Model_Attribute(int attr_idx, int ix, int 
 	}
 }
 
+void Elastic_Modeling_Job::Set_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, float new_value, bool& error)
+{
+	if (_propagator != 0L && attr_idx >= 0 && attr_idx < _num_em_props)
+        {
+                int widx = _pck_widx[attr_idx];
+		unsigned int word = _propagator->_Get_Earth_Model_Word(widx,ix,iy,iz);
+		_Pack_Earth_Model_Attribute(word,attr_idx,new_value);
+		_propagator->_Set_Earth_Model_Word(widx,ix,iy,iz,word);
+		error = false;
+	}
+	else
+	{
+		error = true;
+	}	
+}
+
+void Elastic_Modeling_Job::HACK_Mute_Sea_Floor()
+{
+	float Q_min_val = Get_Earth_Model_Attribute_Max(Attr_Idx_Q);
+	printf("Q_min_val = %e\n",Q_min_val);
+	for (int ix = 0;  ix < _prop_nx;  ++ix)
+	{
+		for (int iy = 0;  iy < _prop_ny;  ++iy)
+		{
+			// locate sea floor
+			bool error;
+			int iz = -1;
+			for (; Get_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,iz+1,error) < 1.1f && !error;  ++iz);
+			// set sea floor plus two cells (vertically) to minimum Q
+			// note that earth model contains reciprocal of Q, so we need to fetch the maximum value for this
+			for (int my_iz = iz;  my_iz < iz+3;  ++my_iz) Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,Q_min_val,error);
+		}
+	}
+}
+
 void Elastic_Modeling_Job::Write_Earth_Model_Attribute_XZ_Slice(const char* path, int attr_idx, int iy)
 {
 	if (attr_idx >= 0 && attr_idx < _num_em_props)

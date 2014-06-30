@@ -196,6 +196,7 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt)
 	//for (int i = ichoplo-1;  i >= 0;  --i) _stf[i] = 0.0f;
 	//for (int i = ichophi+1;  i < _tsrc;  ++i) _stf[i] = 0.0f;
 
+#ifdef TMJ_DEBUG
 	FILE* fp = fopen("filtered.txt", "w");
 	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp, "%e %e\n",(double)i*dt,_stf[i]);
 	fclose(fp);
@@ -203,6 +204,7 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt)
 	fp = fopen("filtered_int.txt", "w");
 	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp,"%e %e\n",(double)i*dt,_stf_int[i]);
 	fclose(fp);
+#endif
 }
 
 bool Elastic_Shot::Read_Source_Wavelet_From_File(const char* wavelet_path, double max_freq, int filter_order)

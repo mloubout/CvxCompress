@@ -30,8 +30,9 @@ int main(int argc, char* argv[])
 		printf("Done!\n");
 
 		prop->Read_Earth_Model();
+		//job->HACK_Mute_Sea_Floor();
 		job->Write_Earth_Model_XZ_Slice("slices/xz_slice",job->Get_Propagation_NY()/2);
-		job->Write_Earth_Model_XY_Slice("slices/xy_slice",100);
+		//job->Write_Earth_Model_XY_Slice("slices/xy_slice",100);
 
 		printf("Allocating device memory...\n");
 		prop->Allocate_Device_Memory();

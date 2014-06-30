@@ -605,6 +605,14 @@ unsigned int Elastic_Propagator::_Get_Earth_Model_Word(int widx, int x,int y,int
 	return word[widx];
 }
 
+void Elastic_Propagator::_Set_Earth_Model_Word(int widx, int x,int y,int z, unsigned int new_word)
+{
+	unsigned int word[4];
+        Get_EM_Cell(x,y,z,word[0],word[1],word[2],word[3]);
+	word[widx] = new_word;
+	Set_EM_Cell(x,y,z,word[0],word[1],word[2],word[3]);
+}
+
 void Elastic_Propagator::_NABC_TOP_Extend(int z0)
 {
 	bool do_lo = z0 > 0 ? true : false;
@@ -1269,7 +1277,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
                         _job->Write_XZ_Slice(path, 3, iy);
 
 			int iz = (int)round(shot->Get_Propagation_Source_Z());
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xy_slice_Z=%04d_%04d_Vx",iz,ts);
+                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xy_slice_Z=%04d_%04d_P",iz,ts);
                         _job->Write_XY_Slice(path, 3, iz);
 			/*
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
