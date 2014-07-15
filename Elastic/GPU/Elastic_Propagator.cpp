@@ -396,6 +396,76 @@ Elastic_Propagator::~Elastic_Propagator()
 	}
 }
 
+Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Elastic_Modeling_Job* job)
+{
+	int cu_device_count;
+	cudaGetDeviceCount(&cu_device_count);
+	if (cu_device_count <= 0)
+	{
+		printf("No CUDA capable devices.\nExiting.\n");
+		exit(-1);
+	}
+
+	int num_devices = job->Get_Number_Of_GPU_Devices();
+	if (num_devices <= 0)
+	{
+		printf("Automatic determination of best GPU configuration...\n");
+		int nx = job->Get_Propagation_NX();
+		int Stencil_Order = 8;
+		int bsX = Stencil_Order / 2;
+		int NbX = (nx + bsX - 1) / bsX;
+		int max_devices_per_pipe = 1;
+		for (int i = 2;  i <= cu_device_count;  ++i)
+		{
+			int min_blocks = 8 * i + 1;
+			if (min_blocks < NbX)
+			{
+				max_devices_per_pipe = i;
+			}
+			else
+			{
+				break;
+			}
+		}
+		printf("Maximum devices that can fit in a single pipeline is %d.\n",max_devices_per_pipe);
+		int* my_device_ids = new int[max_devices_per_pipe];
+		for (int i = 0;  i < max_devices_per_pipe;  ++i) my_device_ids[i] = i;
+		job->Set_Number_Of_GPU_Pipes(1);
+		job->Set_GPU_Devices(my_device_ids,max_devices_per_pipe);
+		Elastic_Propagator* last_good_prop = 0L;
+		for (int i = 3;  i < 10;  ++i)
+		{
+			int min_blocks = max_devices_per_pipe * 2 * (i + 1) + 1;
+			if (min_blocks < NbX)
+			{
+				job->Set_Steps_Per_GPU(i);
+				Elastic_Propagator* prop = new Elastic_Propagator(job);
+				if (prop->Verify_All_Devices_Have_Enough_Memory())
+				{
+					delete last_good_prop;
+					last_good_prop = prop;
+					printf("Able to fit %d timesteps per GPU.\n",i);
+				}
+				else
+				{
+					break;
+				}
+			}
+			else
+			{
+				break;
+			}
+		}
+		delete [] my_device_ids;
+		job->_propagator = last_good_prop;
+		return last_good_prop;
+	}
+	else
+	{
+		return new Elastic_Propagator(job);
+	}
+}
+
 void Elastic_Propagator::Read_Earth_Model()
 {
 	_job->_Read_Earth_Model(this);
@@ -1273,11 +1343,11 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 #ifdef DEBUG_TMJ
 			int iy = (int)round(shot->Get_Propagation_Source_Y());
 			char path[4096];
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_P",iy,ts);
+                        sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts);
                         _job->Write_XZ_Slice(path, 3, iy);
 
 			int iz = (int)round(shot->Get_Propagation_Source_Z());
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xy_slice_Z=%04d_%04d_P",iz,ts);
+                        sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts);
                         _job->Write_XY_Slice(path, 3, iz);
 			/*
                         sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
@@ -1290,45 +1360,6 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
                         _job->Write_XZ_Slice(path, 2, iy);
 			*/
 #endif
-
-			/*
-			int iy = 411;
-			int iz = 960;
-			
-			char path[4096];
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_P",iy,ts);
-			_job->Write_XZ_Slice(path, 3, iy);
-			for (int iZZ = 0;  iZZ < 10;  ++iZZ)
-			{
-				int loc_iz = iz - iZZ * 50;
-				sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xy_slice_Z=%04d_%04d_P",loc_iz,ts);
-				_job->Write_XY_Slice(path, 3, loc_iz);
-			}
-			*/
-
-			/*
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Vx", ts);
-			_job->Write_XZ_Slice(path, 0, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Vy", ts);
-			_job->Write_XZ_Slice(path, 1, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Vz", ts);
-			_job->Write_XZ_Slice(path, 2, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_P", ts);
-			_job->Write_XZ_Slice(path, 3, iy);
-
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Txx", ts);
-			_job->Write_XZ_Slice(path, 6, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Tyy", ts);
-			_job->Write_XZ_Slice(path, 7, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Tzz", ts);
-			_job->Write_XZ_Slice(path, 8, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Txy", ts);
-			_job->Write_XZ_Slice(path, 9, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Txz", ts);
-			_job->Write_XZ_Slice(path, 10, iy);
-			sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_%04d_Tyz", ts);
-			_job->Write_XZ_Slice(path, 11, iy);
-			*/
 		}
 		clock_gettime(CLOCK_REALTIME, &_before);
 		return ts >= Number_Of_Timesteps ? true : false;
@@ -1772,6 +1803,18 @@ double Elastic_Propagator::Calculate_Cost(int y0, int ylen, int ny, int num_time
 		}
 	}
 	return cost;
+}
+
+bool Elastic_Propagator::Verify_All_Devices_Have_Enough_Memory()
+{
+	for (int i = 0;  i < _num_pipes;  ++i)
+	{
+		if (!_pipes[i]->Verify_All_Devices_Have_Enough_Memory())
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 bool Elastic_Propagator::Print_Device_Stats(int device_id, double& TFLOPS, double& GB_per_s)

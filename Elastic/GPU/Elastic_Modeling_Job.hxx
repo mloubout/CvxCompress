@@ -100,8 +100,13 @@ public:
 	Voxet* Get_Voxet() {return _voxet;}
 
 	int Get_Number_Of_GPU_Pipes();
+	void Set_Number_Of_GPU_Pipes(int num_pipes);
+
 	int Get_Steps_Per_GPU();
+	void Set_Steps_Per_GPU(int num_timesteps);
+
 	const int* Get_GPU_Devices();
+	void Set_GPU_Devices(const int* device_ids, int num_devices);
 	int Get_Number_Of_GPU_Devices();
 
 	static const int Attr_Idx_Vp = 0;

@@ -49,6 +49,8 @@ public:
 	unsigned long Compute_Device_Memory_Requirement(int device_id);
 	void Compute_RX_Device_Memory_Requirement(int device_id, int& rxloc_size, int& rxres_size);
 
+	bool Verify_All_Devices_Have_Enough_Memory();
+
 	// get the input and output block offsets for the pinned buffers for current, past or future iteration.
 	// returns -1 if block offsets are not valid yet.
 	int Get_Input_Block_Offset(int iteration);

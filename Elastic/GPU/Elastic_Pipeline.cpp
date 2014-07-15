@@ -500,6 +500,39 @@ void Elastic_Pipeline::Compute_RX_Device_Memory_Requirement(int device_id, int& 
 	}
 }
 
+bool Elastic_Pipeline::Verify_All_Devices_Have_Enough_Memory()
+{
+	int* device_ids = Get_All_Device_IDs();
+	//printf("_num_devices = %d\n",_num_devices);
+ 	for (int i = 0;   i < _num_devices;  ++i)
+	{
+		int device_id = device_ids[i];
+		unsigned long reqd_memory = Compute_Device_Memory_Requirement(device_id);
+		int rxloc_size, rxres_size;
+		Compute_RX_Device_Memory_Requirement(device_id,rxloc_size,rxres_size);
+		reqd_memory += (unsigned long)rxloc_size;
+		reqd_memory += (unsigned long)rxres_size;
+		cudaSetDevice(device_id);
+		size_t free, total;
+		cudaError_t err = cudaMemGetInfo(&free,&total);
+		//printf("device %d :: free %.2f MB, reqd %.2f MB\n",device_id,(double)free/1048576.0,(double)reqd_memory/1048576.0);
+                if (err == cudaSuccess)
+                {
+			if (free < reqd_memory)
+			{
+				printf("Device %d is short %ld bytes.\n",device_id,reqd_memory-free);
+				return false;
+			}
+		}
+		else
+		{
+			printf("Unable to check free memory for device %d.\n");
+			return false;
+		}
+	}
+	return true;
+}
+
 void Elastic_Pipeline::Print_Graphical(int device_id)
 {
 	printf("device_id = %d\n",device_id);

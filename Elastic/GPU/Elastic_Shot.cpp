@@ -95,22 +95,6 @@ Elastic_Shot::~Elastic_Shot()
 		delete [] _h_trace_nsamp_out;
 		delete [] _segy_files;
 	}
-	if (_num_pipes > 0)
-	{
-		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
-		{
-			if (_h_rcv_loc[iPipe] != 0L) delete [] _h_rcv_loc[iPipe];
-			if (_h_rcv_binned[iPipe] != 0L) delete [] _h_rcv_binned[iPipe];
-			delete [] _h_rcv_trcidx[iPipe][0];
-			delete [] _h_rcv_trcidx[iPipe];
-			delete [] _h_rcv_trcflag[iPipe][0];
-			delete [] _h_rcv_trcflag[iPipe];
-		}
-		delete [] _h_rcv_loc;
-		delete [] _h_rcv_binned;
-		delete [] _h_rcv_trcidx;
-		delete [] _h_rcv_trcflag;
-	}
 	if (_wavelet_path != 0L) free(_wavelet_path);
 }
 
@@ -254,7 +238,8 @@ void Elastic_Shot::_generate_ricker_wavelet(double dt, double fmax, int* tsrc, d
 		fflush(stdout);
 	}
 	double fpeak = fmax / 2.0;
-	double tshift = 3.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+	//double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+	double tshift = 0.107;  // HACK
 	*tsrc = (int)round((2.0 * tshift) / dt);
 	for (int i = 0;  i < *tsrc;  ++i)
 	{
@@ -1291,6 +1276,27 @@ void Elastic_Shot::Free_Trace_Resample_Buffers()
 		delete [] _h_trace_touched;
 		_h_trace_touched = 0L;
 		_num_traces = 0;
+	}
+	if (_num_pipes > 0)
+	{
+		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+		{
+			if (_h_rcv_loc[iPipe] != 0L) delete [] _h_rcv_loc[iPipe];
+			if (_h_rcv_binned[iPipe] != 0L) delete [] _h_rcv_binned[iPipe];
+			delete [] _h_rcv_trcidx[iPipe][0];
+			delete [] _h_rcv_trcidx[iPipe];
+			delete [] _h_rcv_trcflag[iPipe][0];
+			delete [] _h_rcv_trcflag[iPipe];
+		}
+		delete [] _h_rcv_loc;
+		delete [] _h_rcv_binned;
+		delete [] _h_rcv_trcidx;
+		delete [] _h_rcv_trcflag;
+		_h_rcv_loc = 0L;
+		_h_rcv_binned = 0L;
+		_h_rcv_trcidx = 0L;
+		_h_rcv_trcflag = 0L;
+		_num_pipes = 0;
 	}
 }
 

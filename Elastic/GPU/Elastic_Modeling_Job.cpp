@@ -1747,9 +1747,32 @@ int Elastic_Modeling_Job::Get_Number_Of_GPU_Pipes()
 	return _GPU_Pipes;
 }
 
+void Elastic_Modeling_Job::Set_Number_Of_GPU_Pipes(int num_pipes)
+{
+	_GPU_Pipes = num_pipes;
+}
+
 int Elastic_Modeling_Job::Get_Steps_Per_GPU()
 {
 	return _Steps_Per_GPU;
+}
+
+void Elastic_Modeling_Job::Set_Steps_Per_GPU(int num_timesteps)
+{
+	_Steps_Per_GPU = num_timesteps;
+}
+
+void Elastic_Modeling_Job::Set_GPU_Devices(const int* device_ids, int num_devices)
+{
+	delete [] _GPU_Devices;
+	_GPU_Devices = 0L;
+	_num_GPU_Devices = 0;
+	if (num_devices > 0)
+	{
+		_num_GPU_Devices = num_devices;
+		_GPU_Devices = new int[num_devices];
+		for (int i = 0;  i < num_devices;  ++i) _GPU_Devices[i] = device_ids[i];
+	}
 }
 
 const int* Elastic_Modeling_Job::Get_GPU_Devices()

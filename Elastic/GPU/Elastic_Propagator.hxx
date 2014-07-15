@@ -14,6 +14,8 @@ public:
 	Elastic_Propagator(Elastic_Modeling_Job* job);
 	~Elastic_Propagator();	
 
+	static Elastic_Propagator* Create_Best_Propagator_Configuration(Elastic_Modeling_Job* job);
+
 	bool Is_Debug();
 
 	Elastic_Modeling_Job* Get_Job();
@@ -42,6 +44,7 @@ public:
 
 	void Print_Graphical();
 
+	bool Verify_All_Devices_Have_Enough_Memory();
 	void Allocate_Host_Memory(bool Pinned, bool Patterned);
 	void Free_Host_Memory();
 	bool Check_Host_Memory();
