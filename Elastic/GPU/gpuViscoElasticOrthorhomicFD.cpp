@@ -10,7 +10,7 @@
 
 int main(int argc, char* argv[])
 {
-	printf("\n%s v0.81\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
+	printf("\n%s v0.82\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
 
 #ifdef GPU_DEBUG
 	printf("Warning! This executable was compiled with -DGPU_DEBUG.\n\n");
