@@ -88,7 +88,10 @@ public:
 	void Add_Receiver_Array(int nrec, 
 		double* rec_x,
 		double* rec_y,
-		double* rec_z);
+		double* rec_z,
+		int* iline,
+		int* xline,
+		int* trcens);
 
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
 
