@@ -25,6 +25,7 @@ public:
 	bool Is_Valid() {return _Is_Valid;}
 
 	int Get_File_Index() {return _fileidx;}
+	void Set_File_Index(int fileidx) {_fileidx=fileidx;}
 
 	Elastic_Interpolation_t Get_Interpolation_Method() {return _interpolation_method;}
 	void Set_Interpolation_Method(Elastic_Interpolation_t interpolation_method) {_interpolation_method = interpolation_method;}
@@ -96,6 +97,7 @@ public:
 		int flag
 		);
 
+	void printRec();
 private:
 	bool _Is_Valid;
 	int _fileidx;

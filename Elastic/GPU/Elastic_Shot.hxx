@@ -84,6 +84,12 @@ public:
 
 
 	void Add_SEGY_File(Elastic_SEGY_File* segy_file);
+
+	void Add_Receiver_Array(int nrec, 
+		double* rec_x,
+		double* rec_y,
+		double* rec_z);
+
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
 
 	void Allocate_Pinned_Host_Memory(Elastic_Propagator* prop);

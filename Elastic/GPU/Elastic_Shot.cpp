@@ -124,6 +124,13 @@ double Elastic_Shot::Get_Propagation_Time()
 	return propagation_time;
 }
 
+void Elastic_Shot::Add_Receiver_Array(int nrec,	double* rec_x, double* rec_y, double* rec_z) {
+	
+	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile){
+		_segy_files[iFile]->Add_Receiver_Array(nrec,rec_x,rec_y,rec_z);
+	}
+}
+
 const char* Elastic_Shot::Get_Source_Type_String()
 {
 	if (_soutype == Source_Type_Force)

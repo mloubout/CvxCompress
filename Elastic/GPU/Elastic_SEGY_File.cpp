@@ -335,15 +335,16 @@ void Elastic_SEGY_File::Write_SEGY_File(
 /*Add an array of receivers that may not have a fixed range. Range is not set here!
 */
 void Elastic_SEGY_File::Add_Receiver_Array(
-	int nrec, 
-	double* rcv_x,
-	double* rcv_y, 
-	double* rcv_z,
-	int* iline,
-	int* xline,
-	int* trcens
-	) 
+		int nrec,
+		double* rcv_x,
+		double* rcv_y,
+		double* rcv_z,
+		int* iline,
+		int* xline,
+		int* trcens
+)
 {
+
 	_h_user_rcv_x = new double[nrec]; 
 	_h_user_rcv_y = new double[nrec]; 
 	_h_user_rcv_z = new double[nrec];
@@ -351,7 +352,8 @@ void Elastic_SEGY_File::Add_Receiver_Array(
 	_h_user_xline = new int[nrec];
 	_h_user_trcens = new int[nrec];
 	_num_user_rcv = nrec;
-	
+
+	printf("***num_user_rcv= %d\n",_num_user_rcv);
 	for (int i=0;i<_num_user_rcv;i++) {
 		_h_user_rcv_x[i]=rcv_x[i];
 		_h_user_rcv_y[i]=rcv_y[i];
@@ -360,8 +362,13 @@ void Elastic_SEGY_File::Add_Receiver_Array(
 		_h_user_xline[i]=xline[i];
 		_h_user_trcens[i]=trcens[i];
 	}
-}
 
+}
+void Elastic_SEGY_File::printRec() {
+	for (int i=0;i<_num_user_rcv;i++) {
+		printf("printRec::%d %12.3f\t%12.3f\t%12.3f\n",i+1,_h_user_rcv_x[i],_h_user_rcv_y[i],_h_user_rcv_z[i]);
+	}
+}
 
 void Elastic_SEGY_File::Add_Receiver_Range_X(
 		int range_idx,
@@ -425,6 +432,7 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 	trcens = 0L;
 
 	if (_h_user_rcv_x == 0L) { //Array of receivers has not been specified by user, create arrays from range in parmfile
+		printf("Receiver arrays created by fd tool from ranges in param file\n");
 
 		for (int i = 0;  i < _num_rcv_ranges;  ++i)
 		{
@@ -492,6 +500,7 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 			}
 		}
 	} else { //Array of receivers has been specified by the user
+		printf("Receiver Arrays provided by user\n");
 		rcv_x = new double[_num_user_rcv];
 		rcv_y = new double[_num_user_rcv];
 		rcv_z = new double[_num_user_rcv];
@@ -506,7 +515,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 			xline[i]=_h_user_xline[i];
 			trcens[i]=_h_user_trcens[i];
 		}
+		num = _num_user_rcv;
 	}
+
 	return num;
 }
 
