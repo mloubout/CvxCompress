@@ -245,8 +245,8 @@ void Elastic_Shot::_generate_ricker_wavelet(double dt, double fmax, int* tsrc, d
 		fflush(stdout);
 	}
 	double fpeak = fmax / 2.0;
-	//double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
-	double tshift = 0.107;  // HACK
+	double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+//	double tshift = 0.107;  // HACK
 	*tsrc = (int)round((2.0 * tshift) / dt);
 	for (int i = 0;  i < *tsrc;  ++i)
 	{
