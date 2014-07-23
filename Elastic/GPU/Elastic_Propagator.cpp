@@ -417,7 +417,7 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 		int max_devices_per_pipe = 1;
 		for (int i = 2;  i <= cu_device_count;  ++i)
 		{
-			int min_blocks = 8 * i + 1;
+			int min_blocks = 8 * i + 2;
 			if (min_blocks < NbX)
 			{
 				max_devices_per_pipe = i;
@@ -1063,7 +1063,7 @@ void Elastic_Propagator::Shift_Pinned_Buffer()
 	}
 }
 
-void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot)
+void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet)
 {
 	int vol_nz = _job->Get_Propagation_NZ() / 8;
 	_num_z = new int[vol_nz];
@@ -1159,7 +1159,7 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot)
 		_pipes[iPipe]->Allocate_RxLoc_Buffer(shot);
 		_pipes[iPipe]->Reset();
 	}
-	shot->Prepare_Source_Wavelet(_dti);
+	shot->Prepare_Source_Wavelet(_dti,debug_output_source_wavelet);
 	shot->Allocate_Pinned_Host_Memory(this);
 	shot->Create_Trace_Resample_Buffers(this);
 }
@@ -1177,17 +1177,17 @@ void Elastic_Propagator::Release_Resources_After_Propagation(Elastic_Shot* shot)
 	shot->Free_Trace_Resample_Buffers();
 }
 
-void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot)
+void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices)
 {
-	Prepare_For_Propagation(shot);
-	while (!Propagate_One_Block(_num_timesteps, shot));
+	Prepare_For_Propagation(shot,debug_output_source_wavelet);
+	while (!Propagate_One_Block(_num_timesteps, shot, debug_output_xz_slices));
 	shot->Write_SEGY_Files();
 	Release_Resources_After_Propagation(shot);
 	printf("Finished Elastic_Propagator::Propagate_Shot\n");
 }
 
 // returns true if at least Number_Of_Timesteps timesteps have been completed
-bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot)
+bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool debug_output_xz_slices)
 {
 #ifdef DETAILED_TIMING
 	struct timespec ts0;
@@ -1340,26 +1340,27 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 				}
 			}
 
-#ifdef DEBUG_TMJ
-			int iy = (int)round(shot->Get_Propagation_Source_Y());
-			char path[4096];
-                        sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts);
-                        _job->Write_XZ_Slice(path, 3, iy);
+			if (debug_output_xz_slices)
+			{
+				int iy = (int)round(shot->Get_Propagation_Source_Y());
+				char path[4096];
+				sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts);
+				_job->Write_XZ_Slice(path, 3, iy);
 
-			int iz = (int)round(shot->Get_Propagation_Source_Z());
-                        sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts);
-                        _job->Write_XY_Slice(path, 3, iz);
-			/*
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
-                        _job->Write_XZ_Slice(path, 0, iy);
+				int iz = (int)round(shot->Get_Propagation_Source_Z());
+				sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts);
+				_job->Write_XY_Slice(path, 3, iz);
+				/*
+				   sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
+				   _job->Write_XZ_Slice(path, 0, iy);
 
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vy",iy,ts);
-                        _job->Write_XZ_Slice(path, 1, iy);
+				   sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vy",iy,ts);
+				   _job->Write_XZ_Slice(path, 1, iy);
 
-                        sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vz",iy,ts);
-                        _job->Write_XZ_Slice(path, 2, iy);
-			*/
-#endif
+				   sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vz",iy,ts);
+				   _job->Write_XZ_Slice(path, 2, iy);
+				 */
+			}
 		}
 		clock_gettime(CLOCK_REALTIME, &_before);
 		return ts >= Number_Of_Timesteps ? true : false;

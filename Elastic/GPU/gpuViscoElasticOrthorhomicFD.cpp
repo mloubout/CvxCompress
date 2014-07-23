@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+#include <math.h>
 #include <unistd.h>
 
 #include <cuda_runtime_api.h>
@@ -11,6 +13,15 @@
 int main(int argc, char* argv[])
 {
 	printf("\n%s v0.82\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
+	if (argc == 1)
+	{
+		printf("Usage : %s <parmfile> [options]\n",argv[0]);
+		printf("Valid options are:\n");
+		printf("xz_model	Output X-Z crossplot of earth model intersecting source location.\n");
+		printf("xz_slices	Output X-Z crossplot of P wavefield intersecting source location during propagation.\n");
+		printf("source_wavelet	Output filtered and time integrated source wavelet.\n");
+		return -1;
+	}
 
 #ifdef GPU_DEBUG
 	printf("Warning! This executable was compiled with -DGPU_DEBUG.\n\n");
@@ -22,6 +33,14 @@ int main(int argc, char* argv[])
 	Elastic_Modeling_Job* job = new Elastic_Modeling_Job(log_level, argv[1]);
 	if (job->Is_Valid())
 	{
+		bool xz_model = false, xz_slices = false, source_wavelet = false;
+		for (int argi = 2;  argi < argc;  ++argi)
+		{
+			if (strcmp(argv[argi], "xz_model") == 0) xz_model = true;
+			if (strcmp(argv[argi], "xz_slices") == 0) xz_slices = true;
+			if (strcmp(argv[argi], "source_wavelet") == 0) source_wavelet = true;
+		}
+
 		Elastic_Propagator* prop = Elastic_Propagator::Create_Best_Propagator_Configuration(job);
 		if (prop != 0L)
 		{
@@ -33,8 +52,12 @@ int main(int argc, char* argv[])
 
 			prop->Read_Earth_Model();
 			//job->HACK_Mute_Sea_Floor();
-			//job->Write_Earth_Model_XZ_Slice("slices/xz_slice",job->Get_Propagation_NY()/2);
-			//job->Write_Earth_Model_XY_Slice("slices/xy_slice",100);
+			if (xz_model && job->Get_Number_Of_Shots() > 0)
+			{
+				Elastic_Shot* shot = job->Get_Shot_By_Index(0);
+				job->Write_Earth_Model_XZ_Slice("slices/xz_slice",(int)round(shot->Get_Propagation_Source_Y()));
+				//job->Write_Earth_Model_XY_Slice("slices/xy_slice",100);
+			}
 
 			printf("Allocating device memory...\n");
 			prop->Allocate_Device_Memory();
@@ -76,7 +99,7 @@ int main(int argc, char* argv[])
 				 */
 
 				Elastic_Shot* shot = job->Get_Shot_By_Index(iShot);
-				prop->Propagate_Shot(shot);
+				prop->Propagate_Shot(shot,source_wavelet,xz_slices);
 			}
 
 			printf("Freeing host memory...\n");

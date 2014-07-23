@@ -151,7 +151,7 @@ const char* Elastic_Shot::Get_Source_Type_String()
 	}
 }
 
-void Elastic_Shot::Prepare_Source_Wavelet(double dt)
+void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wavelet)
 {
 	if (_wavetype == 1)
 	{
@@ -187,15 +187,24 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt)
 	//for (int i = ichoplo-1;  i >= 0;  --i) _stf[i] = 0.0f;
 	//for (int i = ichophi+1;  i < _tsrc;  ++i) _stf[i] = 0.0f;
 
-#ifdef TMJ_DEBUG
-	FILE* fp = fopen("filtered.txt", "w");
-	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp, "%e %e\n",(double)i*dt,_stf[i]);
-	fclose(fp);
 	Compute_Time_Integrated_Source_Wavelet(_log_level,_stf,_stf_int,_tsrc,dt);
-	fp = fopen("filtered_int.txt", "w");
-	for (int i = 0;  i < _tsrc;  ++i) fprintf(fp,"%e %e\n",(double)i*dt,_stf_int[i]);
-	fclose(fp);
-#endif
+	if (debug_output_source_wavelet)
+	{
+		FILE* fp = fopen("filtered.txt", "w");
+		if (fp != 0L)
+		{
+			printf("Writing filtered source wavelet to file filtered.txt\n");
+			for (int i = 0;  i < _tsrc;  ++i) fprintf(fp, "%e %e\n",(double)i*dt,_stf[i]);
+			fclose(fp);
+		}
+		fp = fopen("filtered_int.txt", "w");
+		if (fp != 0L)
+		{
+			printf("Writing filtered and time integrated source wavelet to file filtered_int.txt\n");
+			for (int i = 0;  i < _tsrc;  ++i) fprintf(fp,"%e %e\n",(double)i*dt,_stf_int[i]);
+			fclose(fp);
+		}
+	}
 }
 
 bool Elastic_Shot::Read_Source_Wavelet_From_File(const char* wavelet_path, double max_freq, int filter_order)

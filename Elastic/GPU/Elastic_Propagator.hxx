@@ -92,14 +92,14 @@ public:
 	cudaStream_t Get_Receiver_Stream(int device_id);
 
 	// call this function to completely propagate one shot
-	void Propagate_Shot(Elastic_Shot* shot);
+	void Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices);
 
 	double Get_Internal_Sample_Rate() {return _dti;}
 
 	// helper functions called by Propagate_Shot. they are public only for debug purposes,
 	// please call Propagate_Shot if propagating a shot is all you want to do.
-	void Prepare_For_Propagation(Elastic_Shot* shot);
-	bool Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot);
+	void Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet);
+	bool Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool debug_output_source_wavelet);
 	void Release_Resources_After_Propagation(Elastic_Shot* shot);
 
 	void Add_H2D(unsigned long len);
