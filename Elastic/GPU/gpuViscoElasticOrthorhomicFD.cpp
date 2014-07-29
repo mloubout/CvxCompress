@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[])
 {
-	printf("\n%s v0.82\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
+	printf("\n%s v0.83\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
 	if (argc == 1)
 	{
 		printf("Usage : %s <parmfile> [options]\n",argv[0]);

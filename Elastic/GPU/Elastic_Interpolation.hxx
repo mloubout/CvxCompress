@@ -8,5 +8,20 @@ enum Elastic_Interpolation_t
 	Sinc = 3
 };
 
+static char* ToString_Elastic_Interpolation_t(Elastic_Interpolation_t interpolation_method)
+{
+	switch (interpolation_method)
+	{
+	case Point:
+		return "Point";
+	case Trilinear:
+		return "Trilinear";
+	case Sinc:
+		return "Sinc";
+	default:
+		return "??";
+	}
+}
+
 #endif
 

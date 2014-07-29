@@ -8,6 +8,9 @@ CUDA_FILES=Simple_Copy.cu Compute_ABC.cu Earth_Model.cu Propagate_Particle_Veloc
 all: $(CUDA_FILES) $(PROPAGATOR_OBJECTS) $(MODEL_OBJECTS) gpuViscoElasticOrthorhomicFD.cpp
 	nvcc $(PROPAGATOR_OBJECTS) $(MODEL_OBJECTS) gpuViscoElasticOrthorhomicFD.cpp -use_fast_math -arch=sm_30 -O -Xptxas -dlcm=ca -Xcompiler=-fopenmp -Xptxas -v Elastic_Kernels.cu -o gpuViscoElasticOrthorhomicFD
 
+Debug_Propagate_Stresses_Orthorhombic: $(CUDA_FILES) $(PROPAGATOR_OBJECTS) $(MODEL_OBJECTS) Debug_Propagate_Stresses_Orthorhombic.cpp
+	nvcc $(PROPAGATOR_OBJECTS) $(MODEL_OBJECTS) Debug_Propagate_Stresses_Orthorhombic.cpp -use_fast_math -arch=sm_30 -O -Xptxas -dlcm=ca -Xcompiler=-fopenmp -Xptxas -v Elastic_Kernels.cu -o Debug_Propagate_Stresses_Orthorhombic
+
 memcpy: memcpy.cpp
 	nvcc memcpy.cpp -arch=sm_20 -O3 -Xptxas -dlcm=ca -Xcompiler=-fopenmp -Xptxas -v -o memcpy
 

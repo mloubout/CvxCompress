@@ -172,10 +172,10 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wa
 	float peak_val = _stf[0];
 	for (int i = 1;  i < _tsrc;  ++i) if (_stf[i] > peak_val) {ipeak = i;  peak_val = _stf[i];}
 	int ichoplo = ipeak;
-	while (_stf[ichoplo-1] > 0.0f) --ichoplo;
+	while (ichoplo > 0 && _stf[ichoplo-1] > 0.0f) --ichoplo;
 	int ichophi = ipeak;
 	int nzc = 0;  // number of zero crossings
-	while (nzc < 2)
+	while (ichophi < _tsrc-1 && nzc < 2)
 	{
 		if (_stf[ichophi] > 0.0f && _stf[ichophi+1] <= 0.0f)
 		{
@@ -377,14 +377,14 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 {
 	if (interpolation_method == Point)
 	{
-		int ix = (int)trunc(recx);
-		int iy = (int)trunc(recy);
+		int ix = (int)truncf(recx);
+		int iy = (int)truncf(recy);
 		return _Range_Intersects(x0,x1,ix,ix) && _Range_Intersects(y0,y1,iy,iy);
 	}
 	else if (interpolation_method == Trilinear)
 	{
-		int ix = (int)lrintf(recx);
-		int iy = (int)lrintf(recy);
+		int ix = (int)truncf(recx);
+		int iy = (int)truncf(recy);
 		return _Range_Intersects(x0,x1,ix,ix+1) && _Range_Intersects(y0,y1,iy,iy+1);
 	}
 	else if (interpolation_method == Sinc)
@@ -1214,13 +1214,16 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				{
 					int num_rx = iloc[1+2*iFile];
 					int flags = iloc[1+2*iFile+1];
-					fprintf(fp,"      F I L E   %d - %d receivers, %s%s%s%s selected\n\n",iFile,num_rx,(flags&1)?"P ":"",(flags&2)?"Vx ":"",(flags&4)?"Vy ":"",(flags&8)?"Vz ":"");
+					Elastic_Interpolation_t interpolation_method = (Elastic_Interpolation_t)((flags >> 16) & 3);
+					char* str_intrp = ToString_Elastic_Interpolation_t(interpolation_method);
+					bool receiver_ghost_enabled = ((flags & (1 << 31)) != 0) ? true : false;
+					fprintf(fp,"      F I L E   %d - %d receivers, RX Ghost %s, %s interpolation, selected %s%s%s%s\n\n",iFile,num_rx,receiver_ghost_enabled?"enabled":"disabled",str_intrp,(flags&1)?"P ":"",(flags&2)?"Vx ":"",(flags&4)?"Vy ":"",(flags&8)?"Vz ":"");
 					for (int iRx = 0;  iRx < num_rx;  ++iRx)
 					{
 						float x = floc[bulk_offset+3*iRx  ];
 						float y = floc[bulk_offset+3*iRx+1];
 						float z = floc[bulk_offset+3*iRx+2];
-						fprintf(fp,"         %.2f %.2f %.2f :: trace",x,y,z);
+						fprintf(fp,"         %e %e %e :: trace",x,y,z);
 						for (int iSel = 0;  iSel < 4;  ++iSel)
 						{
 							if (flags & (1 << iSel))
@@ -1404,7 +1407,7 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 				_h_trace_out_sinc_coeffs[iFile][idx][0] = 0.0f;
 				_h_trace_out_sinc_coeffs[iFile][idx][1] = 0.0f;
 				_h_trace_out_sinc_coeffs[iFile][idx][2] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][3] = 1.0 - remainder;
+				_h_trace_out_sinc_coeffs[iFile][idx][3] = 1.0f - remainder;
 				_h_trace_out_sinc_coeffs[iFile][idx][4] = remainder;
 				_h_trace_out_sinc_coeffs[iFile][idx][5] = 0.0f;
 				_h_trace_out_sinc_coeffs[iFile][idx][6] = 0.0f;
@@ -1412,10 +1415,19 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 			}
 			else
 			{
+				double sum_val = 0.0;
 				for (int i = -3;  i <= 4;  ++i)
 				{
 					double x = 3.1415926535897932384626433832795 * ((double)i - remainder);
-					_h_trace_out_sinc_coeffs[iFile][idx][i+3] = x == 0.0 ? 1.0 : (float)(sin(x)/x);
+					double val = x == 0.0 ? 1.0 : sin(x) / x;
+					sum_val += val;
+					_h_trace_out_sinc_coeffs[iFile][idx][i+3] = val;
+				}
+				// normalize coefficients so that sum becomes 1.0
+				double mul_fac = 1.0 / sum_val;
+				for (int i = -3;  i <= 4;  ++i)
+                                {
+					_h_trace_out_sinc_coeffs[iFile][idx][i+3] *= mul_fac;
 				}
 			}
 		}

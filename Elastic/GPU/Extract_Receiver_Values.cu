@@ -199,9 +199,9 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 			}
 			else if (interpolation_method == Trilinear)
 			{
-				int ix = (int)trunc(recx);
-				int iy = (int)trunc(recy);
-				int iz = (int)trunc(recz);
+				int ix = (int)truncf(recx);
+				int iy = (int)truncf(recy);
+				int iz = (int)truncf(recz);
 				float xd = recx - (float)ix;
 				float yd = recy - (float)iy;
 				float zd = recz - (float)iz;
@@ -480,9 +480,9 @@ void cuExtract_Receiver_Pressure_Values(
 			}
 			else if (interpolation_method == Trilinear)
 			{
-				int ix = (int)trunc(recx);
-				int iy = (int)trunc(recy);
-				int iz = (int)trunc(recz);
+				int ix = (int)truncf(recx);
+				int iy = (int)truncf(recy);
+				int iz = (int)truncf(recz);
 				float xd = recx - (float)ix;
 				float yd = recy - (float)iy;
 				float zd = recz - (float)iz;

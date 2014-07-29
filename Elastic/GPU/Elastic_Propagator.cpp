@@ -430,6 +430,7 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 		printf("Maximum devices that can fit in a single pipeline is %d.\n",max_devices_per_pipe);
 		int* my_device_ids = new int[max_devices_per_pipe];
 		for (int i = 0;  i < max_devices_per_pipe;  ++i) my_device_ids[i] = i;
+		int max_steps_per_gpu = -1;
 		job->Set_Number_Of_GPU_Pipes(1);
 		job->Set_GPU_Devices(my_device_ids,max_devices_per_pipe);
 		Elastic_Propagator* last_good_prop = 0L;
@@ -444,6 +445,7 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 				{
 					delete last_good_prop;
 					last_good_prop = prop;
+					max_steps_per_gpu = i;
 					printf("Able to fit %d timesteps per GPU.\n",i);
 				}
 				else
@@ -457,6 +459,7 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 			}
 		}
 		delete [] my_device_ids;
+		if (max_steps_per_gpu > 0) job->Set_Steps_Per_GPU(max_steps_per_gpu);
 		job->_propagator = last_good_prop;
 		return last_good_prop;
 	}
