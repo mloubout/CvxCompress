@@ -14,9 +14,6 @@ Debug_Propagate_Stresses_Orthorhombic: $(CUDA_FILES) $(PROPAGATOR_OBJECTS) $(MOD
 memcpy: memcpy.cpp
 	nvcc memcpy.cpp -arch=sm_20 -O3 -Xptxas -dlcm=ca -Xcompiler=-fopenmp -Xptxas -v -o memcpy
 
-Elastic_Modeling_Job.o: Elastic_Modeling_Job.cpp
-	$(CC) -c -I$(CUDAPATH)/include -fopenmp -O Elastic_Modeling_Job.cpp
-
 %.o: %.c
 	$(CC) -c -I$(CUDAPATH)/include $(CFLAGS) $*.c
 

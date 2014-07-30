@@ -44,20 +44,20 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	//Attr_Idx_Gamma2   = 13;
 
 	_pck_moniker = new char*[_num_em_props];
-	_pck_moniker[Attr_Idx_Vp]       = _strdup("Vp");
-	_pck_moniker[Attr_Idx_Vs]       = _strdup("Vs");
-	_pck_moniker[Attr_Idx_Density]  = _strdup("Density");
-	_pck_moniker[Attr_Idx_Q]        = _strdup("Q");
-	_pck_moniker[Attr_Idx_Dip]      = _strdup("Dip");
-	_pck_moniker[Attr_Idx_Azimuth]  = _strdup("Azimuth");
-	_pck_moniker[Attr_Idx_Rake]     = _strdup("Rake");
-	_pck_moniker[Attr_Idx_Delta1]   = _strdup("Delta1");
-	_pck_moniker[Attr_Idx_Delta2]   = _strdup("Delta2");
-	_pck_moniker[Attr_Idx_Delta3]   = _strdup("Delta3");
-	_pck_moniker[Attr_Idx_Epsilon1] = _strdup("Epsilon1");
-	_pck_moniker[Attr_Idx_Epsilon2] = _strdup("Epsilon2");
-	_pck_moniker[Attr_Idx_Gamma1]   = _strdup("Gamma1");
-	_pck_moniker[Attr_Idx_Gamma2]   = _strdup("Gamma2");
+	_pck_moniker[Attr_Idx_Vp]       = strdup("Vp");
+	_pck_moniker[Attr_Idx_Vs]       = strdup("Vs");
+	_pck_moniker[Attr_Idx_Density]  = strdup("Density");
+	_pck_moniker[Attr_Idx_Q]        = strdup("Q");
+	_pck_moniker[Attr_Idx_Dip]      = strdup("Dip");
+	_pck_moniker[Attr_Idx_Azimuth]  = strdup("Azimuth");
+	_pck_moniker[Attr_Idx_Rake]     = strdup("Rake");
+	_pck_moniker[Attr_Idx_Delta1]   = strdup("Delta1");
+	_pck_moniker[Attr_Idx_Delta2]   = strdup("Delta2");
+	_pck_moniker[Attr_Idx_Delta3]   = strdup("Delta3");
+	_pck_moniker[Attr_Idx_Epsilon1] = strdup("Epsilon1");
+	_pck_moniker[Attr_Idx_Epsilon2] = strdup("Epsilon2");
+	_pck_moniker[Attr_Idx_Gamma1]   = strdup("Gamma1");
+	_pck_moniker[Attr_Idx_Gamma2]   = strdup("Gamma2");
 
 	_pck_mask = new int[_num_em_props];
 	_pck_mask[Attr_Idx_Vp]       = 65535;
@@ -1222,22 +1222,6 @@ Elastic_Shot* Elastic_Modeling_Job::Get_Shot_By_Index(int idx)
 	return 0L;
 }
 
-char* Elastic_Modeling_Job::_strdup(const char* src)
-{
-	if (src != 0L)
-	{
-		int n = strlen(src);
-		if (n > 0)
-		{
-			char* buf = new char[n+1];
-			for (int i = 0;  i < n;  ++i) buf[i] = src[i];
-			buf[n] = 0;
-			return buf;
-		}
-	}
-	return 0L;
-}
-
 int Elastic_Modeling_Job::Get_Propagation_NX()
 {
 	return _prop_nx;
@@ -1936,7 +1920,7 @@ Elastic_Modeling_Job::~Elastic_Modeling_Job()
 		delete [] _shots;
 	}
 	if (_voxet != 0L) delete _voxet;
-	for (int i = 0;  i < 14;  ++i) delete [] _pck_moniker[i];
+	for (int i = 0;  i < 14;  ++i) if (_pck_moniker[i] != 0L) free(_pck_moniker[i]);
 	delete [] _pck_moniker;
 	delete [] _pck_mask;
 	delete [] _pck_shft;
@@ -1949,15 +1933,12 @@ Elastic_Modeling_Job::~Elastic_Modeling_Job()
 
 void Elastic_Modeling_Job::_swap_endian(float* v)
 {
-	int* i4 = (int*)v;
-        const int bmask = 16711680, cmask = 65280, dmask = 255;
-	int i = *i4;
-	int a =  i << 24;
-	int b = (i << 8)  & bmask;
-	int c = (i >> 8) & cmask;
-	int d = (i >> 24) & dmask;
-	int res = a | b | c | d ;
-	*v = *((float*)&res);
+        int* iv = (int*)v;
+        *iv =
+                (((*iv) >> 24) & 255) |
+                (((*iv) >>  8) & 65280) |
+                (((*iv) & 65280) <<  8) |
+                (((*iv) & 255) << 24);
 }
 
 void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
@@ -1987,21 +1968,6 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	}
 	if (_log_level > 3) printf("Using %d thread(s).\n",nthreads);
 
-	FILE** fp = new FILE*[_num_em_props];
-	for (int k = 0;  k < _num_em_props;  ++k)
-	{
-		if (_props[k] != 0L)
-		{
-			fp[k] = fopen(_props[k]->Get_Full_Path(), "rb");
-			posix_fadvise(fileno(fp[k]), 0, 0, POSIX_FADV_SEQUENTIAL);
-			if (_log_level > 3) printf("Opened %s for reading.\n",_props[k]->Get_Full_Path());
-		}
-		else
-		{
-			fp[k] = 0L;
-		}
-	}
-	
 	float* vals = new float[nu*nthreads*100];
 	unsigned int** words = new unsigned int*[4];
 	for (int k = 0;  k < 4;  ++k) words[k] = new unsigned int[nu*nthreads*100];
@@ -2036,28 +2002,38 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 		}
 		for (int attr_idx = 0;  attr_idx < _num_em_props;  ++attr_idx)
 		{
-			if (fp[attr_idx] != 0L)
+			if (_props[attr_idx] != 0L)
 			{
 				// read traces into buffer.
 				// this is done by single thread to ensure sequential read.
-				for (long trace = trace_group;  trace < max_trace;  ++trace)
+				FILE* fp = fopen(_props[attr_idx]->Get_Full_Path(), "rb");
+				if (fp != 0L)
 				{
-					long ilw = trace / nv;
-					long ilv = trace - ilw * nv;
-					ilw += (long)ilw0;
-					ilv += (long)ilv0;
-					long vals_off = (trace - trace_group) * nu;
-					long file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
-					//printf("_read :: file_off=%ld, vals_off=%ld, ilu=%ld, nu=%ld, ilv=%ld, ilw=%ld, trace-trace_group=%ld\n",file_off,vals_off,ilu,nu,ilv,ilw,trace-trace_group);
-					if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
-					fseek(fp[attr_idx], file_off*sizeof(float), SEEK_SET);
-					long nread = fread(vals+vals_off, sizeof(float), nu, fp[attr_idx]);
-					if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
+					for (long trace = trace_group;  trace < max_trace;  ++trace)
+					{
+						long ilw = trace / nv;
+						long ilv = trace - ilw * nv;
+						ilw += (long)ilw0;
+						ilv += (long)ilv0;
+						long vals_off = (trace - trace_group) * nu;
+						long file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
+						//printf("_read :: file_off=%ld, vals_off=%ld, ilu=%ld, nu=%ld, ilv=%ld, ilw=%ld, trace-trace_group=%ld\n",file_off,vals_off,ilu,nu,ilv,ilw,trace-trace_group);
+						if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
+						fseek(fp, file_off*sizeof(float), SEEK_SET);
+						long nread = fread(vals+vals_off, sizeof(float), nu, fp);
+						if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
+					}
+					fclose(fp);
+				}
+				else
+				{
+					printf("ERROR! Failed to open %s for reading.\n",_props[attr_idx]->Get_Full_Path());
+					exit(-1);
 				}
 			}
 				
 			// compress and store
-#pragma omp parallel for
+#pragma omp parallel for reduction(+:acctop,accbot,avgtop_cnt,avgbot_cnt)
 			for (long trace = trace_group;  trace < max_trace;  ++trace)
 			{
 				long ilw = trace / nv;
@@ -2067,7 +2043,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 				long vals_off = (trace - trace_group) * nu;
 				for (int sample = 0;  sample < nu;  ++sample)
 				{
-					if (fp[attr_idx] != 0L)
+					if (_props[attr_idx] != 0L)
 					{
 						_swap_endian(&(vals[vals_off+sample]));
 						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,val);
@@ -2079,7 +2055,6 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 					if (attr_idx == Attr_Idx_Q) vals[vals_off+sample] = 1.0f / vals[vals_off+sample];
 					_Pack_Earth_Model_Attribute(words[_pck_widx[attr_idx]][vals_off+sample],attr_idx,vals[vals_off+sample]);
 				}
-#pragma omp critical
 				if (attr_idx == Attr_Idx_Vp)
 				{
 					if (gcs->U_Is_Z())
@@ -2103,6 +2078,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 				}
 			}
 		}
+
 #pragma omp parallel for
 		for (long trace = trace_group;  trace < max_trace;  ++trace)
 		{
@@ -2134,16 +2110,8 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	}
 	_vpvert_avgtop = (float)(acctop / (double)avgtop_cnt);
 	_vpvert_avgbot = (float)(accbot / (double)avgbot_cnt);
-	printf("\n");
+	printf("\navg(Vp@top)=%f - avg(Vp@bot)=%f\n",_vpvert_avgtop,_vpvert_avgbot);
 
-	for (int k = 0;  k < _num_em_props;  ++k)
-        {
-                if (_props[k] != 0L)
-                {
-			fclose(fp[k]);
-		}
-	}
-	delete [] fp;
 	delete [] vals;
 	for (int k = 0;  k < 4;  ++k) delete [] words[k];
 	delete [] words;
@@ -2152,23 +2120,5 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	propagator->_NABC_BOT_Extend(_sub_iz1 - _prop_z0);
 	propagator->_NABC_SDX_Extend(_sub_ix0 - _prop_x0, _sub_ix1 - _prop_x0);
 	propagator->_NABC_SDY_Extend(_sub_iy0 - _prop_y0, _sub_iy1 - _prop_y0);
-	/*
-	if (_nabc_top_extend)
-	{
-		propagator->_NABC_TOP_Extend(_sub_iz0 - _prop_z0);
-	}
-	if (_nabc_bot_extend)
-	{
-		propagator->_NABC_BOT_Extend(_sub_iz1 - _prop_z0);
-	}
-	if (_nabc_sdx_extend)
-	{
-		propagator->_NABC_SDX_Extend(_sub_ix0 - _prop_x0, _sub_ix1 - _prop_x0);
-	}
-	if (_nabc_sdy_extend)
-	{
-		propagator->_NABC_SDY_Extend(_sub_iy0 - _prop_y0, _sub_iy1 - _prop_y0);
-	}
-	*/
 }
 
