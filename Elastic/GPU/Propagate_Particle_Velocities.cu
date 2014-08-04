@@ -420,11 +420,12 @@ cuPropagate_Particle_Velocities_Kernel(
 	int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * 4;
 
 	// populate persistent buffers
+	int y = y0 + (threadIdx.y + blockIdx.y * 8);
 	if (z0 == 0)
 	{
-		tzzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+tzz_off]);
-		txzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+txz_off]);
-		tyzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+tyz_off]);
+		tzzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+tzz_off] : 0.0f);
+		txzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+txz_off] : 0.0f);
+		tyzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+tyz_off] : 0.0f);
 		if (threadIdx.y < 4)
 		{
 			tzzbuf[threadIdx.x+(3-threadIdx.y)*32] = -tzzbuf[threadIdx.x+(5+threadIdx.y)*32];
@@ -438,22 +439,21 @@ cuPropagate_Particle_Velocities_Kernel(
 	}
 	else
 	{
-		tzzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16+tzz_off]);
-		txzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16+txz_off]);
-		tyzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16+tyz_off]);
-		tzzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+tzz_off]);
-		txzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+txz_off]);
-		tyzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+tyz_off]);
+		tzzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+tzz_off] : 0.0f);
+		txzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+txz_off] : 0.0f);
+		tyzbuf[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+tyz_off] : 0.0f);
+		tzzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+tzz_off] : 0.0f);
+		txzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+txz_off] : 0.0f);
+		tyzbuf[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+tyz_off] : 0.0f);
 	}
 
 	for (int iZ = 0;  iZ < nz/8;  ++iZ)
 	{
 		int x = x0 + (threadIdx.x & 3);
-		int y = y0 + (threadIdx.y + blockIdx.y * 8);
 		int z = z0 + iZ * 8 + (threadIdx.x / 4);
 
 		float tmp3, tmp7, tmp8;
-		if (z < vol_nz-8)
+		if (z < vol_nz-8 && y <= m1_y1)
 		{
 			tmp3 = m1C[offset+tzz_off+32];
 			tmp7 = m1C[offset+txz_off+32];
@@ -465,7 +465,7 @@ cuPropagate_Particle_Velocities_Kernel(
 		}
 
 		float tmp4, tmp5, txx_m4;
-		if (m1L != 0L)
+		if (m1L != 0L && y <= m1_y1)
 		{
 			tmp4 = m1L[offset+txy_off];
 			tmp5 = m1L[offset+txz_off];
@@ -477,7 +477,7 @@ cuPropagate_Particle_Velocities_Kernel(
 		}
 
 		float tmp6, txy_p4;
-		if (m1R != 0L)
+		if (m1R != 0L && y <= m1_y1)
 		{
 			tmp6 = m1R[offset+txz_off];
 			txy_p4 = m1R[offset+txy_off];
@@ -489,10 +489,10 @@ cuPropagate_Particle_Velocities_Kernel(
 
 		unsigned int em_word3 = (y <= y1) ? em[(threadIdx.y + blockIdx.y*8) * em_one_y_size_f + (iZ*32) + (z0*4) + threadIdx.x + 3*em_one_word_size_f] : 0;
 
-		float txx_p0 = m1C[offset];
-                float txy_p0 = m1C[offset+txy_off];
+		float txx_p0 = y <= m1_y1 ? m1C[offset] : 0.0f;
+                float txy_p0 = y <= m1_y1 ? m1C[offset+txy_off] : 0.0f;
 
-		float tmp2 = m1C[offset+tyy_off];
+		float tmp2 = y <= m1_y1 ? m1C[offset+tyy_off] : 0.0f;
 
 		float tmp1, tmp9, tmp10;
 		if (threadIdx.y < 4)
@@ -525,7 +525,7 @@ cuPropagate_Particle_Velocities_Kernel(
 		// compute dxtxx
 		buf[threadIdx.x+threadIdx.y*96] = txx_m4;
 		buf[threadIdx.x+threadIdx.y*96+32] = txx_p0;
-		buf[threadIdx.x+threadIdx.y*96+64] = m1R != 0L ? m1R[offset] : 0.0f;
+		buf[threadIdx.x+threadIdx.y*96+64] = m1R != 0L && y <= m1_y1 ? m1R[offset] : 0.0f;
 		__syncthreads();
 		float dxtxx = ( C0 * (txx_p0               - buf[cuCompTXXIdx(-1)]) + 
 				C1 * (buf[cuCompTXXIdx(1)] - buf[cuCompTXXIdx(-2)]) + 

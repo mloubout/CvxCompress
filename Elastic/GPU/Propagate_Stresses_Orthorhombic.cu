@@ -286,11 +286,12 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
         int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * 4;
 
         // populate persistent buffers
+	int y = y0 + (threadIdx.y + blockIdx.y * 8);
 	if (z0 == 0)
 	{
-		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset]);
-		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+one_wf_size_f]);
-		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+2*one_wf_size_f]);
+		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
 		if (threadIdx.y < 4)
 		{
 			// mirror
@@ -301,23 +302,22 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	}
 	else
 	{
-		vx_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16]);
-		vy_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16+one_wf_size_f]);
-		vz_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,m1C[offset-16+2*one_wf_size_f]);
-		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset]);
-		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+one_wf_size_f]);
-		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,m1C[offset+2*one_wf_size_f]);
+		vx_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+2*one_wf_size_f] : 0.0f);
+		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
 	}
 	__syncthreads();
 
 	for (int iZ = 0;  iZ < nz/8;  ++iZ)
 	{
 		int x = x0 + (threadIdx.x & 3);
-		int y = y0 + (threadIdx.y + blockIdx.y * 8);
 		int z = z0 + iZ * 8 + (threadIdx.x / 4);
 
 		float tmp1, tmp5, tmp9;
-		if (m1L != 0L)
+		if (m1L != 0L && y <= m1_y1)
 		{
 			tmp1 = m1L[offset];
 			tmp5 = m1L[offset+one_wf_size_f];
@@ -329,7 +329,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 
 		float tmp2, tmp6, tmpA;
-		if (m1R != 0L)
+		if (m1R != 0L && y <= m1_y1)
 		{
 			tmp2 = m1R[offset];
 			tmp6 = m1R[offset+one_wf_size_f];
@@ -341,7 +341,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 
 		float tmp3, tmp7, tmpB;
-		if (z < vol_nz-8)
+		if (z < vol_nz-8 && y <= m1_y1)
 		{
 			tmp3 = m1C[offset+32];
 			tmp7 = m1C[offset+one_wf_size_f+32];
