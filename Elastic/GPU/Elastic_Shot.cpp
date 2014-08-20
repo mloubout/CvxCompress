@@ -167,25 +167,6 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wa
 	{
 		_src(dt, _max_freq, 2, _wavelet_path, &_tsrc, _stf);
 	}
-	// find peak
-	int ipeak = 0;
-	float peak_val = _stf[0];
-	for (int i = 1;  i < _tsrc;  ++i) if (_stf[i] > peak_val) {ipeak = i;  peak_val = _stf[i];}
-	int ichoplo = ipeak;
-	while (ichoplo > 0 && _stf[ichoplo-1] > 0.0f) --ichoplo;
-	int ichophi = ipeak;
-	int nzc = 0;  // number of zero crossings
-	while (ichophi < _tsrc-1 && nzc < 2)
-	{
-		if (_stf[ichophi] > 0.0f && _stf[ichophi+1] <= 0.0f)
-		{
-			++nzc;
-		}
-		++ichophi;
-	};
-	printf("ipeak = %d, ichoplo = %d, ichophi = %d\n",ipeak,ichoplo,ichophi);
-	//for (int i = ichoplo-1;  i >= 0;  --i) _stf[i] = 0.0f;
-	//for (int i = ichophi+1;  i < _tsrc;  ++i) _stf[i] = 0.0f;
 
 	Compute_Time_Integrated_Source_Wavelet(_log_level,_stf,_stf_int,_tsrc,dt);
 	if (debug_output_source_wavelet)
@@ -970,14 +951,11 @@ double Elastic_Shot::Find_Deepest_Receiver()
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
         {
                 double *rcv_x, *rcv_y, *rcv_z;
-                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
+                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z);
 		for (int iRx = 0;  iRx < num_rx;  ++iRx)
 		{
 			if (rcv_z[iRx] > deepest) deepest = rcv_z[iRx];
 		}
-		delete [] rcv_x;
-		delete [] rcv_y;
-		delete [] rcv_z;
 	}
 	return deepest;
 }
@@ -998,6 +976,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
         _h_rcv_trcidx = new int**[_num_pipes];
         _h_rcv_trcflag = new int**[_num_pipes];
         _h_rcv_loc_size_f = new int[_num_pipes];
+#pragma omp parallel for
         for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
         {
                 _h_rcv_loc[iPipe] = 0L;
@@ -1013,12 +992,15 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                 }
         }
 
+	struct timespec ts1;
+	clock_gettime(CLOCK_REALTIME, &ts1);
+
 	// determine total number of traces in all files
 	_num_traces = 0;
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
 	{
 		double *rcv_x, *rcv_y, *rcv_z;
-		int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
+		int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z);
 		if (num_rx > 0)
 		{
 			int num_wf = 0;
@@ -1026,10 +1008,10 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 			for (int iSel = 0;  iSel < 4;  ++iSel) if (flags & (1 << iSel)) ++num_wf;
 			_num_traces += num_wf * num_rx;
 		}
-		delete [] rcv_x;
-		delete [] rcv_y;
-		delete [] rcv_z;
 	}
+
+	struct timespec ts2;
+	clock_gettime(CLOCK_REALTIME, &ts2);
 
 	_h_trace_rcv_x = new double[_num_traces];
 	_h_trace_rcv_y = new double[_num_traces];
@@ -1041,147 +1023,227 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
         {
                 double *rcv_x, *rcv_y, *rcv_z;
 		int *il, *xl, *trce;
-                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z, il, xl, trce);
+                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z, il, xl, trce);
 		int flags = _segy_files[iFile]->Get_Selection_Flags();
-		for (int iRx = 0;  iRx < num_rx;  ++iRx)
-                {
-			for (int iSel = 0;  iSel < 4;  ++iSel)
+		int num_wf = 0;
+		for (int iSel = 0;  iSel < 4;  ++iSel) if (flags & (1 << iSel)) ++num_wf;
+		if (num_wf > 0)
+		{
+#pragma omp parallel for
+			for (int iRx = 0;  iRx < num_rx;  ++iRx)
 			{
-				if (flags & (1 << iSel))
+				int curr_trace_no_idx = trace_no_idx + iRx * num_wf;
+				for (int iSel = 0;  iSel < 4;  ++iSel)
 				{
-					_h_trace_rcv_x[trace_no_idx] = rcv_x[iRx];
-					_h_trace_rcv_y[trace_no_idx] = rcv_y[iRx];
-					_h_trace_rcv_z[trace_no_idx] = rcv_z[iRx];
-					_h_trace_iline[trace_no_idx] = il[iRx];
-					_h_trace_xline[trace_no_idx] = xl[iRx];
-					_h_trace_trcens[trace_no_idx] = trce[iRx];
-					++trace_no_idx;
+					if (flags & (1 << iSel))
+					{
+						_h_trace_rcv_x[curr_trace_no_idx] = rcv_x[iRx];
+						_h_trace_rcv_y[curr_trace_no_idx] = rcv_y[iRx];
+						_h_trace_rcv_z[curr_trace_no_idx] = rcv_z[iRx];
+						_h_trace_iline[curr_trace_no_idx] = il[iRx];
+						_h_trace_xline[curr_trace_no_idx] = xl[iRx];
+						_h_trace_trcens[curr_trace_no_idx] = trce[iRx];
+						++curr_trace_no_idx;
+					}
 				}
 			}
+			trace_no_idx += num_rx * num_wf;
 		}
-		delete [] rcv_x;
-		delete [] rcv_y;
-		delete [] rcv_z;
-		delete [] il;
-		delete [] xl;
-		delete [] trce;
 	}
+
+	struct timespec ts3;
+	clock_gettime(CLOCK_REALTIME, &ts3);
 
         for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
         {
                 Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-                int y0 = pipe->Get_Y0() + _job->Get_Propagation_Y0();
-                int y1 = pipe->Get_Y1() + _job->Get_Propagation_Y0();
+		int y0 = pipe->Get_Y0() + _job->Get_Propagation_Y0();
+		int y1 = pipe->Get_Y1() + _job->Get_Propagation_Y0();
 
-                // ..count total number of receiver locations in this pipe
                 int tot_rx = 0, tot_traces = 0;
-                for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
-                {
-                        double *rcv_x, *rcv_y, *rcv_z;
-                        int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
+
+		// bin receivers first
+		int **binRx_num = new int*[_num_segy_files];
+		double ***binRx_x = new double**[_num_segy_files];
+		double ***binRx_y = new double**[_num_segy_files];
+		double ***binRx_z = new double**[_num_segy_files];
+		int ***binRx_trcno = new int**[_num_segy_files];
+		for (int iFile = 0, traceno = 0;  iFile < _num_segy_files;  ++iFile)
+		{
 			int flags = _segy_files[iFile]->Get_Selection_Flags();
-			Elastic_Interpolation_t interpolation_method = _segy_files[iFile]->Get_Interpolation_Method();
 			int num_wf = 0;
 			if (flags & 1) ++num_wf;
 			if (flags & 2) ++num_wf;
 			if (flags & 4) ++num_wf;
 			if (flags & 8) ++num_wf;
-                        if (num_rx > 0)
-                        {
-                                for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
-                                {
-                                        int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
-                                        int x1 = x0 + prop->Get_Block_Size_X() - 1;
-                                        for (int iRx = 0;  iRx < num_rx;  ++iRx)
-                                        {
-                                                if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
-                                                {
-                                                        ++tot_rx;
-							tot_traces+=num_wf;
-                                                }
-                                        }
-                                }
-                                delete [] rcv_x;
-                                delete [] rcv_y;
-                                delete [] rcv_z;
-                        }
-                }
+			Elastic_Interpolation_t interpolation_method = _segy_files[iFile]->Get_Interpolation_Method();
+			double *rcv_x, *rcv_y, *rcv_z;
+			int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z);
+			binRx_num[iFile] = new int[_nBlks];
+			for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk) binRx_num[iFile][iBlk] = 0;
+			for (int iRx = 0;  iRx < num_rx;  ++iRx)
+			{
+				int ix = (int)trunc(rcv_x[iRx]) - _job->Get_Propagation_X0();
+				int ixBlk = ix / prop->Get_Block_Size_X();
+				int iBlk_min = ixBlk-2;
+				if (iBlk_min < 0) iBlk_min = 0;
+				int iBlk_max = ixBlk+2;
+				if (iBlk_max >= _nBlks) iBlk_max = _nBlks-1;
+				//printf("rcv[%d][%d] = %f,%f,%f :: iBlk=[%d,%d]\n",iFile,iRx,rcv_x[iRx],rcv_y[iRx],rcv_z[iRx],iBlk_min,iBlk_max);
+				for (int iBlk = iBlk_min;  iBlk <= iBlk_max;  ++iBlk)
+				{
+					int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
+					int x1 = x0 + prop->Get_Block_Size_X() - 1;
+					//printf(" => x0=%d, x1=%d\n",x0,x1);
+					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
+					{
+						++binRx_num[iFile][iBlk];
+						++tot_rx;
+						tot_traces += num_wf;
+					}
+				}
+			}
+			binRx_x[iFile] = new double*[_nBlks];
+			binRx_y[iFile] = new double*[_nBlks];
+			binRx_z[iFile] = new double*[_nBlks];
+			binRx_trcno[iFile] = new int*[_nBlks];
+			for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
+			{
+				//printf("binRx_num[%d][%d] = %d\n",iFile,iBlk,binRx_num[iFile][iBlk]);
+				if (binRx_num[iFile][iBlk] > 0)
+				{
+					binRx_x[iFile][iBlk] = new double[binRx_num[iFile][iBlk]];
+					binRx_y[iFile][iBlk] = new double[binRx_num[iFile][iBlk]];
+					binRx_z[iFile][iBlk] = new double[binRx_num[iFile][iBlk]];
+					binRx_trcno[iFile][iBlk] = new int[binRx_num[iFile][iBlk]];
+				}
+				else
+				{
+					binRx_x[iFile][iBlk] = 0L;
+					binRx_y[iFile][iBlk] = 0L;
+					binRx_z[iFile][iBlk] = 0L;
+					binRx_trcno[iFile][iBlk] = 0L;
+				}
+				binRx_num[iFile][iBlk] = 0;
+			}
+			for (int iRx = 0;  iRx < num_rx;  ++iRx, traceno+=num_wf)
+			{
+				int ix = (int)trunc(rcv_x[iRx]) - _job->Get_Propagation_X0();
+				int ixBlk = ix / prop->Get_Block_Size_X();
+				int iBlk_min = ixBlk-2;
+				if (iBlk_min < 0) iBlk_min = 0;
+				int iBlk_max = ixBlk+2;
+				if (iBlk_max >= _nBlks) iBlk_max = _nBlks-1;
+				for (int iBlk = iBlk_min;  iBlk <= iBlk_max;  ++iBlk)
+				{
+					int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
+					int x1 = x0 + prop->Get_Block_Size_X() - 1;
+					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
+					{
+						binRx_x[iFile][iBlk][binRx_num[iFile][iBlk]] = rcv_x[iRx];
+						binRx_y[iFile][iBlk][binRx_num[iFile][iBlk]] = rcv_y[iRx];
+						binRx_z[iFile][iBlk][binRx_num[iFile][iBlk]] = rcv_z[iRx];
+						binRx_trcno[iFile][iBlk][binRx_num[iFile][iBlk]] = traceno;
+						++binRx_num[iFile][iBlk];
+					}
+				}
+			}
+		}
+		// binRx_num[iFile][iBlk]
+		// binRx_x[iFile][iBlk][i] - min(i)=0, max(i)=binRx_num[iFile][iBlk]-1
+		// binRx_y and binRx_z are same as binRx_x
 
                 // ..bin receiver locations
                 _h_rcv_loc_size_f[iPipe] = _nBlks * (1 + 2 * _num_segy_files) + 3 * tot_rx;
-		_h_rcv_loc[iPipe] = new float[_h_rcv_loc_size_f[iPipe]];
+                _h_rcv_loc[iPipe] = new float[_h_rcv_loc_size_f[iPipe]];
                 float* floc = _h_rcv_loc[iPipe];
                 int* iloc = (int*)floc;
                 int* trcidx = new int[tot_traces];
-		int* trcflag = new int[tot_traces];
+                int* trcflag = new int[tot_traces];
                 for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
                 {
-                        int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
-                        int x1 = x0 + prop->Get_Block_Size_X() - 1;
-
-                        // ..count receivers in this block
                         _h_rcv_binned[iPipe][iBlk] = floc;
                         iloc[0] = _num_segy_files;
                         _h_rcv_trcidx[iPipe][iBlk] = trcidx;
-			_h_rcv_trcflag[iPipe][iBlk] = trcflag;
+                        _h_rcv_trcflag[iPipe][iBlk] = trcflag;
                         int blk_offset = 0;
-			int trace_blk_offset = 0;
-			int rxres_length_f = 0;
-			int trace_no_idx = 0;
-                        for (int iFile = 0, trace_no = 0;  iFile < _num_segy_files;  ++iFile)
+                        int trace_blk_offset = 0;
+                        int rxres_length_f = 0;
+                        int trace_no_idx = 0;
+                        for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
                         {
-				int flags = _segy_files[iFile]->Get_Selection_Flags();
-				Elastic_Interpolation_t interpolation_method = _segy_files[iFile]->Get_Interpolation_Method();
-				bool receiver_ghost_enabled = !_job->Freesurface_Enabled() & _job->Receiver_Ghost_Enabled();
-                                double *rcv_x, *rcv_y, *rcv_z;
-                                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
-				int pr_rx = (flags & 1) ? num_rx : 0;
+                                int flags = _segy_files[iFile]->Get_Selection_Flags();
+                                Elastic_Interpolation_t interpolation_method = _segy_files[iFile]->Get_Interpolation_Method();
+                                bool receiver_ghost_enabled = !_job->Freesurface_Enabled() & _job->Receiver_Ghost_Enabled();
+				double *rcv_x = binRx_x[iFile][iBlk];
+				double *rcv_y = binRx_y[iFile][iBlk];
+				double *rcv_z = binRx_z[iFile][iBlk];
+				int* traceno = binRx_trcno[iFile][iBlk];
+				int num_rx = binRx_num[iFile][iBlk];
+                                int pr_rx = (flags & 1) ? num_rx : 0;
                                 iloc[1+2*iFile] = 0;
                                 // 0001 -> P
                                 // 0010 -> Vx
                                 // 0100 -> Vy
                                 // 1000 -> Vz
-				iloc[2+2*iFile] = flags | ((int)interpolation_method << 16) | ((receiver_ghost_enabled ? 1 : 0) << 31);
+                                iloc[2+2*iFile] = flags | ((int)interpolation_method << 16) | ((receiver_ghost_enabled ? 1 : 0) << 31);
                                 if (num_rx > 0)
                                 {
                                         int file_offset = 0;
                                         for (int iRx = 0;  iRx < num_rx;  ++iRx)
                                         {
-                                                if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
-                                                {
-                                                        int off = 1 + 2 * _num_segy_files + 3 * (blk_offset + file_offset);
-                                                        floc[off  ] = rcv_x[iRx] - _job->Get_Propagation_X0();
-                                                        floc[off+1] = rcv_y[iRx] - _job->Get_Propagation_Y0();
-                                                        floc[off+2] = rcv_z[iRx] - _job->Get_Propagation_Z0();
-							++file_offset;
-						
-							for (int iSel = 0, trace_no_off = 0;  iSel < 4;  ++iSel)
+						int off = 1 + 2 * _num_segy_files + 3 * (blk_offset + file_offset);
+						floc[off  ] = rcv_x[iRx] - _job->Get_Propagation_X0();
+						floc[off+1] = rcv_y[iRx] - _job->Get_Propagation_Y0();
+						floc[off+2] = rcv_z[iRx] - _job->Get_Propagation_Z0();
+						++file_offset;
+
+						for (int iSel = 0, trace_no_off = traceno[iRx];  iSel < 4;  ++iSel)
+						{
+							if (flags & (1 << iSel))
 							{
-								if (flags & (1 << iSel))
-								{
-									trcidx[trace_no_idx] = trace_no + trace_no_off;
-									++trace_no_off;
-									trcflag[trace_no_idx] = 1 << iSel;
-									++trace_no_idx;
-								}
+								trcidx[trace_no_idx] = trace_no_off++;
+								trcflag[trace_no_idx] = 1 << iSel;
+								++trace_no_idx;
 							}
-                                                }
-						for (int iSel = 0;  iSel < 4;  ++iSel) if (flags & (1 << iSel)) ++trace_no;
-                                        }
+						}
+					}
                                         iloc[1+2*iFile] = file_offset;
                                         blk_offset += file_offset;
                                 }
-                                delete [] rcv_z;
-                                delete [] rcv_y;
-                                delete [] rcv_x;
                         }
-			//printf("iBlk = %d, trace_no_idx = %d\n",iBlk,trace_no_idx);
+                        //printf("iBlk = %d, trace_no_idx = %d\n",iBlk,trace_no_idx);
                         int glob_offset_inc = 1 + 2 * _num_segy_files + 3 * blk_offset;
                         floc = floc + glob_offset_inc;
                         iloc = iloc + glob_offset_inc;
                         trcidx = trcidx + trace_no_idx;
-			trcflag = trcflag + trace_no_idx;
+                        trcflag = trcflag + trace_no_idx;
                 }
+
+		for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
+		{
+			for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk)
+			{
+				int num_rx = binRx_num[iFile][iBlk];
+				if (num_rx > 0)
+				{
+					delete [] binRx_x[iFile][iBlk];
+					delete [] binRx_y[iFile][iBlk];
+					delete [] binRx_z[iFile][iBlk];
+					delete [] binRx_trcno[iFile][iBlk];
+				}
+			}
+			delete [] binRx_x[iFile];
+			delete [] binRx_y[iFile];
+			delete [] binRx_z[iFile];
+			delete [] binRx_trcno[iFile];
+			delete [] binRx_num[iFile];
+		}
+		delete [] binRx_x;
+		delete [] binRx_y;
+		delete [] binRx_z;
+		delete [] binRx_trcno;
+		delete [] binRx_num;
         }
 
 #ifdef DEBUG_TMJ
@@ -1257,15 +1319,24 @@ void Elastic_Shot::Free_Trace_Resample_Buffers()
 {
 	if (_num_traces > 0)
 	{
-		for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
+		if (_h_trace_in != 0L)
 		{
-			delete [] _h_trace_in[iTrc];
-			delete [] _h_trace_out[iTrc];
+			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
+			{
+				delete [] _h_trace_in[iTrc];
+			}
+			delete [] _h_trace_in;
+			_h_trace_in = 0L;
 		}
-		delete [] _h_trace_in;
-		_h_trace_in = 0L;
-		delete [] _h_trace_out;
-		_h_trace_out = 0L;
+		if (_h_trace_out != 0L)
+		{
+			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
+			{
+				delete [] _h_trace_out[iTrc];
+			}
+			delete [] _h_trace_out;
+			_h_trace_out = 0L;
+		}
 		delete [] _h_trace_flag;
 		_h_trace_flag = 0L;
 		delete [] _h_trace_rcv_x;
@@ -1300,12 +1371,18 @@ void Elastic_Shot::Free_Trace_Resample_Buffers()
 	{
 		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
 		{
-			if (_h_rcv_loc[iPipe] != 0L) delete [] _h_rcv_loc[iPipe];
-			if (_h_rcv_binned[iPipe] != 0L) delete [] _h_rcv_binned[iPipe];
-			delete [] _h_rcv_trcidx[iPipe][0];
-			delete [] _h_rcv_trcidx[iPipe];
-			delete [] _h_rcv_trcflag[iPipe][0];
-			delete [] _h_rcv_trcflag[iPipe];
+			if (_h_rcv_loc != 0L) delete [] _h_rcv_loc[iPipe];
+			if (_h_rcv_binned != 0L) delete [] _h_rcv_binned[iPipe];
+			if (_h_rcv_trcidx != 0L)
+			{
+				if (_h_rcv_trcidx[iPipe] != 0L) delete [] _h_rcv_trcidx[iPipe][0];
+				delete [] _h_rcv_trcidx[iPipe];
+			}
+			if (_h_rcv_trcflag != 0L)
+			{
+				if (_h_rcv_trcflag[iPipe] != 0L) delete [] _h_rcv_trcflag[iPipe][0];
+				delete [] _h_rcv_trcflag[iPipe];
+			}
 		}
 		delete [] _h_rcv_loc;
 		delete [] _h_rcv_binned;
@@ -1348,7 +1425,7 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 
 		// create trace info
                 double *rcv_x, *rcv_y, *rcv_z;
-                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations(rcv_x, rcv_y, rcv_z);
+                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z);
                 if (num_rx > 0)
                 {
 			for (int iRx = 0;  iRx < num_rx;  ++iRx)
@@ -1381,9 +1458,6 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 				}
 			}
 		}
-		delete [] rcv_x;
-		delete [] rcv_y;
-		delete [] rcv_z;
 
 		// create sinc coefficients for each file
 		_h_trace_nsamp_in[iFile] = nsamp_in;

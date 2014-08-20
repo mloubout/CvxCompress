@@ -8,6 +8,7 @@
 #include "gpuAssert.h"
 
 Elastic_Pipeline::Elastic_Pipeline(
+		int log_level,
 		Elastic_Propagator* prop,
 		int pipe_id,
 		int pipe_y0,
@@ -16,6 +17,7 @@ Elastic_Pipeline::Elastic_Pipeline(
 		int pipe_z1
 		)
 {
+	_log_level = log_level;
 	_prop = prop;
 	_pipe_id = pipe_id;
 	_pipe_y0 = pipe_y0;
@@ -796,12 +798,14 @@ void Elastic_Pipeline::Free_RxLoc_Buffer(Elastic_Shot* shot)
 	}
 }
 
-void Elastic_Pipeline::Allocate_Device_Memory()
+bool Elastic_Pipeline::Allocate_Device_Memory()
 {
+	bool success = false;
 	Free_Device_Memory();
 	_Compile_Device_IDs();
 	if (_num_devices > 0)
 	{
+		success = true;
 		_d_Mem = new void*[_num_devices];
 		_d_RxLoc = new void*[_num_devices];
 		_d_RxRes = new void*[_num_devices];
@@ -820,7 +824,7 @@ void Elastic_Pipeline::Allocate_Device_Memory()
 			if (err == cudaSuccess)
 			{
 				cudaMemset(_d_Mem[i], 0, tot_reqd_mem);  // zero block, always do this
-				printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
+				if (_log_level >= 4) printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 				unsigned long offset = 0;
 				for (int j = 0;  j < _num_buffers;  ++j)
 				{
@@ -836,84 +840,98 @@ void Elastic_Pipeline::Allocate_Device_Memory()
 			}
 			else
 			{
+				success = false;
 				_d_Mem[i] = 0L;
 				_d_RxLoc[i] = 0L;
 				_d_RxRes[i] = 0L;
 				_h_RxRes_curr[i] = 0L;
 				_h_RxRes_prev[i] = 0L;
-				printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
+				if (_log_level >= 4) printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 			}
 		}
 
-		for (int i = 0;  i < _num_buffers;  ++i)
+		if (success)
 		{
-			_buffers[i]->Enable_Peer_Access();
-		}
-
-		// determine optimal iteration sequences for the CUDA kernel launches and data transfers
-		// ..go wide before deep
-		int* idx_launch = new int[_num_devices];
-		int* idx_data_in = new int[_num_devices];
-		int* idx_data_out = new int[_num_devices];
-		for (int i = 0;  i < _num_devices;  ++i)
-		{
-			idx_launch[i] = 0;
-			idx_data_in[i] = 0;
-			idx_data_out[i] = 0;
-		}
-		_optseq_launch = new int[_num_buffers];
-		_optseq_data_in = new int[_num_buffers];
-		_optseq_data_out = new int[_num_buffers];
-		_num_optseq_launch = 0;
-		_num_optseq_data_in = 0;
-		_num_optseq_data_out = 0;
-		bool not_done;
-		do
-		{
-			not_done = false;
-			for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+			for (int i = 0;  i < _num_buffers;  ++i)
 			{
-				int device_id = _device_IDs[iDev];
-				// kernel launches
-				for (int i = idx_launch[iDev];  i < _num_buffers;  ++i)
+				_buffers[i]->Enable_Peer_Access();
+			}
+
+			// determine optimal iteration sequences for the CUDA kernel launches and data transfers
+			// ..go wide before deep
+			int* idx_launch = new int[_num_devices];
+			int* idx_data_in = new int[_num_devices];
+			int* idx_data_out = new int[_num_devices];
+			for (int i = 0;  i < _num_devices;  ++i)
+			{
+				idx_launch[i] = 0;
+				idx_data_in[i] = 0;
+				idx_data_out[i] = 0;
+			}
+			_optseq_launch = new int[_num_buffers];
+			_optseq_data_in = new int[_num_buffers];
+			_optseq_data_out = new int[_num_buffers];
+			_num_optseq_launch = 0;
+			_num_optseq_data_in = 0;
+			_num_optseq_data_out = 0;
+			bool not_done;
+			do
+			{
+				not_done = false;
+				for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 				{
-					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Compute())
+					int device_id = _device_IDs[iDev];
+					// kernel launches
+					for (int i = idx_launch[iDev];  i < _num_buffers;  ++i)
 					{
-						_optseq_launch[_num_optseq_launch++] = i;
-						idx_launch[iDev] = i+1;
-						//char namestr[4096];
-						//printf("OPTIMAL LAUNCH :: %s (device %d)\n",_buffers[i]->Get_Name_String(namestr),device_id);
-						not_done = true;
-						break;
+						if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Compute())
+						{
+							_optseq_launch[_num_optseq_launch++] = i;
+							idx_launch[iDev] = i+1;
+							//char namestr[4096];
+							//printf("OPTIMAL LAUNCH :: %s (device %d)\n",_buffers[i]->Get_Name_String(namestr),device_id);
+							not_done = true;
+							break;
+						}
+					}
+					// data in
+					for (int i = idx_data_in[iDev];  i < _num_buffers;  ++i)
+					{
+						if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Input())
+						{
+							_optseq_data_in[_num_optseq_data_in++] = i;
+							idx_data_in[iDev] = i+1;
+							not_done = true;
+							break;
+						}
+					}
+					// data out
+					for (int i = idx_data_out[iDev];  i < _num_buffers;  ++i)
+					{
+						if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Device2Host())
+						{
+							_optseq_data_out[_num_optseq_data_out++] = i;
+							idx_data_out[iDev] = i+1;
+							not_done = true;
+							break;
+						}
 					}
 				}
-				// data in
-				for (int i = idx_data_in[iDev];  i < _num_buffers;  ++i)
-				{
-					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Input())
-                                        {
-                                                _optseq_data_in[_num_optseq_data_in++] = i;
-						idx_data_in[iDev] = i+1;
-                                                not_done = true;
-                                                break;
-                                        }
-                                }
-				// data out
-				for (int i = idx_data_out[iDev];  i < _num_buffers;  ++i)
-				{
-					if (_buffers[i]->Get_Device_ID() == device_id && _buffers[i]->Is_Device2Host())
-                                        {
-                                                _optseq_data_out[_num_optseq_data_out++] = i;
-						idx_data_out[iDev] = i+1;
-                                                not_done = true;
-                                                break;
-                                        }
-				}
-			}
-		} while (not_done);
-		delete [] idx_data_out;
-		delete [] idx_data_in;
-		delete [] idx_launch;
+			} while (not_done);
+			delete [] idx_data_out;
+			delete [] idx_data_in;
+			delete [] idx_launch;
+		}
+		else
+		{
+			_optseq_launch = 0L;
+			_optseq_data_in = 0L;
+			_optseq_data_out = 0L;
+			_num_optseq_launch = 0;
+			_num_optseq_data_in = 0;
+			_num_optseq_data_out = 0;
+		}
 	}
+	return success;
 }
 

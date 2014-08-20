@@ -53,6 +53,8 @@ public:
 	bool Get_NABC_TOP_Extend();
 	bool Get_NABC_BOT_Extend();
 
+	bool Lower_Q_Seafloor_Enabled() {return _lower_Q_seafloor_enabled;}
+
 	float Get_Courant_Factor() {return _Courant_Factor;}
 
 	void Add_Shot(Elastic_Shot* shot);
@@ -89,7 +91,7 @@ public:
 
 	// as name implies, a hack to test what happens if we manipulate Qp to mute Scholte waves
 	// traveling along the sea floor.
-	void HACK_Mute_Sea_Floor();
+	void Lower_Q_Seafloor();
 
 	//
 	// wf_type : 0->Vx, 1->Vy, 2->Vz, 3->P
@@ -185,6 +187,8 @@ private:
 	bool _source_ghost_enabled;
 	bool _receiver_ghost_enabled;
 	int _sea_surface_z;
+	
+	bool _lower_Q_seafloor_enabled;
 
 	Elastic_Shot** _shots;
 	int _num_shots;

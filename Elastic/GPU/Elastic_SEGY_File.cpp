@@ -35,6 +35,7 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_num_rcv_ranges = 0;
 	_interpolation_method = Trilinear;
 
+	_num_user_rcv = 0;
 	_h_user_rcv_x = 0L;
 	_h_user_rcv_y = 0L;
 	_h_user_rcv_z = 0L;
@@ -405,15 +406,84 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 		double*& rcv_z
 		)
 {
+	double *rx, *ry, *rz;
+	int *il, *xl, *te;
+	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te);
+	if (num > 0)
+	{
+		rcv_x = new double[num];
+		rcv_y = new double[num];
+		rcv_z = new double[num];
+		for (int i = 0;  i < num;  ++i)
+		{
+			rcv_x[i] = rx[i];
+			rcv_y[i] = ry[i];
+			rcv_z[i] = rz[i];
+		}
+	}
+	else
+	{
+		rcv_x = 0L;
+		rcv_y = 0L;
+		rcv_z = 0L;
+	}
+	return num;
+}
+
+int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z
+		)
+{
 	int *iline, *xline, *trcens;
-	int num_rx = Compute_Receiver_Locations(rcv_x,rcv_y,rcv_z,iline,xline,trcens);
-	delete [] iline;
-	delete [] xline;
-	delete [] trcens;
+	int num_rx = Compute_Receiver_Locations_NO_COPY(rcv_x,rcv_y,rcv_z,iline,xline,trcens);
 	return num_rx;
 }
 
 int Elastic_SEGY_File::Compute_Receiver_Locations(
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z,
+		int*& iline,
+		int*& xline,
+		int*& trcens
+		)
+{
+	double *rx, *ry, *rz;
+	int *il, *xl, *te;
+	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te);
+	if (num > 0)
+	{
+		rcv_x = new double[num];
+		rcv_y = new double[num];
+		rcv_z = new double[num];
+		iline = new int[num];
+		xline = new int[num];
+		trcens = new int[num];
+		for (int i = 0;  i < num;  ++i)
+		{
+			rcv_x[i] = rx[i];
+			rcv_y[i] = ry[i];
+			rcv_z[i] = rz[i];
+			iline[i] = il[i];
+			xline[i] = xl[i];
+			trcens[i] = te[i];
+		}
+	}
+	else
+	{
+		rcv_x = 0L;
+		rcv_y = 0L;
+		rcv_z = 0L;
+		iline = 0L;
+		xline = 0L;
+		trcens = 0L;
+	}
+	return num;
+}
+
+int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		double*& rcv_x,
 		double*& rcv_y,
 		double*& rcv_z,
@@ -497,22 +567,23 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 				}
 			}
 		}
-	} else { //Array of receivers has been specified by the user
-		rcv_x = new double[_num_user_rcv];
-		rcv_y = new double[_num_user_rcv];
-		rcv_z = new double[_num_user_rcv];
-		iline = new int[_num_user_rcv];
-		xline = new int[_num_user_rcv];
-		trcens = new int[_num_user_rcv];
-		for (int i=0;i<_num_user_rcv;i++) {
-			rcv_x[i]=_h_user_rcv_x[i];
-			rcv_y[i]=_h_user_rcv_y[i];
-			rcv_z[i]=_h_user_rcv_z[i];
-			iline[i]=_h_user_iline[i];
-			xline[i]=_h_user_xline[i];
-			trcens[i]=_h_user_trcens[i];
-		}
-		num = _num_user_rcv;
+
+		_h_user_rcv_x = rcv_x;
+		_h_user_rcv_y = rcv_y;
+		_h_user_rcv_z = rcv_z;
+		_h_user_iline = iline;
+		_h_user_xline = xline;
+		_h_user_trcens = trcens;
+		_num_user_rcv = num;
+	} 
+	else { //Array of receivers has been specified by the user
+		rcv_x = _h_user_rcv_x;		
+		rcv_y = _h_user_rcv_y;		
+		rcv_z = _h_user_rcv_z;
+		iline = _h_user_iline;
+		xline = _h_user_xline;
+		trcens = _h_user_trcens;
+		num = _num_user_rcv;		
 	}
 
 	return num;

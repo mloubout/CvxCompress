@@ -14,7 +14,8 @@ public:
 	Elastic_Propagator(Elastic_Modeling_Job* job);
 	~Elastic_Propagator();	
 
-	static Elastic_Propagator* Create_Best_Propagator_Configuration(Elastic_Modeling_Job* job);
+	//static Elastic_Propagator* Create_Best_Propagator_Configuration(Elastic_Modeling_Job* job);
+	void Configure();
 
 	bool Is_Debug();
 
@@ -49,7 +50,7 @@ public:
 	void Free_Host_Memory();
 	bool Check_Host_Memory();
 
-	void Allocate_Device_Memory();
+	bool Allocate_Device_Memory();
 	void Free_Device_Memory();
 	
 	void Read_Earth_Model();
@@ -98,7 +99,7 @@ public:
 
 	// helper functions called by Propagate_Shot. they are public only for debug purposes,
 	// please call Propagate_Shot if propagating a shot is all you want to do.
-	void Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet);
+	void Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet, bool is_profiling_run);
 	bool Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool debug_output_source_wavelet);
 	void Release_Resources_After_Propagation(Elastic_Shot* shot);
 
@@ -121,12 +122,17 @@ private:
 			float dy,
 			float dz,
 			int Stencil_Order,
-			int num_pipes,
-			int num_timesteps,
-			const int* device_id,
-			int num_devices,
 			bool debug
 		  );
+	void Build_Compute_Pipelines(
+			int num_pipes, 
+			int num_timesteps, 
+			const int* device_id, 
+			int num_devices,
+			bool partial_allowed
+			);
+	void Delete_Compute_Pipelines();
+	void Automatically_Build_Compute_Pipelines();
 
 	void _Compare(char* src, char* dst, size_t len);
 	void _Find_Non_Zeros(char* dst, size_t len);

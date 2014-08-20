@@ -9,6 +9,7 @@ class Elastic_Pipeline
 {
 public:
 	Elastic_Pipeline(
+		int log_level,
 		Elastic_Propagator* prop,
 		int pipe_id,
 		int pipe_y0,
@@ -75,7 +76,7 @@ public:
 	void Print_Graphical(int device_id);
 	void Print_Graphical();
 
-	void Allocate_Device_Memory();
+	bool Allocate_Device_Memory();
 	void Free_Device_Memory();
 
 	void Allocate_RxLoc_Buffer(Elastic_Shot* shot);
@@ -92,6 +93,8 @@ public:
 private:
 	friend class Elastic_Propagator;
 	Elastic_Propagator* _prop;
+
+	int _log_level;
 
 	int _pipe_id;
 	int _pipe_y0;

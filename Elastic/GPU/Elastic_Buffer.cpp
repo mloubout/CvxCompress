@@ -556,7 +556,7 @@ void Elastic_Buffer::Launch_Input_Transfers()
 				dst_len_y * one_y_size,
 				_src->Get_Output_Stream()
 				);
-			//printf("Device %2d to Device %2d :: %ld bytes\n",_src->Get_Device_ID(),_device_id,dst_len_y * one_y_size);
+			//printf("Device %2d to Device %2d for block %d :: %ld bytes\n",_src->Get_Device_ID(),_device_id,block_offset,dst_len_y*one_y_size);
 		}
 	}
 }
@@ -887,6 +887,6 @@ unsigned long Elastic_Buffer::Allocate_Device_Blocks(void* d_Mem, unsigned long 
 
 void Elastic_Buffer::Enable_Peer_Access()
 {
-	if (_src != 0L) _prop->Enable_Peer_Access(_device_id, _src->Get_Device_ID());
+	if (_src != 0L) _prop->Enable_Peer_Access(_src->Get_Device_ID(), _device_id);
 }
 

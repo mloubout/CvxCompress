@@ -62,6 +62,7 @@ int Elastic_SEGY_File_Receiver_Range::Compute_Receiver_Locations(
 		iline = new int[nx*ny*nz];
 		xline = new int[nx*ny*nz];
 		trcens = new int[nx*ny*nz];
+#pragma omp paralle for
 		for (int iz = 0;  iz < nz;  ++iz)
 		{
 			for (int iy = 0;  iy < ny;  ++iy)

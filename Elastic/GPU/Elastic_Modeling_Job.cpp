@@ -144,6 +144,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_freesurface_enabled = true;
 	_source_ghost_enabled = true;
 	_receiver_ghost_enabled = true;
+	_lower_Q_seafloor_enabled = false;
 	_GPU_Devices = 0L;
 	_num_GPU_Devices = 0;
 	_GPU_Pipes = 0;
@@ -463,6 +464,20 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 						Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 						error = _Calculate_ABC_Sponge("NABC_BOT",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NZ(),gcs->Get_DZ(),_nabc_bot,_nabc_bot_extend);
 						if (error) break;
+					}
+				}
+			}
+			if (!error)
+			{
+				char lower_Q_seafloor_flag_str[4096];
+				int matched = sscanf(s, "LOWER_Q_ALONG_SEAFLOOR %s", lower_Q_seafloor_flag_str);
+				if (matched == 1)
+				{
+					_tolower(lower_Q_seafloor_flag_str);
+					if (strcmp(lower_Q_seafloor_flag_str, "enabled") == 0)
+					{
+						_lower_Q_seafloor_enabled = true;
+						if (_log_level >= 3) printf("Q will be lowered to 10 along seafloor to attenuate Scholte waves.\n");
 					}
 				}
 			}
@@ -1156,6 +1171,11 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 							prop->Get_MinMax_From_File();
 							if (i == Attr_Idx_Q) prop->Set_MinMax(1.0f/prop->Get_Max(), 1.0f/prop->Get_Min()); // for Q we pack reciprocal of Q
 						}
+						if (i == Attr_Idx_Q && _lower_Q_seafloor_enabled && prop->Get_Max() < 0.1f)
+						{
+							prop->Set_MinMax(prop->Get_Min(), 0.1f);
+							if (_log_level >= 3) printf("Minimum Q lowered to %f\n",1.0f/prop->Get_Max());
+						}
 						_pck_min[i] = prop->Get_Min();
 						_pck_max[i] = prop->Get_Max();
 						if (i == Attr_Idx_Vp || i == Attr_Idx_Density || i == Attr_Idx_Q)
@@ -1514,10 +1534,9 @@ void Elastic_Modeling_Job::Set_Earth_Model_Attribute(int attr_idx, int ix, int i
 	}	
 }
 
-void Elastic_Modeling_Job::HACK_Mute_Sea_Floor()
+void Elastic_Modeling_Job::Lower_Q_Seafloor()
 {
-	float Q_min_val = Get_Earth_Model_Attribute_Max(Attr_Idx_Q);
-	printf("Q_min_val = %e\n",Q_min_val);
+	float Q_min_val = 10.0f;
 	for (int ix = 0;  ix < _prop_nx;  ++ix)
 	{
 		for (int iy = 0;  iy < _prop_ny;  ++iy)
@@ -1525,10 +1544,18 @@ void Elastic_Modeling_Job::HACK_Mute_Sea_Floor()
 			// locate sea floor
 			bool error;
 			int iz = -1;
-			for (; Get_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,iz+1,error) < 1.1f && !error;  ++iz);
-			// set sea floor plus two cells (vertically) to minimum Q
-			// note that earth model contains reciprocal of Q, so we need to fetch the maximum value for this
-			for (int my_iz = iz;  my_iz < iz+3;  ++my_iz) Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,Q_min_val,error);
+			for (; iz < (_prop_nz-1) && Get_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,iz+1,error) < 1.1f && !error;  ++iz);
+			if (iz < (_prop_nz-3))
+			{
+				// set Q at sea floor plus two cells (vertically) to 10.
+				// note that earth model is compressed at this point, so there is additional code that ensures min(Q) <= 10 in parser
+				// if Q attenuation along sea floor is enabled.
+				for (int my_iz = iz;  my_iz < iz+3;  ++my_iz)
+				{
+					float Q_val = 1.0f / Get_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz);
+					if (Q_val > Q_min_val) Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,1.0f/Q_min_val,error);
+				}
+			}
 		}
 	}
 }
@@ -2023,6 +2050,9 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 						long nread = fread(vals+vals_off, sizeof(float), nu, fp);
 						if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
 					}
+					int fid = fileno(fp);
+					fdatasync(fid);
+					posix_fadvise(fid,0,0,POSIX_FADV_DONTNEED);
 					fclose(fp);
 				}
 				else

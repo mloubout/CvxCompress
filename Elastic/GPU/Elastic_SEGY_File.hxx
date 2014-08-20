@@ -80,6 +80,19 @@ public:
 		int*& xline,
 		int*& trcens
 		);
+	int Compute_Receiver_Locations_NO_COPY(
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z
+		);
+	int Compute_Receiver_Locations_NO_COPY(
+		double*& rcv_x,
+		double*& rcv_y,
+		double*& rcv_z,
+		int*& iline,
+		int*& xline,
+		int*& trcens
+		);
 	
 	void Write_SEGY_File(
 		float** traces,
