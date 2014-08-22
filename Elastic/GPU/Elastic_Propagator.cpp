@@ -1754,6 +1754,7 @@ void Elastic_Propagator::omp_memcpy(void* dst, void* src, size_t len)
                 __m128* s = (__m128*)src + i0;
                 for (int j = 0;  j < in;  ++j)
                 {
+			_mm_prefetch((char*)(s+j+16),_MM_HINT_T0);
                         _mm_stream_ps((float*)(d+j),_mm_load_ps((float*)(s+j)));
                 }
         }
