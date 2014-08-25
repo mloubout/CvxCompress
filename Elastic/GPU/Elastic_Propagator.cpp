@@ -479,7 +479,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 				int num_devices_per_pipe = 1;
 				for (int i = 2;  i <= max_devices_per_pipe;  ++i)
 				{
-					int min_blocks = 8 * i + 2;
+					int min_blocks = (1+num_steps) * 2 * i + 2;
 					if (min_blocks < NbX)
 					{
 						num_devices_per_pipe = i;
