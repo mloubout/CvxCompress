@@ -166,6 +166,13 @@ private:
 	float _vpvert_avgtop;
 	float _vpvert_avgbot;
 	
+	// 0->Source, 1->Volume
+	int _sub_origin;
+
+	bool _sub_x_set;
+	bool _sub_y_set;
+	bool _sub_z_set;
+
 	int _sub_ix0;
 	int _sub_ix1;
 	int _sub_iy0;

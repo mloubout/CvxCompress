@@ -493,8 +493,17 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 				num_devices[perf_idx] = num_devices_curr_conf;
 				device_ids[perf_idx] = new int[num_devices_curr_conf];
 				int num_pipes_first_socket = num_pipes - (num_pipes / 2);
-				int num_devices_first_socket = num_pipes_first_socket*num_devices_per_pipe;
-				int num_devices_second_socket = num_devices_curr_conf - num_devices_first_socket;
+				int num_devices_first_socket=0, num_devices_second_socket=0;
+				if (num_pipes == 1 && num_devices_curr_conf > 8)
+				{
+					num_devices_second_socket = num_devices_curr_conf / 2;
+					num_devices_first_socket = num_devices_curr_conf - num_devices_second_socket;
+				}
+				else
+				{
+					num_devices_first_socket = num_pipes_first_socket*num_devices_per_pipe;
+					num_devices_second_socket = num_devices_curr_conf - num_devices_first_socket;
+				}
 				printf("#pipes = %d, #steps = %d :: #devices = %d, #devices_1st_socket=%d, #devices_2nd_socket=%d\n",num_pipes,num_steps,num_devices_curr_conf,num_devices_first_socket,num_devices_second_socket);
 				for (int iDev = 0;  iDev < num_devices_first_socket;  ++iDev) device_ids[perf_idx][iDev] = iDev;
 				for (int iDev = 0;  iDev < num_devices_second_socket;  ++iDev) device_ids[perf_idx][num_devices_first_socket+iDev] = cu_device_count - num_devices_second_socket + iDev;

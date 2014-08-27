@@ -127,6 +127,10 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 		_const_vals[i] = 0.0f;
 	}
 	_fq = 5.0;
+	_sub_origin = 0;  // default is source
+	_sub_x_set = false;
+	_sub_y_set = false;
+	_sub_z_set = false;
 	_sub_ix0 = 0;
 	_sub_ix1 = 0;
 	_sub_iy0 = 0;
@@ -341,6 +345,45 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					if (_log_level > 3) printf("FQ set to %lf Hz.\n",_fq);
 				}
 			}
+			char sub_origin[4096];
+			if (!error && sscanf(s, "PROPAGATE_ORIGIN = %s", sub_origin) == 1)
+			{
+				if (_sub_x_set)
+				{
+					printf("%s (line %d): Error - PROPAGATE_ORIGIN must appear before PROPAGATE_X.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				if (_sub_y_set)
+				{
+					printf("%s (line %d): Error - PROPAGATE_ORIGIN must appear before PROPAGATE_Y.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				if (_sub_z_set)
+				{
+					printf("%s (line %d): Error - PROPAGATE_ORIGIN must appear before PROPAGATE_Z.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				_tolower(sub_origin);
+				if (strcmp(sub_origin, "source") == 0)
+				{
+					_sub_origin = 0;
+					if (_log_level >= 3) printf("Sub volume is relative to source location.\n");
+				}
+				else if (strcmp(sub_origin, "volume") == 0)
+				{
+					_sub_origin = 1;
+					if (_log_level >= 3) printf("Sub volume is relative to volume origin.\n");
+				}
+				else
+				{
+					printf("%s (line %d): Error - PROPAGATE_ORIGIN invalid origin string %s. Should be either Volume or Source.\n",parmfile_path,line_num,sub_origin);
+					error = true;
+					break;
+				}
+			}
 			double sub_min, sub_max;
 			char sub_unit[4096];
 			if (!error && sscanf(s, "PROPAGATE_X = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
@@ -356,6 +399,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_X",parmfile_path,line_num,gcs->Get_NX(),gcs->Get_DX(),sub_min,sub_max,sub_unit,_sub_ix0,_sub_ix1);
 					if (error) break;
+					_sub_x_set = true;
 				}
 			}
 			if (!error && sscanf(s, "PROPAGATE_Y = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
@@ -371,6 +415,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_Y",parmfile_path,line_num,gcs->Get_NY(),gcs->Get_DY(),sub_min,sub_max,sub_unit,_sub_iy0,_sub_iy1);
 					if (error) break;
+					_sub_y_set = true;
 				}
 			}
 			if (!error && sscanf(s, "PROPAGATE_Z = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
@@ -386,6 +431,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_Z",parmfile_path,line_num,gcs->Get_NZ(),gcs->Get_DZ(),sub_min,sub_max,sub_unit,_sub_iz0,_sub_iz1);
 					if (error) break;
+					_sub_z_set = true;
 				}
 			}
 			double abc_size;
@@ -1094,7 +1140,50 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 						}
 					}
 				}
+				if (_sub_origin == 0)
+				{
+					// sub volume is relative to source location.
+					// find smallest bounding box that includes all source locations.
+					int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
+					for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+                                        {
+                                                Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+						int src_x0 = (int)floor(shot->Get_Source_X());
+						int src_x1 = (int)ceil(shot->Get_Source_X());
+						int src_y0 = (int)floor(shot->Get_Source_Y());
+						int src_y1 = (int)ceil(shot->Get_Source_Y());
+						if (src_min_x > src_max_x)
+						{
+							src_min_x = src_x0;
+							src_max_x = src_x1;
+						}
+						else
+						{
+							if (src_x0 < src_min_x) src_min_x = src_x0;
+							if (src_x1 > src_max_x) src_max_x = src_x1;
+						}
+						if (src_min_y > src_max_y)
+						{
+							src_min_y = src_y0;
+							src_max_y = src_y1;
+						}
+						else
+						{
+							if (src_y0 < src_min_y) src_min_y = src_y0;
+							if (src_y1 > src_max_y) src_max_y = src_y1;
+						}
+					}
+					_sub_ix0 += src_min_x;
+					_sub_ix1 += src_max_x;
+					_sub_iy0 += src_min_y;
+					_sub_iy1 += src_max_y;
+				}
+				// clip sub volume
 				Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
+				if (_sub_ix0 < 0) _sub_ix0 = 0;
+				if (_sub_ix1 >= gcs->Get_NX()) _sub_ix1 = gcs->Get_NX() - 1;
+				if (_sub_iy0 < 0) _sub_iy0 = 0;
+				if (_sub_iy1 >= gcs->Get_NY()) _sub_iy1 = gcs->Get_NY() - 1;
 				if (_log_level > 3)
 				{
 					printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
@@ -1875,9 +1964,10 @@ bool Elastic_Modeling_Job::_Calculate_Sub_Volume(
 	}
 	if (ilu0 > ilu1)
 	{
-		printf("%s (line %d) : Error - %s low range is larger than high range.\n",name);
+		printf("%s (line %d) : Error - %s low range is larger than high range.\n",parmfile_path,line_num,name);
 		return true;
 	}
+	/*
 	if ((ilu0 < 0 && ilu1 < 0) || (ilu1 >= dim && ilu0 >= dim))
 	{
 		printf("%s (line %d) : Error - %s sub volume is outside legal range.\n",parmfile_path,line_num,name);
@@ -1885,14 +1975,15 @@ bool Elastic_Modeling_Job::_Calculate_Sub_Volume(
 	}
 	if (ilu0 < 0)
 	{
-		if (_log_level > 2) printf("%s (line %d) : Warning - %s low range clipped (%d->%d).\n",ilu0,0,name);
+		if (_log_level > 2) printf("%s (line %d) : Warning - %s low range clipped (%d->%d).\n",parmfile_path,line_num,ilu0,0,name);
 		ilu0 = 0;
 	}
 	if (ilu1 >= dim)
 	{
-		if (_log_level > 2) printf("%s (line %d) : Warning - %s high range clipped (%d->%d).\n",ilu1,dim-1,name);
+		if (_log_level > 2) printf("%s (line %d) : Warning - %s high range clipped (%d->%d).\n",parmfile_path,line_num,ilu1,dim-1,name);
 		ilu1 = dim - 1;
 	}
+	*/
 	if (_log_level > 3) printf("%s : Sub volume is [%d,%d]\n",name,ilu0,ilu1);
 	return false;
 }
