@@ -200,7 +200,8 @@ private:
 	int* _h_trace_idx_in_nn;
 	int* _h_trace_idx_out;
 	int* _h_trace_iFile;  // iFile no for this trace
-	bool* _h_trace_touched;
+	unsigned int* _h_trace_touched;
+	//bool* _h_trace_touched;
 
 	// indexed on _num_segy_files
 	int* _h_trace_nsamp_in;

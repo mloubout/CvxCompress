@@ -400,7 +400,11 @@ void Elastic_Shot::Start_Extract_Receiver_Values_From_Device(
 	{
 		float* src = _h_pinned_rcv_loc[pipe->Get_ID()] + ((float*)(_h_rcv_binned[pipe->Get_ID()][max_block_offset]) - (float*)(_h_rcv_binned[pipe->Get_ID()][0]));
 		int length = _Comp_RxLoc_Length(_h_rcv_binned[pipe->Get_ID()][max_block_offset]);
-		if (length > 0) gpuErrchk( cudaMemcpyAsync(d_rxloc_block[num_blocks-1], src, length, cudaMemcpyHostToDevice, prop->Get_Receiver_Stream(device_id)) );
+		if (length > 0) 
+		{
+			gpuErrchk( cudaMemcpyAsync(d_rxloc_block[num_blocks-1], src, length, cudaMemcpyHostToDevice, prop->Get_Receiver_Stream(device_id)) );
+			prop->Add_H2D(length);
+		}
 	}
 }
 
@@ -540,6 +544,7 @@ void Elastic_Shot::Extract_Receiver_Values_From_Device(
 		{
 			//printf("h_rxres = %p, d_rxres = %p, rxres_offset = %d\n",h_rxres,d_rxres,rxres_offset);
 			gpuErrchk( cudaMemcpyAsync(h_rxres, d_rxres, rxres_offset*sizeof(float), cudaMemcpyDeviceToHost, prop->Get_Receiver_Stream(device_id)) );
+			prop->Add_D2H(rxres_offset*sizeof(float));
 					//printf("RxRes :: Copied %d bytes from device %d\n",rxres_offset*sizeof(float),device_id);
 		}
 	}
@@ -641,7 +646,7 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 	delete [] jj_max;
 	*/
 
-#pragma omp parallel for
+//#pragma omp parallel for
 	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
 	{
 		int curr_timestep = timesteps[iBlk];
@@ -666,7 +671,8 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 							int idx_in = curr_timestep - _h_trace_idx_in[iTrc];
 							if (idx_in >= 0 && idx_in < nsamp_in)
 							{
-								_h_trace_touched[iTrc] = true;
+								_h_trace_touched[iTrc >> 5] |= (1 << (iTrc & 31));
+								//_h_trace_touched[iTrc] = true;
 								_h_trace_in[iTrc][idx_in] += rxres[iBlk][jj];
 								if (idx_in >= _h_trace_idx_in_nn[iTrc]) _h_trace_idx_in_nn[iTrc] = idx_in + 1;
 #ifdef RESAMPLE_DEBUG
@@ -705,9 +711,11 @@ void Elastic_Shot::Resample_Receiver_Traces()
 		if (max_iTrc > _num_traces) max_iTrc = _num_traces;
 		for (int iTrc = min_iTrc;  iTrc < max_iTrc;  ++iTrc)
 		{
-			if (_h_trace_touched[iTrc])
+			//if (_h_trace_touched[iTrc])
+			if ((_h_trace_touched[iTrc >> 5] & (1 << (iTrc & 31))) != 0)
 			{
-				_h_trace_touched[iTrc] = false;
+				//_h_trace_touched[iTrc] = false;
+				_h_trace_touched[iTrc >> 5] &= ~(1 << (iTrc & 31));
 				int iFile = _h_trace_iFile[iTrc];
 				int nsamp_out = _h_trace_nsamp_out[iFile];
 				bool ding_dong = false, jabba_dabba_doo = false;
@@ -1410,12 +1418,14 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 	_h_trace_idx_in_nn = new int[_num_traces];
 	_h_trace_idx_out = new int[_num_traces];
 	_h_trace_iFile = new int[_num_traces];
-	_h_trace_touched = new bool[_num_traces];
+	//_h_trace_touched = new bool[_num_traces];
+	_h_trace_touched = new unsigned int[(_num_traces + 31) >> 5];
 	_h_trace_nsamp_in = new int[_num_segy_files];
 	_h_trace_nsamp_out = new int[_num_segy_files];
 	_h_trace_out_idxM = new int*[_num_segy_files];
 	_h_trace_out_sinc_coeffs = new float**[_num_segy_files];
 	int nsamp_in = _totSteps + 12;
+	for (int i = 0;  i < ((_num_traces + 31) >> 5);  ++i) _h_trace_touched[i] = 0;
 	for (int iFile = 0, iTrc = 0;  iFile < _num_segy_files;  ++iFile)
         {
 		double tshift = _segy_files[iFile]->Get_Timeshift();

@@ -131,6 +131,20 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_sub_x_set = false;
 	_sub_y_set = false;
 	_sub_z_set = false;
+	_parm_sub_ix0 = 0;
+	_parm_sub_ix1 = 0;
+	_parm_sub_iy0 = 0;
+	_parm_sub_iy1 = 0;
+	_parm_sub_iz0 = 0;
+	_parm_sub_iz1 = 0;
+	_parm_nabc_sdx = 0;
+	_parm_nabc_sdy = 0;
+	_parm_nabc_top = 0;
+	_parm_nabc_bot = 0;
+	_parm_nabc_sdx_extend = false;
+	_parm_nabc_sdy_extend = false;
+	_parm_nabc_top_extend = false;
+	_parm_nabc_bot_extend = false;
 	_sub_ix0 = 0;
 	_sub_ix1 = 0;
 	_sub_iy0 = 0;
@@ -397,7 +411,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
                                 else
                                 {
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-					error = _Calculate_Sub_Volume("PROPAGATE_X",parmfile_path,line_num,gcs->Get_NX(),gcs->Get_DX(),sub_min,sub_max,sub_unit,_sub_ix0,_sub_ix1);
+					error = _Calculate_Sub_Volume("PROPAGATE_X",parmfile_path,line_num,gcs->Get_NX(),gcs->Get_DX(),sub_min,sub_max,sub_unit,_parm_sub_ix0,_parm_sub_ix1);
 					if (error) break;
 					_sub_x_set = true;
 				}
@@ -413,7 +427,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
                                 else
                                 {
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-					error = _Calculate_Sub_Volume("PROPAGATE_Y",parmfile_path,line_num,gcs->Get_NY(),gcs->Get_DY(),sub_min,sub_max,sub_unit,_sub_iy0,_sub_iy1);
+					error = _Calculate_Sub_Volume("PROPAGATE_Y",parmfile_path,line_num,gcs->Get_NY(),gcs->Get_DY(),sub_min,sub_max,sub_unit,_parm_sub_iy0,_parm_sub_iy1);
 					if (error) break;
 					_sub_y_set = true;
 				}
@@ -429,7 +443,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
                                 else
                                 {
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-					error = _Calculate_Sub_Volume("PROPAGATE_Z",parmfile_path,line_num,gcs->Get_NZ(),gcs->Get_DZ(),sub_min,sub_max,sub_unit,_sub_iz0,_sub_iz1);
+					error = _Calculate_Sub_Volume("PROPAGATE_Z",parmfile_path,line_num,gcs->Get_NZ(),gcs->Get_DZ(),sub_min,sub_max,sub_unit,_parm_sub_iz0,_parm_sub_iz1);
 					if (error) break;
 					_sub_z_set = true;
 				}
@@ -451,7 +465,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					else
 					{
 						Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-						error = _Calculate_ABC_Sponge("NABC_SDX",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NX(),gcs->Get_DX(),_nabc_sdx,_nabc_sdx_extend);
+						error = _Calculate_ABC_Sponge("NABC_SDX",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NX(),gcs->Get_DX(),_parm_nabc_sdx,_parm_nabc_sdx_extend);
 						if (error) break;
 					}
 				}
@@ -470,7 +484,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					else
 					{
 						Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-						error = _Calculate_ABC_Sponge("NABC_SDY",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NY(),gcs->Get_DY(),_nabc_sdy,_nabc_sdy_extend);
+						error = _Calculate_ABC_Sponge("NABC_SDY",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NY(),gcs->Get_DY(),_parm_nabc_sdy,_parm_nabc_sdy_extend);
 						if (error) break;
 					}
 				}
@@ -489,7 +503,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					else
 					{
 						Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-						error = _Calculate_ABC_Sponge("NABC_TOP",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NZ(),gcs->Get_DZ(),_nabc_top,_nabc_top_extend);
+						error = _Calculate_ABC_Sponge("NABC_TOP",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NZ(),gcs->Get_DZ(),_parm_nabc_top,_parm_nabc_top_extend);
 						if (error) break;
 					}
 				}
@@ -508,7 +522,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					else
 					{
 						Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-						error = _Calculate_ABC_Sponge("NABC_BOT",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NZ(),gcs->Get_DZ(),_nabc_bot,_nabc_bot_extend);
+						error = _Calculate_ABC_Sponge("NABC_BOT",parmfile_path,line_num,abc_size,abc_unit,matched==3?abc_flag:0L,gcs->Get_NZ(),gcs->Get_DZ(),_parm_nabc_bot,_parm_nabc_bot_extend);
 						if (error) break;
 					}
 				}
@@ -1114,136 +1128,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			_Is_Valid = !error;
 			if (_Is_Valid)
 			{
-				int ghost_padding = 0;
-				if (_freesurface_enabled)
-				{
-					// force to zero if freesurface is enabled.
-					_nabc_top = 0;
-					_nabc_top_extend = false;
-				}
-				else
-				{
-					// force top sponge to extend
-					_nabc_top_extend = true;
-					for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
-					{
-						Elastic_Shot* shot = Get_Shot_By_Index(iShot);
-						if (_source_ghost_enabled)
-						{
-							int zs = (int)lrintf(shot->Get_Propagation_Source_Z()) + 1;
-							if (zs > ghost_padding) ghost_padding = zs;
-						}
-						if (_receiver_ghost_enabled)
-						{
-							int zr = (int)lrintf(shot->Find_Deepest_Receiver()) + 1;
-							if (zr > ghost_padding) ghost_padding = zr;
-						}
-					}
-				}
-				if (_sub_origin == 0)
-				{
-					// sub volume is relative to source location.
-					// find smallest bounding box that includes all source locations.
-					int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
-					for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
-                                        {
-                                                Elastic_Shot* shot = Get_Shot_By_Index(iShot);
-						int src_x0 = (int)floor(shot->Get_Source_X());
-						int src_x1 = (int)ceil(shot->Get_Source_X());
-						int src_y0 = (int)floor(shot->Get_Source_Y());
-						int src_y1 = (int)ceil(shot->Get_Source_Y());
-						if (src_min_x > src_max_x)
-						{
-							src_min_x = src_x0;
-							src_max_x = src_x1;
-						}
-						else
-						{
-							if (src_x0 < src_min_x) src_min_x = src_x0;
-							if (src_x1 > src_max_x) src_max_x = src_x1;
-						}
-						if (src_min_y > src_max_y)
-						{
-							src_min_y = src_y0;
-							src_max_y = src_y1;
-						}
-						else
-						{
-							if (src_y0 < src_min_y) src_min_y = src_y0;
-							if (src_y1 > src_max_y) src_max_y = src_y1;
-						}
-					}
-					_sub_ix0 += src_min_x;
-					_sub_ix1 += src_max_x;
-					_sub_iy0 += src_min_y;
-					_sub_iy1 += src_max_y;
-				}
-				// clip sub volume
-				Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-				if (_sub_ix0 < 0) _sub_ix0 = 0;
-				if (_sub_ix1 >= gcs->Get_NX()) _sub_ix1 = gcs->Get_NX() - 1;
-				if (_sub_iy0 < 0) _sub_iy0 = 0;
-				if (_sub_iy1 >= gcs->Get_NY()) _sub_iy1 = gcs->Get_NY() - 1;
-				if (_log_level > 3)
-				{
-					printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
-					printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
-					printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
-				}
-				// X
-				_prop_nx = _sub_ix1 - _sub_ix0 + 1;
-				_prop_x0 = _sub_ix0;
-				if (_nabc_sdx_extend)
-				{
-					_prop_nx += 2 * _nabc_sdx;
-					_prop_x0 -= _nabc_sdx;
-				}
-				_prop_nx = ((_prop_nx + 3) >> 2) << 2;  // make prop_nx a multiple of 4.
-				// expand sub-volume if extend is desired
-				_sub_ix0 = _prop_x0 > 0 ? _prop_x0 : 0;
-				int prop_x1 = _prop_x0 + _prop_nx - 1;
-				_sub_ix1 = prop_x1 < gcs->Get_NX() ? prop_x1 : gcs->Get_NX() - 1;
-				// Y
-				_prop_ny = _sub_iy1 - _sub_iy0 + 1;
-				_prop_y0 = _sub_iy0;
-				if (_nabc_sdy_extend)
-				{
-					_prop_ny += 2 * _nabc_sdy;
-					_prop_y0 -= _nabc_sdy;
-				}
-				_prop_ny = ((_prop_ny + 7) >> 3) << 3;  // make prop ny a multiple of 8
-				// expand sub-volume if extend is desired
-				_sub_iy0 = _prop_y0 > 0 ? _prop_y0 : 0;
-				int prop_y1 = _prop_y0 + _prop_ny - 1;
-				_sub_iy1 = prop_y1 < gcs->Get_NY() ? prop_y1 : gcs->Get_NY() - 1;
-				// Z
-				_prop_nz = _sub_iz1 - _sub_iz0 + 1;
-				_prop_z0 = _sub_iz0;
-				if (_nabc_top_extend)
-				{
-					_prop_nz += _nabc_top + ghost_padding;
-					_prop_z0 -= (_nabc_top + ghost_padding);
-				}
-				if (_nabc_bot_extend)
-				{
-					_prop_nz += _nabc_bot;
-				}
-				_prop_nz = ((_prop_nz + 7) >> 3) << 3;  // make prop nz a multiple of 8
-				// expand sub-volume if extend is desired
-				_sub_iz0 = _prop_z0 > 0 ? _prop_z0 : 0;
-				int prop_z1 = _prop_z0 + _prop_nz - 1;
-				_sub_iz1 = prop_z1 < gcs->Get_NZ() ? prop_z1 : gcs->Get_NZ() - 1;
-				if (_log_level > 3)
-				{
-					printf("Propagation volume X = [%d,%d].\n",_prop_x0,_prop_x0+_prop_nx-1);
-					printf("Propagation volume Y = [%d,%d].\n",_prop_y0,_prop_y0+_prop_ny-1);
-					printf("Propagation volume Z = [%d,%d].\n",_prop_z0,_prop_z0+_prop_nz-1);
-
-					printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
-					printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
-					printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
-				}
-
+				Compute_Subvolume();
 				for (int i = 0;  i < _num_em_props;  ++i)
 				{
 					Voxet_Property* prop = _props[i];
@@ -1288,6 +1173,155 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			if (_log_level > 2) printf("Parameter file appears to be %s.\n",_Is_Valid?"valid":"invalid");
 		}
+	}
+}
+
+void Elastic_Modeling_Job::Compute_Subvolume()
+{
+	// copy sub volume parameters from parameter file
+	_sub_ix0 = _parm_sub_ix0;
+	_sub_ix1 = _parm_sub_ix1;
+	_sub_iy0 = _parm_sub_iy0;
+	_sub_iy1 = _parm_sub_iy1;
+	_sub_iz0 = _parm_sub_iz0;
+	_sub_iz1 = _parm_sub_iz1;
+	_nabc_sdx = _parm_nabc_sdx;
+	_nabc_sdy = _parm_nabc_sdy;
+	_nabc_top = _parm_nabc_top;
+	_nabc_bot = _parm_nabc_bot;
+	_nabc_sdx_extend = _parm_nabc_sdx_extend;
+	_nabc_sdy_extend = _parm_nabc_sdy_extend;
+	_nabc_top_extend = _parm_nabc_top_extend;
+	_nabc_bot_extend = _parm_nabc_bot_extend;
+
+	// determine sub volume dimensions
+	int ghost_padding = 0;
+	if (_freesurface_enabled)
+	{
+		// force to zero if freesurface is enabled.
+		_nabc_top = 0;
+		_nabc_top_extend = false;
+	}
+	else
+	{
+		// force top sponge to extend
+		_nabc_top_extend = true;
+		for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+		{
+			Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+			if (_source_ghost_enabled)
+			{
+				int zs = (int)lrintf(shot->Get_Propagation_Source_Z()) + 1;
+				if (zs > ghost_padding) ghost_padding = zs;
+			}
+			if (_receiver_ghost_enabled)
+			{
+				int zr = (int)lrintf(shot->Find_Deepest_Receiver()) + 1;
+				if (zr > ghost_padding) ghost_padding = zr;
+			}
+		}
+	}
+	if (Subvolume_Is_Relative_To_Source())	
+	{
+		// find smallest bounding box that includes all source locations.
+		int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
+		for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+		{
+			Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+			int src_x0 = (int)floor(shot->Get_Source_X());
+			int src_x1 = (int)ceil(shot->Get_Source_X());
+			int src_y0 = (int)floor(shot->Get_Source_Y());
+			int src_y1 = (int)ceil(shot->Get_Source_Y());
+			if (src_min_x > src_max_x)
+			{
+				src_min_x = src_x0;
+				src_max_x = src_x1;
+			}
+			else
+			{
+				if (src_x0 < src_min_x) src_min_x = src_x0;
+				if (src_x1 > src_max_x) src_max_x = src_x1;
+			}
+			if (src_min_y > src_max_y)
+			{
+				src_min_y = src_y0;
+				src_max_y = src_y1;
+			}
+			else
+			{
+				if (src_y0 < src_min_y) src_min_y = src_y0;
+				if (src_y1 > src_max_y) src_max_y = src_y1;
+			}
+		}
+		_sub_ix0 += src_min_x;
+		_sub_ix1 += src_max_x;
+		_sub_iy0 += src_min_y;
+		_sub_iy1 += src_max_y;
+	}
+	// clip sub volume
+	Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
+	if (_sub_ix0 < 0) _sub_ix0 = 0;
+	if (_sub_ix1 >= gcs->Get_NX()) _sub_ix1 = gcs->Get_NX() - 1;
+	if (_sub_iy0 < 0) _sub_iy0 = 0;
+	if (_sub_iy1 >= gcs->Get_NY()) _sub_iy1 = gcs->Get_NY() - 1;
+	if (_log_level > 3)
+	{
+		printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
+		printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
+		printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
+	}
+	// X
+	_prop_nx = _sub_ix1 - _sub_ix0 + 1;
+	_prop_x0 = _sub_ix0;
+	if (_nabc_sdx_extend)
+	{
+		_prop_nx += 2 * _nabc_sdx;
+		_prop_x0 -= _nabc_sdx;
+	}
+	_prop_nx = ((_prop_nx + 3) >> 2) << 2;  // make prop_nx a multiple of 4.
+	// expand sub-volume if extend is desired
+	_sub_ix0 = _prop_x0 > 0 ? _prop_x0 : 0;
+	int prop_x1 = _prop_x0 + _prop_nx - 1;
+	_sub_ix1 = prop_x1 < gcs->Get_NX() ? prop_x1 : gcs->Get_NX() - 1;
+	// Y
+	_prop_ny = _sub_iy1 - _sub_iy0 + 1;
+	_prop_y0 = _sub_iy0;
+	if (_nabc_sdy_extend)
+	{
+		_prop_ny += 2 * _nabc_sdy;
+		_prop_y0 -= _nabc_sdy;
+	}
+	_prop_ny = ((_prop_ny + 7) >> 3) << 3;  // make prop ny a multiple of 8
+	// expand sub-volume if extend is desired
+	_sub_iy0 = _prop_y0 > 0 ? _prop_y0 : 0;
+	int prop_y1 = _prop_y0 + _prop_ny - 1;
+	_sub_iy1 = prop_y1 < gcs->Get_NY() ? prop_y1 : gcs->Get_NY() - 1;
+	// Z
+	_prop_nz = _sub_iz1 - _sub_iz0 + 1;
+	_prop_z0 = _sub_iz0;
+	if (_nabc_top_extend)
+	{
+		_prop_nz += _nabc_top + ghost_padding;
+		_prop_z0 -= (_nabc_top + ghost_padding);
+	}
+	if (_nabc_bot_extend)
+	{
+		_prop_nz += _nabc_bot;
+	}
+	_prop_nz = ((_prop_nz + 7) >> 3) << 3;  // make prop nz a multiple of 8
+	// expand sub-volume if extend is desired
+	_sub_iz0 = _prop_z0 > 0 ? _prop_z0 : 0;
+	int prop_z1 = _prop_z0 + _prop_nz - 1;
+	_sub_iz1 = prop_z1 < gcs->Get_NZ() ? prop_z1 : gcs->Get_NZ() - 1;
+	if (_log_level > 3)
+	{
+		printf("Propagation volume X = [%d,%d].\n",_prop_x0,_prop_x0+_prop_nx-1);
+		printf("Propagation volume Y = [%d,%d].\n",_prop_y0,_prop_y0+_prop_ny-1);
+		printf("Propagation volume Z = [%d,%d].\n",_prop_z0,_prop_z0+_prop_nz-1);
+
+		printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
+		printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
+		printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
 	}
 }
 

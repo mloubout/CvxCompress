@@ -61,6 +61,10 @@ void Elastic_Propagator::_init(
 	_timer3 = 0.0;
 	_timer4 = 0.0;
 	_timer5 = 0.0;
+	_h2d = 0;
+	_d2h = 0;
+	_prev_h2d = 0;
+	_prev_d2h = 0;
 	_num_timesteps = 0;
 	_job = job;
 	_debug = debug;
@@ -452,7 +456,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 		// determine best fit for available hardware.
                 printf("Automatic determination of best GPU configuration...\n");
 		int done = false, done_steps = false;
-		const int max_pipes = 4;
+		const int max_pipes = 8;
 		const int max_steps = 6;
 		int num_configs = max_pipes * (max_steps - 2);
 		float* performance = new float[num_configs];
@@ -464,7 +468,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			device_ids[i] = 0L;
 			num_devices[i] = 0;
 		}
-		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  ++num_pipes)
+		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  num_pipes*=2)
 		{
 			done_steps = false;
 			for (int num_steps = 3;  num_steps <= max_steps && !done_steps;  ++num_steps)
@@ -526,7 +530,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 				{
 					done = true; // no need to test more pipelines, they will only be slower.
 
-					// run 10 blocks to gauge average throughput
+					// run 3 blocks to gauge average throughput
 					Prepare_For_Propagation(shot,false,true);
 
 					double max_mcells_per_second = 0.0;
@@ -1524,6 +1528,10 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		clock_gettime(CLOCK_REALTIME, &after);
 		double elapsed_time = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)_before.tv_sec - (double)_before.tv_nsec * 1e-9;
 		double mcells_per_s = (double)_nx * (double)_ny * (double)_nz * (double)Get_Total_Number_Of_Timesteps() * 1e-6 / elapsed_time;
+		double h2d_GB_per_s = (double)(_h2d - _prev_h2d) / (1073741824.0 * elapsed_time);
+		double d2h_GB_per_s = (double)(_d2h - _prev_d2h) / (1073741824.0 * elapsed_time);
+		_prev_h2d = _h2d;
+		_prev_d2h = _d2h;
 		int ts = _pipes[0]->Get_Output_Block_Timestep(0) - Get_Total_Number_Of_Timesteps();
 		if (ts == 0)
 		{
@@ -1545,20 +1553,20 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			_timer5 = 0.0;
 			if (_num_num_z > 1)
 			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
 			}
 			else
 			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
 			}
 #else
 			if (_num_num_z > 1)
 			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s);
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s);
 			}
 			else
 			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s);
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s);
 			}
 #endif
 			if (_num_num_z > 1)

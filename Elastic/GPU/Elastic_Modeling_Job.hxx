@@ -15,6 +15,9 @@ public:
 	bool Is_Valid() {return _Is_Valid;}
 	int Get_Log_Level() {return _log_level;}
 
+	bool Subvolume_Is_Relative_To_Source() {return _sub_origin == 0 ? true : false;}
+	void Compute_Subvolume();
+
 	//
 	// Get dimension and origin of propagation volume.
 	// Origin can be negative if any of the axes are extended.
@@ -172,6 +175,23 @@ private:
 	bool _sub_x_set;
 	bool _sub_y_set;
 	bool _sub_z_set;
+
+	int _parm_sub_ix0;
+	int _parm_sub_ix1;
+	int _parm_sub_iy0;
+	int _parm_sub_iy1;
+	int _parm_sub_iz0;
+	int _parm_sub_iz1;
+
+	int _parm_nabc_sdx;
+	int _parm_nabc_sdy;
+	int _parm_nabc_top;
+	int _parm_nabc_bot;
+
+	bool _parm_nabc_sdx_extend;
+	bool _parm_nabc_sdy_extend;
+	bool _parm_nabc_top_extend;
+	bool _parm_nabc_bot_extend;
 
 	int _sub_ix0;
 	int _sub_ix1;
