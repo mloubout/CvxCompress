@@ -113,6 +113,7 @@ Elastic_Propagator::~Elastic_Propagator()
 {
 	Free_Host_Memory();
 	Delete_Compute_Pipelines();
+	Free_Device_Memory();
 }
 
 void Elastic_Propagator::Build_Compute_Pipelines(

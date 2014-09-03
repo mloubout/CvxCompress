@@ -646,7 +646,7 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 	delete [] jj_max;
 	*/
 
-//#pragma omp parallel for
+#pragma omp parallel for
 	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
 	{
 		int curr_timestep = timesteps[iBlk];
