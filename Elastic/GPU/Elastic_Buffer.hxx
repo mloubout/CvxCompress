@@ -194,6 +194,7 @@ public:
 	static const float _C3 = -0.0027386181103430177f;
 
 private:
+	friend class Elastic_Propagator;
 	friend class Elastic_Pipeline;
 
 	Elastic_Propagator* _prop;	// Root object

@@ -30,6 +30,7 @@ PROPERTY Gamma2   = 0
 # PROPAGATE_X 0 50 %			propagate lower half, "lower" refers to lower local coordinate values
 # PROPAGATE_X 0 12500 local		propagate from local coordinate 0 to 12500. 
 # PROPAGATE_X 0 3199 index		propagate from cell 0 to cell 3199
+PROPAGATE_ORIGIN = Volume
 PROPAGATE_X = 0 999 index
 PROPAGATE_Y = 220 1019 index
 PROPAGATE_Z = 0 100 %
@@ -45,9 +46,9 @@ FREESURFACE    = enabled
 SOURCE_GHOST   = enabled		# only applies if freesurface is disabled
 RECEIVER_GHOST = enabled		# only applies if freesurface is disabled
 # GPU configuration
-GPU_DEVICES   = 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15  # must be comma-separated list with no whitespace.
-GPU_PIPES     = 1
-STEPS_PER_GPU = 5  # set to 0 means automatically select largest number of steps that will fit in GPU memory.
+#GPU_DEVICES   = 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15  # must be comma-separated list with no whitespace.
+#GPU_PIPES     = 1
+#STEPS_PER_GPU = 5  # set to 0 means automatically select largest number of steps that will fit in GPU memory.
 COURANT_FACTOR = 1.0
 # Shots
 SHOT 1 SOURCE_LOCATION    6250.00 7875.00 6.00 local

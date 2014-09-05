@@ -105,6 +105,7 @@ public:
 
 	void Add_H2D(unsigned long len);
 	void Add_D2H(unsigned long len);
+	void Add_H2H(unsigned long len);
 
 private:
 	friend class Elastic_Modeling_Job;
@@ -226,9 +227,11 @@ private:
 
 	unsigned long _h2d;
 	unsigned long _d2h;
+	unsigned long _h2h;
 
 	unsigned long _prev_h2d;
 	unsigned long _prev_d2h;
+	unsigned long _prev_h2h;
  
 	int* _num_z;
 	float* _num_z_throughput;

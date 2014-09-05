@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <xmmintrin.h>
 #include <omp.h>
 #include "Elastic_Shot.hxx"
 #include "Elastic_Propagator.hxx"
@@ -646,7 +647,6 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 	delete [] jj_max;
 	*/
 
-#pragma omp parallel for
 	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
 	{
 		int curr_timestep = timesteps[iBlk];
@@ -660,6 +660,11 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 				int* trcflag = _h_rcv_trcflag[pipe->Get_ID()][curr_blk_offset];
 				for (int ii = 0, jj = 0;  ii < num_rx[iBlk];  ++ii)
 				{
+					if ((ii&15) == 0)
+					{
+						_mm_prefetch((char*)(trcflag+ii+64),_MM_HINT_T0);
+						_mm_prefetch((char*)(trcidx+ii+64),_MM_HINT_T0);
+					}
 					if (trcflag[ii] & allowed_flags)
 					{
 						int iTrc = trcidx[ii];
@@ -703,7 +708,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 	}
 	int trc_per_thread = (_num_traces + num_threads - 1) / num_threads;
 
-#pragma omp parallel for
+#pragma omp parallel for	
 	for (int iThr = 0;  iThr < num_threads;  ++iThr)
 	{
 		int min_iTrc = iThr * trc_per_thread;
@@ -711,6 +716,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 		if (max_iTrc > _num_traces) max_iTrc = _num_traces;
 		for (int iTrc = min_iTrc;  iTrc < max_iTrc;  ++iTrc)
 		{
+			if ((iTrc&511) == 0) _mm_prefetch((char*)(_h_trace_touched[(iTrc>>5)+2]),_MM_HINT_T0);
 			//if (_h_trace_touched[iTrc])
 			if ((_h_trace_touched[iTrc >> 5] & (1 << (iTrc & 31))) != 0)
 			{

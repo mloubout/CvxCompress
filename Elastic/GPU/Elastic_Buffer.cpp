@@ -643,7 +643,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		}
 #endif
 
-		cudaSetDevice(_device_id);
+		//cudaSetDevice(_device_id);
 		if (Simple_Copy)
 		{
 			Host_Simple_Copy_Kernel(

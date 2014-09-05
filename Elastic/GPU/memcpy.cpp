@@ -182,9 +182,9 @@ int main(int argc, char* argv[])
 {
 	//setpriority(PRIO_PROCESS, 0, 19);
 
-	const size_t nx = 1600;
-	const size_t ny = 1600;
-	const size_t nz = 600;
+	const size_t nx = 1720;
+	const size_t ny = 1720;
+	const size_t nz = 1024;
 
 	size_t niter = atoi(argv[2]);
 	omp_set_num_threads(atoi(argv[1]));
@@ -205,25 +205,11 @@ int main(int argc, char* argv[])
 		size_t wf_pad_b = blkSize_wf_pad_b * nbX;
 		size_t wf_pad_l = wf_pad_b / 8;
 	
-		printf("Allocating interleaved wavefields (%.2fGB)...\n",(double)wf_pad_b*1e-9);
-		char* wf = 0L;
-		posix_memalign((void**)&wf, ps, wf_pad_b);
-		// initialize buffers block-by-block to ensure vm pages are pegged to the right socket
-		for (size_t i = 0;  i < nbX;  ++i) omp_memclear(wf + i * blkSize_wf_pad_b, blkSize_wf_pad_b);
-		//omp_memclear(wf, wf_pad_b);
-
 		size_t blkSize_em_b = blkSize_pt * (size_t)16;
 		size_t blkSize_em_half_b = blkSize_em_b / 2;
 		size_t blkSize_em_pad_b = ((blkSize_em_b + ps - 1) / ps) * ps;
 		size_t em_pad_b = blkSize_em_pad_b * nbX;
 		size_t em_pad_l = em_pad_b / 8;
-
-		printf("Allocating earth model (%.2fGB)...\n",(double)em_pad_b*1e-9);
-		char* em = 0L;
-		posix_memalign((void**)&em, ps, em_pad_b);
-		// initialize buffers block-by-block to ensure vm pages are pegged to the right socket
-		for (size_t i = 0;  i < nbX;  ++i) omp_memclear(em + i * blkSize_em_pad_b, blkSize_em_pad_b);
-		//omp_memclear(em, em_pad_b);
 
 		// wake up a couple of GPUs
 		int* device_id = new int[2];
@@ -239,6 +225,20 @@ int main(int argc, char* argv[])
 		cuda_host_memalign(&h_wf_out_2, ps, blkSize_wf_pad_b);
 		cuda_host_memalign(&h_em_in_1, ps, blkSize_em_pad_b);
 		cuda_host_memalign(&h_em_in_2, ps, blkSize_em_pad_b);
+
+		printf("Allocating interleaved wavefields (%.2fGB)...\n",(double)wf_pad_b*1e-9);
+		char* wf = 0L;
+		posix_memalign((void**)&wf, ps, wf_pad_b);
+		// initialize buffers block-by-block to ensure vm pages are pegged to the right socket
+		for (size_t i = 0;  i < nbX;  ++i) omp_memclear(wf + i * blkSize_wf_pad_b, blkSize_wf_pad_b);
+
+		//omp_memclear(wf, wf_pad_b);
+		printf("Allocating earth model (%.2fGB)...\n",(double)em_pad_b*1e-9);
+		char* em = 0L;
+		posix_memalign((void**)&em, ps, em_pad_b);
+		// initialize buffers block-by-block to ensure vm pages are pegged to the right socket
+		for (size_t i = 0;  i < nbX;  ++i) omp_memclear(em + i * blkSize_em_pad_b, blkSize_em_pad_b);
+		//omp_memclear(em, em_pad_b);
 
 		printf("Allocating device buffers...\n");
 		void *d1_wf_1, *d1_wf_2, *d1_em_1, *d1_em_2;

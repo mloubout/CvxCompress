@@ -63,8 +63,10 @@ void Elastic_Propagator::_init(
 	_timer5 = 0.0;
 	_h2d = 0;
 	_d2h = 0;
+	_h2h = 0;
 	_prev_h2d = 0;
 	_prev_d2h = 0;
+	_prev_h2h = 0;
 	_num_timesteps = 0;
 	_job = job;
 	_debug = debug;
@@ -1465,6 +1467,66 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 	}
 	Shift_Pinned_Buffer();
 
+	// start data transfers.
+	// launch longest running compute kernel on each GPU. This is always the first kernel in the pipe.
+	Elastic_Buffer*** launch_buffers = new Elastic_Buffer**[_GPUs_per_pipe];
+	for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+	{
+		launch_buffers[iGPU] = new Elastic_Buffer*[_num_pipes];
+		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+		{
+			int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+			cudaSetDevice(device_id);
+			launch_buffers[iGPU][iPipe] = 0L;
+			for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+			{
+				Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+				if (buf->Get_Device_ID() == device_id)
+				{
+					buf->Launch_Input_Transfers();
+					buf->Launch_Output_Transfers();
+					if (buf->Is_Compute() && !buf->Get_M1_Buffer()->Is_Compute())
+					{	
+						launch_buffers[iGPU][iPipe] = buf;
+						buf->Launch_Compute_Kernel(false,_dti,shot,_num_z[_curr_num_z]);
+					}
+				}
+			}
+		}
+	}
+
+	// launch remaining compute kernels.
+	bool keep_doing_it = false;
+	do
+	{
+		keep_doing_it = false;
+		for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+		{
+			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+			{
+				int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+				cudaSetDevice(device_id);
+				Elastic_Buffer* prev_compute_buf = launch_buffers[iGPU][iPipe];
+				launch_buffers[iGPU][iPipe] = 0L;
+				for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+				{
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+					if (buf->Get_Device_ID() == device_id && buf->Get_M1_Buffer() == prev_compute_buf)
+					{
+						launch_buffers[iGPU][iPipe] = buf;
+						buf->Launch_Compute_Kernel(false,_dti,shot,_num_z[_curr_num_z]);
+						keep_doing_it = true;
+					}
+				}
+			}
+		}
+	} while (keep_doing_it);
+	
+	// release temporary array(s)
+	for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU) delete [] launch_buffers[iGPU];
+	delete [] launch_buffers;
+
+	/*
 	if (_slow_data_transfers)
 	{
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Data_Transfers();
@@ -1475,6 +1537,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Compute_Kernel(_dti,shot,_num_z[_curr_num_z]);
 		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Data_Transfers();
 	}
+	*/
 	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Receiver_Data_Transfers(shot);
 	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Launch_Receiver_Extraction_Kernels(shot);
 
@@ -1531,8 +1594,10 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		double mcells_per_s = (double)_nx * (double)_ny * (double)_nz * (double)Get_Total_Number_Of_Timesteps() * 1e-6 / elapsed_time;
 		double h2d_GB_per_s = (double)(_h2d - _prev_h2d) / (1073741824.0 * elapsed_time);
 		double d2h_GB_per_s = (double)(_d2h - _prev_d2h) / (1073741824.0 * elapsed_time);
+		double h2h_GB_per_s = (double)(_h2h - _prev_h2h) / (1073741824.0 * elapsed_time);
 		_prev_h2d = _h2d;
 		_prev_d2h = _d2h;
+		_prev_h2h = _h2h;
 		int ts = _pipes[0]->Get_Output_Block_Timestep(0) - Get_Total_Number_Of_Timesteps();
 		if (ts == 0)
 		{
@@ -1554,20 +1619,20 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			_timer5 = 0.0;
 			if (_num_num_z > 1)
 			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
 			}
 			else
 			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
 			}
 #else
 			if (_num_num_z > 1)
 			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s);
+				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
 			}
 			else
 			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s);
+				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
 			}
 #endif
 			if (_num_num_z > 1)
@@ -1759,6 +1824,7 @@ void Elastic_Propagator::omp_memclear(void* dst, size_t len)
 
 void Elastic_Propagator::omp_memcpy(void* dst, void* src, size_t len)
 {
+	Add_H2H(2*len);
         size_t leni = len / 16;
         size_t nn = (len + NUM_PAGES*getpagesize()-1) / (NUM_PAGES*getpagesize());
 	size_t One_Thread_Full = NUM_PAGES * getpagesize() / sizeof(__m128);
@@ -1772,7 +1838,7 @@ void Elastic_Propagator::omp_memcpy(void* dst, void* src, size_t len)
                 __m128* s = (__m128*)src + i0;
                 for (int j = 0;  j < in;  ++j)
                 {
-			_mm_prefetch((char*)(s+j+16),_MM_HINT_T0);
+			if ((j&3) == 0) _mm_prefetch((char*)(s+j+16),_MM_HINT_T0);
                         _mm_stream_ps((float*)(d+j),_mm_load_ps((float*)(s+j)));
                 }
         }
@@ -1814,31 +1880,8 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 	printf("_NbX=%d, _bsX=%d, _ny=%d, _nz=%d\n",_NbX,_bsX,_ny,_nz);
 	printf("_blkSize_PV=%ld, _blkSize_ST=%ld, _blkSize_EM=%ld\n",_blkSize_PV,_blkSize_ST,_blkSize_EM);
 	printf("Allocating %s memory...\n",Pinned?"PINNED":"REGULAR");
-	for (int i = 0;  i < _NbX;  ++i)
-	{
-		if (Pinned)
-		{
-			cudaError_t err1 = cudaHostAlloc(&(_PV[i]),_blkSize_PV,cudaHostAllocDefault);
-			if (err1 != cudaSuccess) _PV[i] = 0L;
-
-			cudaError_t err2 = cudaHostAlloc(&(_ST[i]),_blkSize_ST,cudaHostAllocDefault);
-			if (err2 != cudaSuccess) _ST[i] = 0L;
-
-			cudaError_t err3 = cudaHostAlloc(&(_EM[i]),_blkSize_EM,cudaHostAllocDefault);
-			if (err3 != cudaSuccess) _EM[i] = 0L;
-		}
-		else
-		{
-			posix_memalign((void**)&(_PV[i]), getpagesize(), _blkSize_PV);
-			omp_memclear(_PV[i], _blkSize_PV);
-
-			posix_memalign((void**)&(_ST[i]), getpagesize(), _blkSize_ST);
-			omp_memclear(_ST[i], _blkSize_ST);
-
-			posix_memalign((void**)&(_EM[i]), getpagesize(), _blkSize_EM);
-			omp_memclear(_EM[i], _blkSize_EM);
-		}
-	}
+	// allocate high traffic memory blocks first.
+	// the first memory that is allocated is faster than the last because of the way NUMA works.
 	if (!Pinned)
 	{
 		// allocate pinned transfer buffers
@@ -1867,6 +1910,31 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 			_pbuf_EM_Out = new void*[2];
 			cuda_host_memalign(&(_pbuf_EM_Out[0]), getpagesize(), _blkSize_EM);
 			cuda_host_memalign(&(_pbuf_EM_Out[1]), getpagesize(), _blkSize_EM);
+		}
+	}
+	for (int i = 0;  i < _NbX;  ++i)
+	{
+		if (Pinned)
+		{
+			cudaError_t err1 = cudaHostAlloc(&(_PV[i]),_blkSize_PV,cudaHostAllocDefault);
+			if (err1 != cudaSuccess) _PV[i] = 0L;
+
+			cudaError_t err2 = cudaHostAlloc(&(_ST[i]),_blkSize_ST,cudaHostAllocDefault);
+			if (err2 != cudaSuccess) _ST[i] = 0L;
+
+			cudaError_t err3 = cudaHostAlloc(&(_EM[i]),_blkSize_EM,cudaHostAllocDefault);
+			if (err3 != cudaSuccess) _EM[i] = 0L;
+		}
+		else
+		{
+			posix_memalign((void**)&(_PV[i]), getpagesize(), _blkSize_PV);
+			omp_memclear(_PV[i], _blkSize_PV);
+
+			posix_memalign((void**)&(_ST[i]), getpagesize(), _blkSize_ST);
+			omp_memclear(_ST[i], _blkSize_ST);
+
+			posix_memalign((void**)&(_EM[i]), getpagesize(), _blkSize_EM);
+			omp_memclear(_EM[i], _blkSize_EM);
 		}
 	}
 	if (_debug)
@@ -2173,6 +2241,11 @@ void Elastic_Propagator::Add_H2D(unsigned long len)
 void Elastic_Propagator::Add_D2H(unsigned long len)
 {
 	_d2h += len;
+}
+
+void Elastic_Propagator::Add_H2H(unsigned long len)
+{
+	_h2h += len;
 }
 
 bool Elastic_Propagator::Is_Debug()
