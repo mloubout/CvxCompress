@@ -1470,25 +1470,85 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 	// start data transfers.
 	// launch longest running compute kernel on each GPU. This is always the first kernel in the pipe.
 	Elastic_Buffer*** launch_buffers = new Elastic_Buffer**[_GPUs_per_pipe];
-	for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+	if (_slow_data_transfers)
 	{
-		launch_buffers[iGPU] = new Elastic_Buffer*[_num_pipes];
-		for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+		for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
 		{
-			int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
-			cudaSetDevice(device_id);
-			launch_buffers[iGPU][iPipe] = 0L;
-			for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
 			{
-				Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
-				if (buf->Get_Device_ID() == device_id)
+				int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+				cudaSetDevice(device_id);
+				for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
 				{
-					buf->Launch_Input_Transfers();
-					buf->Launch_Output_Transfers();
-					if (buf->Is_Compute() && !buf->Get_M1_Buffer()->Is_Compute())
-					{	
-						launch_buffers[iGPU][iPipe] = buf;
-						buf->Launch_Compute_Kernel(false,_dti,shot,_num_z[_curr_num_z]);
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+					if (buf->Get_Device_ID() == device_id)
+					{
+						buf->Launch_Input_Transfers();
+						buf->Launch_Output_Transfers();
+					}
+				}
+			}
+		}
+		for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+		{
+			launch_buffers[iGPU] = new Elastic_Buffer*[_num_pipes];
+			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+			{
+				int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+				cudaSetDevice(device_id);
+				launch_buffers[iGPU][iPipe] = 0L;
+				for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+				{
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+					if (buf->Get_Device_ID() == device_id)
+					{
+						if (buf->Is_Compute() && !buf->Get_M1_Buffer()->Is_Compute())
+						{	
+							launch_buffers[iGPU][iPipe] = buf;
+							buf->Launch_Compute_Kernel(false,_dti,shot,_num_z[_curr_num_z]);
+						}
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+		{
+			launch_buffers[iGPU] = new Elastic_Buffer*[_num_pipes];
+			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+			{
+				int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+				cudaSetDevice(device_id);
+				launch_buffers[iGPU][iPipe] = 0L;
+				for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+				{
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+					if (buf->Get_Device_ID() == device_id)
+					{
+						if (buf->Is_Compute() && !buf->Get_M1_Buffer()->Is_Compute())
+						{	
+							launch_buffers[iGPU][iPipe] = buf;
+							buf->Launch_Compute_Kernel(false,_dti,shot,_num_z[_curr_num_z]);
+						}
+					}
+				}
+			}
+		}
+		for (int iGPU = 0;  iGPU < _GPUs_per_pipe;  ++iGPU)
+		{
+			for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
+			{
+				int device_id = _pipes[iPipe]->Get_All_Device_IDs()[iGPU];
+				cudaSetDevice(device_id);
+				for (int iBuff = 0;  iBuff < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuff)
+				{
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuff);
+					if (buf->Get_Device_ID() == device_id)
+					{
+						buf->Launch_Input_Transfers();
+						buf->Launch_Output_Transfers();
 					}
 				}
 			}
