@@ -166,8 +166,15 @@ void Elastic_Propagator::Build_Compute_Pipelines(
 		if (num_pipes > 2)
 		{
 			double half_halo_cost = 0.0;
-			for (int i = 1;  i < _GPUs_per_pipe*num_timesteps*2;  ++i) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
-			double extra_work = half_halo_cost / (double)(_GPUs_per_pipe * num_timesteps * num_pipes);
+			for (int iGPU = _GPUs_per_pipe-1, i = 0;  iGPU >= 0;  --iGPU)
+			{
+				for (int iStep = num_timesteps*2-1;  iStep >= 0;  --iStep, ++i)
+				{
+					if (partial_allowed || iGPU == 0) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
+				}
+			}
+			//for (int i = 1;  i < _GPUs_per_pipe*num_timesteps*2;  ++i) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
+			double extra_work = half_halo_cost / (double)((partial_allowed ? _GPUs_per_pipe : 1) * num_timesteps * num_pipes);
 			extra_work = 2.0 * extra_work / (_rel_cost[0] + _rel_cost[1]);
 			double y0 = 0.0;
 			for (int iPipe = 0;  iPipe < num_pipes;  ++iPipe)
@@ -1972,6 +1979,7 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 			cuda_host_memalign(&(_pbuf_EM_Out[1]), getpagesize(), _blkSize_EM);
 		}
 	}
+	// allocate wavefield buffers next since they are both read and written
 	for (int i = 0;  i < _NbX;  ++i)
 	{
 		if (Pinned)
@@ -1981,9 +1989,6 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 
 			cudaError_t err2 = cudaHostAlloc(&(_ST[i]),_blkSize_ST,cudaHostAllocDefault);
 			if (err2 != cudaSuccess) _ST[i] = 0L;
-
-			cudaError_t err3 = cudaHostAlloc(&(_EM[i]),_blkSize_EM,cudaHostAllocDefault);
-			if (err3 != cudaSuccess) _EM[i] = 0L;
 		}
 		else
 		{
@@ -1992,7 +1997,18 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 
 			posix_memalign((void**)&(_ST[i]), getpagesize(), _blkSize_ST);
 			omp_memclear(_ST[i], _blkSize_ST);
-
+		}
+	}
+	// allocate earth model buffers last since they are only read during propagation
+	for (int i = 0;  i < _NbX;  ++i)
+	{
+		if (Pinned)
+		{
+			cudaError_t err3 = cudaHostAlloc(&(_EM[i]),_blkSize_EM,cudaHostAllocDefault);
+			if (err3 != cudaSuccess) _EM[i] = 0L;
+		}
+		else
+		{
 			posix_memalign((void**)&(_EM[i]), getpagesize(), _blkSize_EM);
 			omp_memclear(_EM[i], _blkSize_EM);
 		}

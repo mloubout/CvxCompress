@@ -95,6 +95,15 @@ public:
 
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
 
+	int Get_Number_Of_SEGY_Files() {return _num_segy_files;}
+	Elastic_SEGY_File* Get_SEGY_File_by_Index(int idx)
+	{
+		if (idx >= 0 && idx < _num_segy_files)
+			return _segy_files[idx];
+		else
+			return 0L;
+	}
+
 	void Allocate_Pinned_Host_Memory(Elastic_Propagator* prop);
 	void Free_Pinned_Host_Memory(Elastic_Propagator* prop);
 
