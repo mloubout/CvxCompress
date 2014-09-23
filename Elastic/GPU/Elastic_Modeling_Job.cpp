@@ -655,9 +655,9 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			if (!error)
 			{
 				int souidx;
-				double ampl;
-				int matched = sscanf(s, "SHOT %d SOURCE_AMPLITUDE %lf", &souidx, &ampl);
-				if (matched == 2)
+				double ampl1, ampl2, ampl3;
+				int matched = sscanf(s, "SHOT %d SOURCE_AMPLITUDE %lf %lf %lf", &souidx, &ampl1, &ampl2, &ampl3);
+				if (matched == 2 || matched == 4)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
                                         if (shot == 0L)
@@ -668,56 +668,43 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
                                         }
                                         else
 					{
-						if (shot->Get_Source_Type() != Elastic_Shot::Source_Type_Pressure)
+						if (matched == 2)
 						{
-							printf("%s (line %d): Error - SOURCE_AMPLITUDE this source type (%s) requires 3 amplitudes.\n",parmfile_path,line_num,shot->Get_Source_Type_String());
-							error = true;
-							break;
+							if (shot->Get_Source_Type() != Elastic_Shot::Source_Type_Pressure)
+							{
+								printf("%s (line %d): Error - SOURCE_AMPLITUDE this source type (%s) requires 3 amplitudes.\n",parmfile_path,line_num,shot->Get_Source_Type_String());
+								error = true;
+								break;
+							}
+							else
+							{
+								shot->Set_Amplitudes(ampl1,0.0,0.0);
+								if (_log_level > 3) printf("Shot %d :: SOURCE_AMPLITUDE set to %lf\n",shot->Get_Source_Index(),ampl1);
+							}
 						}
-						else
+						else if (matched == 4)
 						{
-							shot->Set_Amplitudes(ampl,0.0,0.0);
-							if (_log_level > 3) printf("Shot %d :: SOURCE_AMPLITUDE set to %lf\n",shot->Get_Source_Index(),ampl);
+							if (shot->Get_Source_Type() == Elastic_Shot::Source_Type_Pressure)
+							{
+								printf("%s (line %d): Error - SOURCE_AMPLITUDE this source type (%s) requires 1 amplitude.\n",parmfile_path,line_num,shot->Get_Source_Type_String());
+								error = true;
+								break;
+							}
+							else
+							{
+								if (ampl1 == 0.0 && ampl2 == 0.0 && ampl3 == 0.0)
+								{
+									printf("%s (line %d): Error - SOURCE_AMPLITUDE at least one amplitude must be non zero.\n",parmfile_path,line_num);
+									error = true;
+									break;
+								}
+								else
+								{
+									shot->Set_Amplitudes(ampl1,ampl2,ampl3);
+									if (_log_level > 3) printf("Shot %d :: SOURCE_AMPLITUDE set to %lf, %lf, %lf\n",shot->Get_Source_Index(),ampl1,ampl2,ampl3);
+								}
+							}
 						}
-					}
-				}
-			}
-			if (!error)
-			{
-				int souidx;
-				double ampl1, ampl2, ampl3;
-				int matched = sscanf(s, "SHOT %d SOURCE_AMPLITUDE %lf,%lf,%lf", &souidx, &ampl1, &ampl2, &ampl3);
-				if (matched == 4)
-				{
-					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_AMPLITUDE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
-                                                if (shot->Get_Source_Type() == Elastic_Shot::Source_Type_Pressure)
-                                                {
-                                                        printf("%s (line %d): Error - SOURCE_AMPLITUDE this source type (%s) requires 1 amplitude.\n",parmfile_path,line_num,shot->Get_Source_Type_String());
-                                                        error = true;
-                                                        break;
-                                                }
-                                                else
-                                                {
-                                                        if (ampl1 == 0.0 && ampl2 == 0.0 && ampl3 == 0.0)
-                                                        {
-                                                                printf("%s (line %d): Error - SOURCE_AMPLITUDE at least one amplitude must be non zero.\n",parmfile_path,line_num);
-                                                                error = true;
-                                                                break;
-                                                        }
-                                                        else
-                                                        {
-                                                                shot->Set_Amplitudes(ampl1,ampl2,ampl3);
-                                                                if (_log_level > 3) printf("Shot %d :: SOURCE_AMPLITUDE set to %lf, %lf, %lf\n",shot->Get_Source_Index(),ampl1,ampl2,ampl3);
-                                                        }
-                                                }
 					}
 				}
 			}
