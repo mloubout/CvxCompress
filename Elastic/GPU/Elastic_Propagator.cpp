@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <pthread.h>
 #include <math.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <omp.h>
 #include <xmmintrin.h>
 #include <sys/time.h>
 #include <cuda_runtime_api.h>
@@ -36,6 +38,57 @@ Elastic_Propagator::Elastic_Propagator(Elastic_Modeling_Job* job)
 	     );
 }
 
+// Determine number of physical CPU cores.
+// Hyper-threaded logical cores are not counted.
+// Cache_Size is per core and in whole KB.
+int Elastic_Propagator::Get_Physical_Core_Count(int& Cache_Size_Per_Core_KB)
+{
+        FILE* fp = fopen("/proc/cpuinfo","r");
+        if (fp != 0L)
+        {
+                char buf[256];
+                int max_phys_id = -1, max_cores = -1, max_cache_size = -1;
+                while (fgets(buf, 256, fp) != 0L)
+                {
+                        int phys_id = -1;
+                        if (sscanf(buf, "physical id : %d", &phys_id) == 1)
+                        {
+                                if (phys_id > max_phys_id) max_phys_id = phys_id;
+                        }
+
+                        int cpu_cores = -1;
+                        if (sscanf(buf, "cpu cores : %d", &cpu_cores) == 1)
+                        {
+                                if (cpu_cores > max_cores) max_cores = cpu_cores;
+                        }
+
+                        int cache_size = -1;
+                        if (sscanf(buf, "cache size : %d", &cache_size) == 1)
+                        {
+                                if (cache_size > max_cache_size) max_cache_size = cache_size;
+                        }
+                }
+                fclose(fp);
+                if (max_phys_id >= 0 && max_cores > 0)
+                {
+                        if (max_cache_size >= 0)
+                        {
+                                Cache_Size_Per_Core_KB = max_cache_size / max_cores;
+                        }
+                        else
+                        {
+                                Cache_Size_Per_Core_KB = -1;
+                        }
+                        return (max_phys_id+1) * max_cores;
+                }
+                else
+                {
+                        return -1;
+                }
+        }
+        return -1;
+}
+
 void Elastic_Propagator::_init(
 	int log_level,
 	Elastic_Modeling_Job* job,
@@ -49,7 +102,17 @@ void Elastic_Propagator::_init(
 	bool debug
 	)
 {
+	int Cache_Size_Per_Core_KB;
+	int num_cores = Get_Physical_Core_Count(Cache_Size_Per_Core_KB);
+	if (num_cores > 0)
+	{
+		int num_threads = num_cores >= 16 ? 12 : num_cores - 4;
+		printf("Elastic_Propagator::_init - Machine has %d physical cores. Using %d threads for openmp.\n",num_cores,num_threads);
+		omp_set_num_threads(num_threads);
+	}
+
 	_log_level = log_level;
+	_best_num_z = -1;
 	_num_z = 0L;
 	_num_z_throughput = 0L;
 	_num_num_z = 0;
@@ -96,6 +159,12 @@ void Elastic_Propagator::_init(
 	_PV = 0L;
 	_ST = 0L;
 	_EM = 0L;
+	_PV_pinned = 0L;
+	_ST_pinned = 0L;
+	_EM_pinned = 0L;
+	_num_pinned_PV = 0;
+	_num_pinned_ST = 0;
+	_num_pinned_EM = 0;
 	_pbuf_PV = 0L;
 	_pbuf_ST = 0L;
 	_pbuf_EM = 0L;
@@ -118,7 +187,7 @@ Elastic_Propagator::~Elastic_Propagator()
 	Free_Device_Memory();
 }
 
-void Elastic_Propagator::Build_Compute_Pipelines(
+bool Elastic_Propagator::Build_Compute_Pipelines(
 	int num_pipes, 
 	int num_timesteps, 
 	const int* device_id, 
@@ -126,6 +195,7 @@ void Elastic_Propagator::Build_Compute_Pipelines(
 	bool partial_allowed
 	)
 {
+	bool load_balance_possible = true;
 	_num_devices = num_devices;
 	_device_id = new int[_num_devices];
 	_cmp_streams = new cudaStream_t[_num_devices];
@@ -174,16 +244,28 @@ void Elastic_Propagator::Build_Compute_Pipelines(
 				}
 			}
 			//for (int i = 1;  i < _GPUs_per_pipe*num_timesteps*2;  ++i) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
-			double extra_work = half_halo_cost / (double)((partial_allowed ? _GPUs_per_pipe : 1) * num_timesteps * num_pipes);
+			double extra_work = half_halo_cost / ((double)((partial_allowed ? _GPUs_per_pipe : 1) * num_timesteps * num_pipes) * 8.0);
 			extra_work = 2.0 * extra_work / (_rel_cost[0] + _rel_cost[1]);
 			double y0 = 0.0;
 			for (int iPipe = 0;  iPipe < num_pipes;  ++iPipe)
 			{
-				double y1 = y0 + ((double)_ny/(double)num_pipes) + ((iPipe == 0 || iPipe == (num_pipes-1)) ? extra_work * (double)(num_pipes - 2) / 2.0 : -extra_work);
-				pipe_width[iPipe] = (int)round(y1) - (int)round(y0);
+				double y1 = y0 + ((double)_ny/((double)num_pipes*8.0)) + ((iPipe == 0 || iPipe == (num_pipes-1)) ? extra_work * (double)(num_pipes - 2) / 2.0 : -extra_work);
+				pipe_width[iPipe] = 8 * ((int)round(y1) - (int)round(y0));
 				y0 = y1;
+				if (pipe_width[iPipe] <= 0) load_balance_possible = false;
 			}
-
+			if (!load_balance_possible)
+			{
+				printf("Warning! Volume is too narrow for proper load balancing.\n");
+				y0 = 0.0;
+				for (int iPipe = 0;  iPipe < num_pipes;  ++iPipe)
+				{
+					double y1 = y0 + ((double)_ny/(double)num_pipes);
+					pipe_width[iPipe] = (int)round(y1) - (int)round(y0);
+					y0 = y1;
+				}
+			}
+			
 			double* cost = new double[num_pipes];
 			double total_cost = 0.0;
 			for (int iPipe = 0, y0 = 0;  iPipe < num_pipes;  y0+=pipe_width[iPipe++]) 
@@ -373,6 +455,7 @@ void Elastic_Propagator::Build_Compute_Pipelines(
 	
 		delete [] pipe_width;
 	}
+	return load_balance_possible;
 }
 
 void Elastic_Propagator::Delete_Compute_Pipelines()
@@ -460,6 +543,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
                 exit(-1);
         }
 
+	_best_num_z = -1;
         int num_devices = _job->Get_Number_Of_GPU_Devices();
         if (num_devices <= 0)
         {
@@ -470,18 +554,60 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 		const int max_steps = 6;
 		int num_configs = max_pipes * (max_steps - 2);
 		float* performance = new float[num_configs];
+		int* perf_num_z = new int[num_configs];
 		int** device_ids = new int*[num_configs];
 		int* num_devices = new int[num_configs];
 		for (int i = 0;  i < num_configs;  ++i)
 		{
 			performance[i] = 0.0f;
+			perf_num_z[i] = -1;
 			device_ids[i] = 0L;
 			num_devices[i] = 0;
 		}
-		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  num_pipes*=2)
+		// set aside some of the GPU memory for miscellaneous items that will be allocated by each shot.
+		const size_t misc_buffer_size = 50 * 1024 * 1024;
+		float** misc_buffer = new float*[cu_device_count];
+		for (int iDev = 0;  iDev < cu_device_count;  ++iDev)
+		{
+			cudaSetDevice(iDev);
+			cudaMalloc((void**)(misc_buffer+iDev),misc_buffer_size);
+		}
+		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  num_pipes=num_pipes*2)
 		{
 			done_steps = false;
-			for (int num_steps = 3;  num_steps <= max_steps && !done_steps;  ++num_steps)
+			// decide which parts are paged
+			bool register_PV = false;
+			bool register_ST = false;
+			bool register_EM = false;
+			if (num_pipes == 2)
+			{
+				register_PV = true;
+			}
+			else if (num_pipes > 2)
+			{
+				register_PV = true;
+				register_ST = true;
+				register_EM = true;
+			}
+			// set aside space for page tables
+			float** page_tables_buffer = new float*[cu_device_count];
+			size_t page_tables_buffer_size = 0;
+			if (register_PV) page_tables_buffer_size += _NbX * (_blkSize_PV / 4096) * 12;
+			if (register_ST) page_tables_buffer_size += _NbX * (_blkSize_ST / 4096) * 12;
+			if (register_EM) page_tables_buffer_size += _NbX * (_blkSize_EM / 4096) * 12;
+			for (int iDev = 0;  iDev < cu_device_count;  ++iDev)
+			{
+				if (page_tables_buffer_size == 0)
+				{
+					page_tables_buffer[iDev] = 0L;
+				}
+				else
+				{
+					cudaSetDevice(iDev);
+					cudaMalloc((void**)(page_tables_buffer+iDev),page_tables_buffer_size);
+				}
+			}
+			for (int num_steps = max_steps;  num_steps >= 3;  --num_steps)
 			{
 				int perf_idx = (num_pipes - 1) * (max_steps - 2) + (num_steps - 3);
 
@@ -526,31 +652,45 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 
 				// clear CUDA errors
 				cudaGetLastError();
-				Build_Compute_Pipelines(num_pipes,num_steps,device_ids[perf_idx],num_devices[perf_idx],false);
+				bool load_balance_possible = Build_Compute_Pipelines(num_pipes,num_steps,device_ids[perf_idx],num_devices[perf_idx],false);
 				Elastic_Shot* shot = _job->Get_Shot_By_Index(0);
-				if (!Allocate_Device_Memory())
+				if (!load_balance_possible)
 				{
-					done_steps = true;
-					printf("FAILED TO ALLOCATE DEVICE MEMORY FOR THIS CONFIGURATION!\n");
+					printf("Skipping this configuration.\n");
+					shot->Free_Trace_Resample_Buffers();
+					Delete_Compute_Pipelines();
+				}
+				else if (!Allocate_Device_Memory())
+				{
+					//done_steps = true;
+					printf("Not enough device memory for this configuration!\n");
 					shot->Free_Trace_Resample_Buffers();
 					Free_Device_Memory();
 					Delete_Compute_Pipelines();
 				}
 				else
 				{
-					done = true; // no need to test more pipelines, they will only be slower.
+					if (num_pipes >= 4) done = true; // 8 pipes is overwhelmingly likely to be slower than 4
 
 					// run 3 blocks to gauge average throughput
 					Prepare_For_Propagation(shot,false,true);
 
+					// skip past lead-in
+					int ts_out = -1;
+					while (ts_out < 0) Propagate_One_Block(_num_timesteps, shot, false, false, false, false, false, ts_out);
+
+					perf_num_z[perf_idx] = -1;
 					double max_mcells_per_second = 0.0;
-					for (_curr_num_z = 0;  _curr_num_z < _num_num_z;  ++_curr_num_z)
+					for (_curr_num_z = 0;  _curr_num_z < _num_num_z;  _curr_num_z+=1)
 					{
 						struct timespec ts0;
 						clock_gettime(CLOCK_REALTIME, &ts0);
 
-						const int num_iter = 3;
-						for (int i = 0;  i < num_iter;  ++i) Propagate_One_Block(_num_timesteps, shot, false);
+						// do entire major iteration
+						const int max_num_iter = 10;
+						int num_iter = 0;
+						int curr_ts_out = ts_out;
+						while (num_iter < max_num_iter) {Propagate_One_Block(_num_timesteps, shot, true, false, !register_PV, !register_ST, !register_EM, ts_out); ++num_iter;}
 
 						struct timespec ts1;
 						clock_gettime(CLOCK_REALTIME, &ts1);
@@ -558,7 +698,11 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 
 						double mcells = (double)(4 * _job->Get_Propagation_NY() * _job->Get_Propagation_NZ()) * (double)num_iter * 1e-6 * (double)(num_devices_per_pipe * num_steps);
 						double mcells_per_second = mcells / elapsed_time;
-						if (mcells_per_second > max_mcells_per_second) max_mcells_per_second = mcells_per_second;
+						if (mcells_per_second > max_mcells_per_second)
+						{
+							max_mcells_per_second = mcells_per_second;
+							perf_num_z[perf_idx] = _num_z[_curr_num_z];
+						}
 						
 						printf("  -> #z=%d :: %.0f MCells/s\n",_num_z[_curr_num_z],mcells_per_second);
 					}
@@ -568,10 +712,32 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 					Delete_Compute_Pipelines();
 
 					performance[perf_idx] = max_mcells_per_second;
-					printf("Average throughput was %.0f MCells/s\n",max_mcells_per_second);
+					printf("Max throughput was %.0f MCells/s (#z=%d)\n",max_mcells_per_second,perf_num_z[perf_idx]);
 				}
 			}
+			// release page table buffer
+			for (int iDev = 0;  iDev < cu_device_count;  ++iDev)
+			{
+				if (page_tables_buffer_size != 0)
+				{
+					cudaSetDevice(iDev);
+					cudaFree(page_tables_buffer[iDev]);
+					page_tables_buffer[iDev] = 0L;
+				}
+			}
+			delete [] page_tables_buffer;
 		}
+		// release miscellaneous buffer
+		for (int iDev = 0;  iDev < cu_device_count;  ++iDev)
+		{
+			if (misc_buffer[iDev] != 0L)
+			{
+				cudaSetDevice(iDev);
+				cudaFree(misc_buffer[iDev]);
+				misc_buffer[iDev];
+			}
+		}
+		delete [] misc_buffer;
 		// find configuration with lowest elapsed time
 		printf("\nDone optimizing hardware configuration\n");
 		float highest_throughput = 0.0f;
@@ -592,6 +758,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 						highest_throughput = throughput;
 						best_num_pipes = num_pipes;
 						best_num_steps = num_steps;
+						_best_num_z = perf_num_z[perf_idx];
 						best_num_devices = num_devices[perf_idx];
 						best_device_ids = device_ids[perf_idx];
 					}
@@ -605,7 +772,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 		}
 		else
 		{
-			printf("Best configuration was determined to be %d pipes with %d timesteps per device.\nManaged to use %d/%d devices.\n",best_num_pipes,best_num_steps,best_num_devices,cu_device_count);
+			printf("Best configuration was determined to be %d pipes with %d timesteps per device (#=%d).\nManaged to use %d/%d devices.\n",best_num_pipes,best_num_steps,_best_num_z,best_num_devices,cu_device_count);
 			cudaGetLastError();
 			Build_Compute_Pipelines(
 					best_num_pipes,
@@ -625,6 +792,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			}
 			delete [] device_ids;
 			delete [] num_devices;
+			delete [] perf_num_z;
 			delete [] performance;
 		}
 	}		
@@ -639,6 +807,119 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 				false
 				);
 		Allocate_Device_Memory();
+	}
+}
+
+size_t Elastic_Propagator::Get_Minimum_Free_GPU_Memory()
+{
+	size_t min_gpu_memory_left = 0;
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		int device_ID = _device_id[iDev];
+		cudaSetDevice(device_ID);
+		size_t free, total;
+		cudaError_t err = cudaMemGetInfo(&free,&total);
+		if (min_gpu_memory_left == 0 || free < min_gpu_memory_left) min_gpu_memory_left = free;
+	}
+	return min_gpu_memory_left;
+}
+
+void Elastic_Propagator::Register_As_Many_Pages_As_Possible(bool verbose, bool do_PV, bool do_ST, bool do_EM)
+{
+	size_t min_free_GPU_memory = Get_Minimum_Free_GPU_Memory();
+	if (verbose)
+	{
+		float min_gpu_free_MB = (double)min_free_GPU_memory / 1048576.0;
+		printf("Minimum free GPU memory is %.2f MB\n",min_gpu_free_MB);
+	}
+
+	_num_pinned_PV = 0;
+	_num_pinned_ST = 0;
+	_num_pinned_EM = 0;
+
+	const size_t min_allowed_remaining_memory_GPU = 50 * 1024 * 1024;
+	if (min_free_GPU_memory < min_allowed_remaining_memory_GPU) return;
+
+	// pin as many of the host blocks as GPU memory permits.
+	int failed_to_pin = false;
+	for (int ibX = 0;  ibX < _NbX;  ++ibX)
+	{
+		if (!failed_to_pin)
+		{
+			if (_PV_pinned[ibX])
+			{
+				++_num_pinned_PV;
+			}
+			else if (do_PV)
+			{
+				cudaError_t err = cudaHostRegister((void*)(_PV[ibX]),_blkSize_PV,0);
+				if (err == cudaSuccess)
+				{
+					_PV_pinned[ibX] = true;
+					++_num_pinned_PV;
+					failed_to_pin = Get_Minimum_Free_GPU_Memory() < min_allowed_remaining_memory_GPU ? true : false;
+				}
+				else
+				{
+					failed_to_pin = true;
+				}
+			}
+		}
+	}
+	for (int ibX = 0;  ibX < _NbX;  ++ibX)
+	{
+		if (!failed_to_pin)
+		{
+			if (_ST_pinned[ibX])
+			{
+				++_num_pinned_ST;
+			}
+			else if (do_ST)
+			{
+				cudaError_t err = cudaHostRegister((void*)(_ST[ibX]),_blkSize_ST,0);
+				if (err == cudaSuccess)
+				{
+					_ST_pinned[ibX] = true;
+					++_num_pinned_ST;
+					failed_to_pin = Get_Minimum_Free_GPU_Memory() < min_allowed_remaining_memory_GPU ? true : false;
+				}
+				else
+				{
+					failed_to_pin = true;
+				}
+			}
+		}
+	}
+	for (int ibX = 0;  ibX < _NbX;  ++ibX)
+	{
+		if (!failed_to_pin)
+		{
+			if (_EM_pinned[ibX])
+			{
+				++_num_pinned_EM;
+			}
+			else if (do_EM)
+			{
+				cudaError_t err = cudaHostRegister((void*)(_EM[ibX]),_blkSize_EM,0);
+				if (err == cudaSuccess)
+				{
+					_EM_pinned[ibX] = true;
+					++_num_pinned_EM;
+					failed_to_pin = Get_Minimum_Free_GPU_Memory() < min_allowed_remaining_memory_GPU ? true : false;
+				}
+				else
+				{
+					failed_to_pin = true;
+				}
+			}
+		}
+	}
+
+	if (verbose)
+	{
+		printf("Pinned %d/%d PV Host blocks.\n",_num_pinned_PV,_NbX);
+		printf("Pinned %d/%d ST Host blocks.\n",_num_pinned_ST,_NbX);
+		printf("Pinned %d/%d EM Host blocks.\n",_num_pinned_EM,_NbX);
 	}
 }
 
@@ -724,9 +1005,63 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 }
 */
 
+static void* thread_start(void* arg)
+{
+	Elastic_Propagator* prop = (Elastic_Propagator*)arg;
+	if (prop->Get_Number_Of_Pipelines() == 2)
+	{
+		prop->Register_As_Many_Pages_As_Possible(false,true,false,false);
+	}
+	else if (prop->Get_Number_Of_Pipelines() > 2)
+	{
+		prop->Register_As_Many_Pages_As_Possible(false,true,true,true);
+	}
+	return 0L;
+}
+
 void Elastic_Propagator::Read_Earth_Model()
 {
+	size_t min_free_GPU_memory = Get_Minimum_Free_GPU_Memory();
+	float min_gpu_free_MB = (double)min_free_GPU_memory / 1048576.0;
+	printf("Minimum free GPU memory is %.2f MB\n",min_gpu_free_MB);
+
+	pthread_attr_t thrattr;
+	int s = pthread_attr_init(&thrattr);
+	if (s != 0)
+	{
+		printf("pthread_attr_init failed!\n");
+		exit(-1);
+	}
+	s = pthread_attr_setstacksize(&thrattr, 16*1024*1024);
+	if (s != 0)
+        {
+                printf("pthread_attr_setstacksize failed!\n");
+                exit(-1);
+        }
+	pthread_t thread_id;
+	s = pthread_create(&thread_id, &thrattr, &thread_start, this);
+	if (s != 0)
+	{
+		printf("pthread_create failed!\n");
+		exit(-1);
+	}
+	pthread_attr_destroy(&thrattr);
+
 	_job->_Read_Earth_Model(this);
+
+	void* res;
+	s = pthread_join(thread_id, (void**)&res);
+	if (s != 0L)
+	{
+		printf("pthread_join failed!\n");
+		exit(-1);
+	}
+	if (_num_pinned_PV != 0 || _num_pinned_ST != 0 || _num_pinned_EM != 0)
+	{
+		printf("Pinned %d/%d PV Host blocks.\n",_num_pinned_PV,_NbX);
+		printf("Pinned %d/%d ST Host blocks.\n",_num_pinned_ST,_NbX);
+		printf("Pinned %d/%d EM Host blocks.\n",_num_pinned_EM,_NbX);
+	}
 }
 
 void Elastic_Propagator::Set_EM_Cell(
@@ -1110,7 +1445,8 @@ void* Elastic_Propagator::Get_Block(int bX, bool Is_Model, bool Is_PV)
 
 void* Elastic_Propagator::Get_Host_Block(int bX, bool Is_Model, bool Is_PV, bool Is_Input)
 {
-	if (_pinned)
+	bool Is_Pinned = _pinned || (Is_Model && _EM_pinned[bX]) || (!Is_Model && Is_PV && _PV_pinned[bX]) || (!Is_Model && !Is_PV && _ST_pinned[bX]);
+	if (Is_Pinned)
 	{
 		return Get_Block(bX,Is_Model,Is_PV);
 	}
@@ -1244,40 +1580,55 @@ void Elastic_Propagator::_Find_Non_Zeros(char* dst, size_t len)
 	}
 }
 
-void Elastic_Propagator::Copy_To_Pinned_Buffer(int input_block_offset, int output_block_offset)
+void Elastic_Propagator::Copy_To_Pinned_Buffer(bool copyPV, bool copyST, bool copyEM, int input_block_offset, int output_block_offset)
 {
 	// only do this if main volume is not pinned
 	if (!_pinned)
 	{
 		if (input_block_offset >= 0)
 		{
-			void* src_PV = Get_Block(input_block_offset, false, true);
-			omp_memcpy(_pbuf_PV[1], src_PV, _blkSize_PV);
+			if (copyPV && !_PV_pinned[input_block_offset])
+			{
+				void* src_PV = Get_Block(input_block_offset, false, true);
+				omp_memcpy(_pbuf_PV[1], src_PV, _blkSize_PV);
+			}
 			//_Compare((char*)_pbuf_PV[1], (char*)src_PV, _blkSize_PV);
 			//printf("input_block_offset=%d, src_PV=%p\n",input_block_offset,src_PV);
 
-			void* src_ST = Get_Block(input_block_offset, false, false);
-			omp_memcpy(_pbuf_ST[1], src_ST, _blkSize_ST);
+			if (copyST && !_ST_pinned[input_block_offset])
+			{
+				void* src_ST = Get_Block(input_block_offset, false, false);
+				omp_memcpy(_pbuf_ST[1], src_ST, _blkSize_ST);
+			}
 			//_Compare((char*)_pbuf_ST[1], (char*)src_ST, _blkSize_ST);
 			//_Find_Non_Zeros((char*)src_ST, _blkSize_ST);
 			//_Find_Non_Zeros((char*)_pbuf_ST[1], _blkSize_ST);
 			//printf("input_block_offset=%d, src_ST=%p\n",input_block_offset,src_ST);
 
-			void* src_EM = Get_Block(input_block_offset, true, false);
-			omp_memcpy(_pbuf_EM[1], src_EM, _blkSize_EM);
+			if (copyEM && !_EM_pinned[input_block_offset])
+			{
+				void* src_EM = Get_Block(input_block_offset, true, false);
+				omp_memcpy(_pbuf_EM[1], src_EM, _blkSize_EM);
+			}
 			//_Compare((char*)_pbuf_EM[1], (char*)src_EM, _blkSize_EM);
 			//printf("input_block_offset=%d, src_EM=%p\n",input_block_offset,src_EM);
 		}
 
 		if (output_block_offset >= 0)
 		{
-			void* dst_PV_Out = Get_Block(output_block_offset, false, true);
-			omp_memcpy(dst_PV_Out, _pbuf_PV_Out[0], _blkSize_PV);
+			if (copyPV && !_PV_pinned[output_block_offset])
+			{
+				void* dst_PV_Out = Get_Block(output_block_offset, false, true);
+				omp_memcpy(dst_PV_Out, _pbuf_PV_Out[0], _blkSize_PV);
+			}
 
-			void* dst_ST_Out = Get_Block(output_block_offset, false, false);
-			omp_memcpy(dst_ST_Out, _pbuf_ST_Out[0], _blkSize_ST);
+			if (copyST && !_ST_pinned[output_block_offset])
+			{
+				void* dst_ST_Out = Get_Block(output_block_offset, false, false);
+				omp_memcpy(dst_ST_Out, _pbuf_ST_Out[0], _blkSize_ST);
+			}
 
-			if (_debug)
+			if (copyEM && _debug && !_EM_pinned[output_block_offset])
 			{
 				void* dst_EM_Out = Get_Block(output_block_offset, true, false);
 				omp_memcpy(dst_EM_Out, _pbuf_EM_Out[0], _blkSize_EM);
@@ -1324,6 +1675,8 @@ void Elastic_Propagator::Shift_Pinned_Buffer()
 void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet, bool is_profiling_run)
 {
 	int vol_nz = _job->Get_Propagation_NZ() / 8;
+	if (_best_num_z <= 0)
+	{
 	_num_z = new int[vol_nz];
 	_num_z_throughput = new float[vol_nz];
 	_num_num_z = 0;
@@ -1338,6 +1691,15 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 			if (!is_profiling_run) printf("num_z = %d -> z_per_block = %d\n",_num_z[_num_num_z],z_per_block);
 			++_num_num_z;
 		}
+	}
+	}
+	else
+	{
+		_num_z = new int[1];
+		_num_z_throughput = new float[1];
+		_num_num_z = 1;
+		_num_z[0] = _best_num_z;
+		_num_z_throughput[0] = 0.0f;
 	}
 	_curr_num_z = 0;
 
@@ -1448,14 +1810,15 @@ void Elastic_Propagator::Release_Resources_After_Propagation(Elastic_Shot* shot)
 void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices)
 {
 	Prepare_For_Propagation(shot,debug_output_source_wavelet,false);
-	while (!Propagate_One_Block(_num_timesteps, shot, debug_output_xz_slices));
+	int ts_out;
+	while (!Propagate_One_Block(_num_timesteps, shot, false, debug_output_xz_slices, true, true, true, ts_out));
 	shot->Write_SEGY_Files();
 	Release_Resources_After_Propagation(shot);
 	printf("Finished Elastic_Propagator::Propagate_Shot\n");
 }
 
 // returns true if at least Number_Of_Timesteps timesteps have been completed
-bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool debug_output_xz_slices)
+bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool silent, bool debug_output_xz_slices, bool copyPV, bool copyST, bool copyEM, int& ts_output)
 {
 #ifdef DETAILED_TIMING
 	struct timespec ts0;
@@ -1464,7 +1827,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 
 	if (_pbuf_first_call)
 	{
-		Copy_To_Pinned_Buffer(_pipes[0]->Get_Input_Block_Offset(0),-1);
+		Copy_To_Pinned_Buffer(copyPV, copyST, copyEM, _pipes[0]->Get_Input_Block_Offset(0), -1);
 		clock_gettime(CLOCK_REALTIME, &_before);
 		_pbuf_first_call = false;
 	}
@@ -1613,7 +1976,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 	clock_gettime(CLOCK_REALTIME, &ts1);
 #endif
 
-	Copy_To_Pinned_Buffer(_pipes[0]->Get_Input_Block_Offset(1),_pipes[0]->Get_Output_Block_Offset(-1));
+	Copy_To_Pinned_Buffer(copyPV, copyST, copyEM, _pipes[0]->Get_Input_Block_Offset(1), _pipes[0]->Get_Output_Block_Offset(-1));
 
 #ifdef DETAILED_TIMING
 	struct timespec ts2;
@@ -1652,6 +2015,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 	_timer5 += (double)ts5.tv_sec + (double)ts5.tv_nsec * 1e-9 - (double)ts4.tv_sec - (double)ts4.tv_nsec * 1e-9;
 #endif
 
+	ts_output = _pipes[0]->Get_Output_Block_Timestep(0) - Get_Total_Number_Of_Timesteps();
 	if ((_pinned && _pipes[0]->Get_Output_Block_Offset(1) == 0) || (!_pinned && _pipes[0]->Get_Output_Block_Offset(0) == 0))
 	{
 		// finished one iteration
@@ -1665,44 +2029,46 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		_prev_h2d = _h2d;
 		_prev_d2h = _d2h;
 		_prev_h2h = _h2h;
-		int ts = _pipes[0]->Get_Output_Block_Timestep(0) - Get_Total_Number_Of_Timesteps();
-		if (ts == 0)
+		double rt1 = 100.0 * _timer1 / elapsed_time;
+		double rt2 = 100.0 * _timer2 / elapsed_time;
+		double rt3 = 100.0 * _timer3 / elapsed_time;
+		double rt4 = 100.0 * _timer4 / elapsed_time;
+		double rt5 = 100.0 * _timer5 / elapsed_time;
+		_timer1 = 0.0;
+		_timer2 = 0.0;
+		_timer3 = 0.0;
+		_timer4 = 0.0;
+		_timer5 = 0.0;
+		if (ts_output == 0)
 		{
-			printf("LEAD-IN (filling up pipeline) took %.2f secs\n",elapsed_time);
+			if (!silent) printf("LEAD-IN (filling up pipeline) took %.2f secs\n",elapsed_time);
 		}
 		else
 		{
 #ifdef DETAILED_TIMING
-			double rt1 = 100.0 * _timer1 / elapsed_time;
-			double rt2 = 100.0 * _timer2 / elapsed_time;
-			double rt3 = 100.0 * _timer3 / elapsed_time;
-			double rt4 = 100.0 * _timer4 / elapsed_time;
-			double rt5 = 100.0 * _timer5 / elapsed_time;
 			_slow_data_transfers = rt5 > 1.0 ? true : false;
-			_timer1 = 0.0;
-			_timer2 = 0.0;
-			_timer3 = 0.0;
-			_timer4 = 0.0;
-			_timer5 = 0.0;
-			if (_num_num_z > 1)
+			if (!silent)
 			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
-			}
-			else
-			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
-			}
+				if (_num_num_z > 1)
+				{
+					printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts_output-Get_Total_Number_Of_Timesteps()+1,ts_output,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				}
+				else
+				{
+					printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s - %.0f+%.0f+%.0f+%.0f+%.0f=%.0f\n",ts_output-Get_Total_Number_Of_Timesteps()+1,ts_output,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s,rt1,rt2,rt3,rt4,rt5,rt1+rt2+rt3+rt4+rt5);
+				}
 #else
-			if (_num_num_z > 1)
-			{
-				printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
-			}
-			else
-			{
-				printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s\n",ts-Get_Total_Number_Of_Timesteps()+1,ts,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
-			}
+				if (_num_num_z > 1)
+				{
+					printf("Timesteps %4d to %4d (#Z=%3d) :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f\n",ts_output-Get_Total_Number_Of_Timesteps()+1,ts_output,_num_z[_curr_num_z],elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
+				}
+				else
+				{
+					printf("Timesteps %4d to %4d :: %.2f secs - %.0f MC/s - H2D %.1f GB/s, D2H %.1f GB/s, H2H %.1f GB/s\n",ts_output-Get_Total_Number_Of_Timesteps()+1,ts_output,elapsed_time,mcells_per_s,h2d_GB_per_s,d2h_GB_per_s,h2h_GB_per_s);
+				}
 #endif
-			if (_num_num_z > 1)
+			}
+			if (!silent && _num_num_z > 1)
 			{
 				_num_z_throughput[_curr_num_z] = mcells_per_s;
 				if (_curr_num_z < _num_num_z-1)
@@ -1739,11 +2105,11 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			{
 				int iy = (int)round(shot->Get_Propagation_Source_Y());
 				char path[4096];
-				sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts);
+				sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts_output);
 				_job->Write_XZ_Slice(path, 3, iy);
 
 				int iz = (int)round(shot->Get_Propagation_Source_Z());
-				sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts);
+				sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts_output);
 				_job->Write_XY_Slice(path, 3, iz);
 				/*
 				   sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
@@ -1758,7 +2124,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 			}
 		}
 		clock_gettime(CLOCK_REALTIME, &_before);
-		return ts >= Number_Of_Timesteps ? true : false;
+		return ts_output >= Number_Of_Timesteps ? true : false;
 	}
 	return false;
 }
@@ -1779,7 +2145,10 @@ void Elastic_Propagator::Free_Host_Memory()
 				if (_pinned)
 					cudaFreeHost(_PV[i]);
 				else
+				{
+					if (_PV_pinned[i]) cudaHostUnregister(_PV[i]);
 					free(_PV[i]);
+				}
 				_PV[i] = 0L;
 			}
 		}
@@ -1795,7 +2164,10 @@ void Elastic_Propagator::Free_Host_Memory()
 				if (_pinned)
 					cudaFreeHost(_ST[i]);
 				else
+				{
+					if (_ST_pinned[i]) cudaHostUnregister(_ST[i]);
 					free(_ST[i]);
+				}
 				_ST[i] = 0L;
 			}
 		}
@@ -1811,13 +2183,22 @@ void Elastic_Propagator::Free_Host_Memory()
 				if (_pinned)
                                 	cudaFreeHost(_EM[i]);
 				else
+				{
+					if (_EM_pinned[i]) cudaHostUnregister(_EM[i]);
 					free(_EM[i]);
+				}
                                 _EM[i] = 0L;
                         }
                 }
                 delete [] _EM;
                 _EM = 0L;
         }
+	delete [] _PV_pinned;
+	_PV_pinned = 0L;
+	delete [] _ST_pinned;
+	_ST_pinned = 0L;
+	delete [] _EM_pinned;
+	_EM_pinned = 0L;
 	if (!_pinned)
 	{
 		// deallocate transfer buffers
@@ -1937,6 +2318,9 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 	_PV = new void*[_NbX];
 	_ST = new void*[_NbX];
 	_EM = new void*[_NbX];
+	_PV_pinned = new bool[_NbX];
+	_ST_pinned = new bool[_NbX];
+	_EM_pinned = new bool[_NbX];
 	_blkSize = (size_t)_bsX * (size_t)_ny * (size_t)_nz;
 	_blkSize_PV = _blkSize * (size_t)24;
 	_blkSize_ST = _blkSize * (size_t)24;
@@ -1994,9 +2378,11 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 		{
 			posix_memalign((void**)&(_PV[i]), getpagesize(), _blkSize_PV);
 			omp_memclear(_PV[i], _blkSize_PV);
+			_PV_pinned[i] = false;
 
 			posix_memalign((void**)&(_ST[i]), getpagesize(), _blkSize_ST);
 			omp_memclear(_ST[i], _blkSize_ST);
+			_ST_pinned[i] = false;
 		}
 	}
 	// allocate earth model buffers last since they are only read during propagation
@@ -2011,6 +2397,7 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 		{
 			posix_memalign((void**)&(_EM[i]), getpagesize(), _blkSize_EM);
 			omp_memclear(_EM[i], _blkSize_EM);
+			_EM_pinned[i] = false;
 		}
 	}
 	if (_debug)

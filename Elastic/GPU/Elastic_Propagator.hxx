@@ -16,6 +16,7 @@ public:
 
 	//static Elastic_Propagator* Create_Best_Propagator_Configuration(Elastic_Modeling_Job* job);
 	void Configure();
+	void Register_As_Many_Pages_As_Possible(bool verbose, bool do_PV, bool do_ST, bool do_EM);
 
 	bool Is_Debug();
 
@@ -52,6 +53,8 @@ public:
 
 	bool Allocate_Device_Memory();
 	void Free_Device_Memory();
+
+	size_t Get_Minimum_Free_GPU_Memory();
 	
 	void Read_Earth_Model();
 
@@ -100,7 +103,7 @@ public:
 	// helper functions called by Propagate_Shot. they are public only for debug purposes,
 	// please call Propagate_Shot if propagating a shot is all you want to do.
 	void Prepare_For_Propagation(Elastic_Shot* shot, bool debug_output_source_wavelet, bool is_profiling_run);
-	bool Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool debug_output_source_wavelet);
+	bool Propagate_One_Block(int Number_Of_Timesteps, Elastic_Shot* shot, bool silent, bool debug_output_source_wavelet, bool copyPV, bool copyST, bool copyEM, int& ts_output);
 	void Release_Resources_After_Propagation(Elastic_Shot* shot);
 
 	void Add_H2D(unsigned long len);
@@ -125,7 +128,7 @@ private:
 			int Stencil_Order,
 			bool debug
 		  );
-	void Build_Compute_Pipelines(
+	bool Build_Compute_Pipelines(
 			int num_pipes, 
 			int num_timesteps, 
 			const int* device_id, 
@@ -143,6 +146,8 @@ private:
 	
 	bool Print_Device_Stats(int device_id, double& TFLOPS, double& GB_per_s);
 	bool Check_GPUs(int* device_id, int num_devices);
+
+	int Get_Physical_Core_Count(int& Cache_Size_Per_Core_KB);
 
 	// get the index of device with this device_id
 	int Get_Device_Index(int device_id);
@@ -196,6 +201,12 @@ private:
 	void** _PV;		// Vx, Vy, Vz, Sx, Sy and Sz (latter 3 are memory variables)
 	void** _ST;		// txx, tyy, tzz, txy, txz and tyz
 	void** _EM;		// earth model (14 values packed into 16 bytes)
+	bool* _PV_pinned;	// individual pinned flag for each buffer
+	bool* _ST_pinned;
+	bool* _EM_pinned;
+	int _num_pinned_PV;
+	int _num_pinned_ST;
+	int _num_pinned_EM;
 	void** _pbuf_PV;	// pinned memory buffer for _PV.
 	void** _pbuf_ST;	// pinned memory buffer for _ST.
 	void** _pbuf_EM;	// pinned memory buffer for the earth model.
@@ -210,7 +221,7 @@ private:
 
 	bool** _tried_p2p;	// tried_p2p[device][peer_device] is true if cudaCanAccessPeer has been called with these parameters.
 
-	void Copy_To_Pinned_Buffer(int input_block_offset, int output_block_offset);
+	void Copy_To_Pinned_Buffer(bool copyPV, bool copyST, bool copyEM, int input_block_offset, int output_block_offset);
 	void Shift_Pinned_Buffer();
 
 	void cuda_host_memalign(void** p, size_t alignment, size_t len);
@@ -232,6 +243,10 @@ private:
 	unsigned long _prev_h2d;
 	unsigned long _prev_d2h;
 	unsigned long _prev_h2h;
+
+	// best value for #z as determined by automatic hardware configuration.
+	// will be -1 for user specified configurations.
+	int _best_num_z;
  
 	int* _num_z;
 	float* _num_z_throughput;
