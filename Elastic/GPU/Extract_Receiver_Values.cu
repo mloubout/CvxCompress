@@ -18,12 +18,12 @@ float cuTrilinear_Interpolation(
 	float* cmp
 	)
 {
-	bool xlo = ix >= x0;
-	bool xhi = ix < x1;
-	bool ylo = iy >= y0;
-	bool yhi = iy < y1;
-	bool zlo = iz >= 0;
-	bool zhi = iz < z1;
+	bool xlo = ix >= x0 && ix <= x1;
+	bool xhi = (ix+1) >= x0 && (ix+1) <= x1;
+	bool ylo = iy >= y0 && iy <= y1;
+	bool yhi = (iy+1) >= y0 && (iy+1) <= y1;
+	bool zlo = true;
+	bool zhi = true;
 
 	float V000 = xlo && ylo && zlo ? cmp[(ix  -x0) + (iy  -y0) * one_y_size_f +  iz    * 4] : 0.0f;
 	float V100 = xhi && ylo && zlo ? cmp[(ix+1-x0) + (iy  -y0) * one_y_size_f +  iz    * 4] : 0.0f;
@@ -81,12 +81,12 @@ float cuTrilinear_Interpolation_TXX_TYY_TZZ(
 	float* cmp
 	)
 {
-	bool xlo = ix >= x0;
-	bool xhi = ix < x1;
-	bool ylo = iy >= y0;
-	bool yhi = iy < y1;
-	bool zlo = iz >= 0;
-	bool zhi = iz < z1;
+	bool xlo = ix >= x0 && ix <= x1;
+	bool xhi = (ix+1) >= x0 && (ix+1) <= x1;
+	bool ylo = iy >= y0 && iy <= y1;
+	bool yhi = (iy+1) >= y0 && (iy+1) <= y1;
+	bool zlo = true;
+	bool zhi = true;
 
 	float V000 = xlo && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy  ,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
 	float V100 = xhi && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy  ,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
@@ -209,21 +209,59 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 				{
 					int izg = 2 * ghost_sea_surface_z - iz - 1;
 					float zdg = 1.0f - zd;
-					if (recflags & 2) res[outidx++] = 
-						cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,yd,zdg,cmp);
-					if (recflags & 4) res[outidx++] = 
-						cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp+one_wf_size_f)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,yd,zdg,cmp+one_wf_size_f);
-					if (recflags & 8) res[outidx++] = 
-						cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp+2*one_wf_size_f)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,yd,zdg,cmp+2*one_wf_size_f);
+					if (recflags & 2)
+					{
+						// Vx
+						int Vx_ix = (int)truncf(recx + 0.5f);
+						float Vx_xd = recx - (float)Vx_ix + 0.5f;
+						res[outidx++] = 
+							cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp)
+							+ cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,Vx_xd,yd,zdg,cmp);
+					}
+					if (recflags & 4)
+					{
+						// Vy
+						int Vy_iy = (int)truncf(recy - 0.5f);
+						float Vy_yd = recy - (float)Vy_iy - 0.5f;
+						res[outidx++] = 
+							cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f)
+							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,Vy_yd,zdg,cmp+one_wf_size_f);
+					}
+					if (recflags & 8)
+					{
+						// Vz
+						int Vz_iz = (int)truncf(recz - 0.5f);
+						float Vz_zd = recz - (float)Vz_iz - 0.5f;
+						int Vz_izg = 2 * ghost_sea_surface_z - Vz_iz - 1;
+						float Vz_zdg = 1.0f - Vz_zd;
+						res[outidx++] = 
+							cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f)
+							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_izg,nz-1,one_y_size_f,xd,yd,Vz_zdg,cmp+2*one_wf_size_f);
+					}
 				}
 				else
 				{
-					if (recflags & 2) res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp);
-					if (recflags & 4) res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp+one_wf_size_f);
-					if (recflags & 8) res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,yd,zd,cmp+2*one_wf_size_f);
+					if (recflags & 2)
+					{
+						// Vx - no ghost
+						int Vx_ix = (int)truncf(recx + 0.5f);
+						float Vx_xd = recx - (float)Vx_ix + 0.5f;
+						res[outidx++] = cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp);
+					}
+					if (recflags & 4)
+					{
+						// Vy - no ghost
+						int Vy_iy = (int)truncf(recy - 0.5f);
+						float Vy_yd = recy - (float)Vy_iy - 0.5f;
+						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f);
+					}
+					if (recflags & 8)
+					{
+						// Vz - no ghost
+						int Vz_iz = (int)truncf(recz - 0.5f);
+						float Vz_zd = recz - (float)Vz_iz - 0.5f;
+						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f);
+					}
 				}
 			}
 			else if (interpolation_method == Sinc)

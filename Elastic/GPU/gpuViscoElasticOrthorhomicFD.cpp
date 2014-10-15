@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[])
 {
-	printf("\n%s v0.95\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
+	printf("\n%s v0.96\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
 	if (argc == 1)
 	{
 		printf("Usage : %s <parmfile> [options]\n",argv[0]);
@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
 	printf("GPU kernels will be serialized and performance will be slow.\n\n");
 #endif
 
-	int log_level = 3;
+	int log_level = 4;
 
 	Elastic_Modeling_Job* job = new Elastic_Modeling_Job(log_level, argv[1]);
 	if (job->Is_Valid())

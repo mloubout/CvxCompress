@@ -293,6 +293,84 @@ void cuApply_Source_Term_To_VxVyVz(
 	}
 }
 
+__device__ 
+void cuAdd_Source_Term_To_Single_VxVyVz(
+	int* em,
+        float Q_min,
+        float Q_range,
+        float Density_min,
+        float Density_range,
+        float* cmp,
+        int nx,
+        int ny,
+        int nz,
+        bool is_force,
+        float delta_Vx,
+        float delta_Vy,
+        float delta_Vz,
+	int ix,
+	int iy,
+	int iz,
+	int Vx_ix,
+	int Vy_iy,
+	int Vz_iz,
+	int one_wf_size_f,
+	int one_y_size_f,
+	int em_one_word_size_f,
+	int em_one_y_size_f
+        )
+{
+	if (delta_Vz != 0.0f && Vx_ix >= 0 && Vx_ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	{
+		int idx_Vx = Vx_ix +    iy * one_y_size_f +    iz * 4;
+
+		if (is_force)
+		{
+			int em_word3 = em[Vx_ix+iy*em_one_y_size_f+iz*4+3*em_one_word_size_f];
+			float Q, Density;
+			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+			cmp[idx_Vx] = cmp[idx_Vx] + delta_Vx / Density;
+		}
+		else
+		{
+			cmp[idx_Vx] = cmp[idx_Vx] + delta_Vx;
+		}
+	}
+	if (delta_Vy != 0.0f && ix >= 0 && ix < nx && Vy_iy >= 0 && Vy_iy < ny && iz >= 0 && iz < nz)
+	{
+		int idx_Vy =    ix + Vy_iy * one_y_size_f +    iz * 4 +     one_wf_size_f;
+
+		if (is_force)
+		{
+			int em_word3 = em[ix+Vy_iy*em_one_y_size_f+iz*4+3*em_one_word_size_f];
+			float Q, Density;
+			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+			cmp[idx_Vy] = cmp[idx_Vy] + delta_Vy / Density;
+		}
+		else
+		{
+			cmp[idx_Vy] = cmp[idx_Vy] + delta_Vy;
+		}
+	}
+	if (delta_Vz != 0.0f && ix >= 0 && ix < nx && iy >= 0 && iy < ny && Vz_iz >= 0 && Vz_iz < nz)
+	{
+		int idx_Vz =    ix +    iy * one_y_size_f + Vz_iz * 4 + 2 * one_wf_size_f;
+
+		if (is_force)
+		{
+			int em_word3 = em[ix+iy*em_one_y_size_f+Vz_iz*4+3*em_one_word_size_f];
+			float Q, Density;
+			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+			cmp[idx_Vz] = cmp[idx_Vz] + delta_Vz / Density;
+		}
+		else
+		{
+			cmp[idx_Vz] = cmp[idx_Vz] + delta_Vz;
+			//printf("delta_Vz = %e, ix=%d, iy=%d, Vz_iz=%d\n",delta_Vz,ix,iy,Vz_iz);
+		}
+	}
+}
+
 __global__ 
 void cuApply_Point_Source_To_VxVyVz(
 	int* em,
@@ -320,35 +398,146 @@ void cuApply_Point_Source_To_VxVyVz(
 	int ix = (int)lrintf(xs) - x0;
 	int iy = (int)lrintf(ys) - y0;
 	int iz = (int)lrintf(zs);
-	if (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
-	{
-		int one_wf_size_f = nx * nz;
-		int one_y_size_f = one_wf_size_f * 6;
-		int idx = ix + iy * one_y_size_f + iz * 4;
 
-		if (is_force)
-		{
-			int em_one_word_size_f = one_wf_size_f;
-			int em_one_y_size_f = em_one_word_size_f * 4;
-			int em_word3 = em[ix+iy*em_one_y_size_f+iz*4+3*em_one_word_size_f];
-			float Q, Density;
-			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
+	int one_wf_size_f = nx * nz;
+	int one_y_size_f = one_wf_size_f * 6;
 
-			cmp[idx                ] = cmp[idx                ] + dti * (val * ampl1) / Density;
-			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + dti * (val * ampl2) / Density;
-			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + dti * (val * ampl3) / Density;
+	int em_one_word_size_f = one_wf_size_f;
+	int em_one_y_size_f = em_one_word_size_f * 4;
 
-			//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val/Density,my_x+x0,my_y+y0,my_z);
-		}
-		else
-		{
-			cmp[idx                ] = cmp[idx                ] + dti * val * ampl1;
-			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + dti * val * ampl2;
-			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + dti * val * ampl3;
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,dti*val*ampl1,dti*val*ampl2,dti*val*ampl3,ix,iy,iz,ix,iy,iz,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+}
 
-			//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val,my_x+x0,my_y+y0,my_z);
-		}
-	}
+__global__ 
+void cuApply_Trilinear_Source_To_VxVyVz(
+	int* em,
+	float Q_min,
+        float Q_range,
+        float Density_min,
+        float Density_range,
+        float* cmp,
+        int x0,
+        int y0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        bool is_force,
+        float ampl1,
+        float ampl2,
+        float ampl3,
+        float xs,
+        float ys,
+        float zs,
+        float val
+        )
+{
+	int ix = (int)truncf(xs) - x0;
+	int iy = (int)truncf(ys) - y0;
+	int iz = (int)truncf(zs);
+
+	float xd = 1.0f - (xs - (float)(ix+x0));
+	float yd = 1.0f - (ys - (float)(iy+y0));
+	float zd = 1.0f - (zs - (float)iz);
+
+	int Vx_ix = (int)truncf(xs+0.5f) - x0;
+	int Vy_iy = (int)truncf(ys-0.5f) - y0;
+	int Vz_iz = (int)truncf(zs-0.5f);
+
+	float Vx_xd = 1.0f - (xs - (float)(Vx_ix+x0) + 0.5f);
+	float Vy_yd = 1.0f - (ys - (float)(Vy_iy+y0) - 0.5f);
+	float Vz_zd = 1.0f - (zs - (float)Vz_iz - 0.5f);
+
+	int one_wf_size_f = nx * nz;
+	int one_y_size_f = one_wf_size_f * 6;
+
+	int em_one_word_size_f = one_wf_size_f;
+	int em_one_y_size_f = em_one_word_size_f * 4;
+
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*Vx_xd*   yd*   zd,
+		dti*val*ampl2*   xd*Vy_yd*   zd,
+		dti*val*ampl3*   xd*   yd*Vz_zd,
+		   ix,   iy,   iz,
+		Vx_ix,Vy_iy,Vz_iz,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*(1.0f-Vx_xd)*   yd*   zd,
+		dti*val*ampl2*(1.0f-   xd)*Vy_yd*   zd,
+		dti*val*ampl3*(1.0f-   xd)*   yd*Vz_zd,
+		   ix+1,   iy,   iz,
+		Vx_ix+1,Vy_iy,Vz_iz,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*(1.0f-Vx_xd)*(1.0f-   yd)*   zd,
+		dti*val*ampl2*(1.0f-   xd)*(1.0f-Vy_yd)*   zd,
+		dti*val*ampl3*(1.0f-   xd)*(1.0f-   yd)*Vz_zd,
+		   ix+1,   iy+1,   iz,
+		Vx_ix+1,Vy_iy+1,Vz_iz,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*Vx_xd*(1.0f-   yd)*   zd,
+		dti*val*ampl2*   xd*(1.0f-Vy_yd)*   zd,
+		dti*val*ampl3*   xd*(1.0f-   yd)*Vz_zd,
+		   ix,   iy+1,   iz,
+		Vx_ix,Vy_iy+1,Vz_iz,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*Vx_xd*   yd*(1.0f-   zd),
+		dti*val*ampl2*   xd*Vy_yd*(1.0f-   zd),
+		dti*val*ampl3*   xd*   yd*(1.0f-Vz_zd),
+		   ix,   iy,   iz+1,
+		Vx_ix,Vy_iy,Vz_iz+1,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*(1.0f-Vx_xd)*   yd*(1.0f-   zd),
+		dti*val*ampl2*(1.0f-   xd)*Vy_yd*(1.0f-   zd),
+		dti*val*ampl3*(1.0f-   xd)*   yd*(1.0f-Vz_zd),
+		   ix+1,   iy,   iz+1,
+		Vx_ix+1,Vy_iy,Vz_iz+1,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*(1.0f-Vx_xd)*(1.0f-   yd)*(1.0f-   zd),
+		dti*val*ampl2*(1.0f-   xd)*(1.0f-Vy_yd)*(1.0f-   zd),
+		dti*val*ampl3*(1.0f-   xd)*(1.0f-   yd)*(1.0f-Vz_zd),
+		   ix+1,   iy+1,   iz+1,
+		Vx_ix+1,Vy_iy+1,Vz_iz+1,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
+	cuAdd_Source_Term_To_Single_VxVyVz(
+		em,Q_min,Q_range,Density_min,Density_range,
+		cmp,nx,ny,nz,
+		is_force,
+		dti*val*ampl1*Vx_xd*(1.0f-   yd)*(1.0f-   zd),
+		dti*val*ampl2*   xd*(1.0f-Vy_yd)*(1.0f-   zd),
+		dti*val*ampl3*   xd*(1.0f-   yd)*(1.0f-Vz_zd),
+		   ix,   iy+1,   iz+1,
+		Vx_ix,Vy_iy+1,Vz_iz+1,
+		one_wf_size_f,one_y_size_f,em_one_word_size_f,em_one_y_size_f);
 }
 
 __global__ 
@@ -985,8 +1174,9 @@ Host_Propagate_Particle_Velocities_Kernel(
 		}
 		else if(source_interpolation_method == Trilinear)
 		{
-			printf("Trilinear source interpolation not implemented yet!\n");
-			exit(-1);
+			dim3 blockShape3(1,1,1);
+			dim3 gridShape3(1,1,1);
+			cuApply_Trilinear_Source_To_VxVyVz<<<gridShape3,blockShape3,0,stream>>>((int*)em,Q_min,Q_range,Density_min,Density_range,(float*)cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample);
 		}
 		else if(source_interpolation_method == Sinc)
 		{

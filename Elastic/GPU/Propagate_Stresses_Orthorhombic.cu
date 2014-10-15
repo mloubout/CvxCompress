@@ -100,6 +100,32 @@ void cuApply_Source_Term_To_TxxTyyTzz(
 	}
 }
 
+__device__ 
+void cuApply_Point_Source_To_Single_TxxTyyTzz(
+	float* cmp,
+        int nx,
+        int ny,
+        int nz,
+        int ix,
+	int iy,
+	int iz,
+	float delta,
+	int one_wf_size_f,
+	int one_y_size_f
+        )
+{
+	if (delta != 0.0f && ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	{
+		int idx = ix + iy * one_y_size_f + iz * 4;
+
+		cmp[idx                ] = cmp[idx                ] + delta;
+		cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + delta;
+		cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + delta;
+	
+		//printf("Source Trilinear ix=%d, iy=%d, iz=%d, delta=%e\n",ix,iy,iz,delta);
+	}
+}
+
 __global__ 
 void cuApply_Point_Source_To_TxxTyyTzz(
 	float* cmp,
@@ -119,16 +145,93 @@ void cuApply_Point_Source_To_TxxTyyTzz(
 	int ix = (int)lrintf(xs) - x0;
 	int iy = (int)lrintf(ys) - y0;
 	int iz = (int)lrintf(zs);
-	if (ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
-	{
-		int one_wf_size_f = nx * nz;
-		int one_y_size_f = one_wf_size_f * 6;
-		int idx = ix + iy * one_y_size_f + iz * 4;
 
-		cmp[idx                ] = cmp[idx                ] - dti * val * ampl1;
-		cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - dti * val * ampl1;
-		cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - dti * val * ampl1;
-	}
+	int one_wf_size_f = nx * nz;
+	int one_y_size_f = one_wf_size_f * 6;
+
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix,iy,iz,
+			-dti*val*ampl1,
+			one_wf_size_f,one_y_size_f
+			);
+}
+
+__global__ 
+void cuApply_Trilinear_Source_To_TxxTyyTzz(
+	float* cmp,
+	int x0,
+        int y0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        float ampl1,
+        float xs,
+        float ys,
+        float zs,
+        float val
+        )
+{
+	int ix = (int)truncf(xs) - x0;
+	int iy = (int)truncf(ys) - y0;
+	int iz = (int)truncf(zs);
+
+	float xd = 1.0f - (xs - (float)(ix+x0));
+	float yd = 1.0f - (ys - (float)(iy+y0));
+	float zd = 1.0f - (zs - (float)iz);
+
+	int one_wf_size_f = nx * nz;
+	int one_y_size_f = one_wf_size_f * 6;
+
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix,iy,iz,
+			-dti*val*ampl1*xd*yd*zd,
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix+1,iy,iz,
+			-dti*val*ampl1*(1.0f-xd)*yd*zd,
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix+1,iy+1,iz,
+			-dti*val*ampl1*(1.0f-xd)*(1.0f-yd)*zd,
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix,iy+1,iz,
+			-dti*val*ampl1*xd*(1.0f-yd)*zd,
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix,iy,iz+1,
+			-dti*val*ampl1*xd*yd*(1.0f-zd),
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix+1,iy,iz+1,
+			-dti*val*ampl1*(1.0f-xd)*yd*(1.0f-zd),
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix+1,iy+1,iz+1,
+			-dti*val*ampl1*(1.0f-xd)*(1.0f-yd)*(1.0f-zd),
+			one_wf_size_f,one_y_size_f
+			);
+	cuApply_Point_Source_To_Single_TxxTyyTzz(
+			cmp,nx,ny,nz,
+			ix,iy+1,iz+1,
+			-dti*val*ampl1*xd*(1.0f-yd)*(1.0f-zd),
+			one_wf_size_f,one_y_size_f
+			);
 }
 
 __device__ 
@@ -660,8 +763,9 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 		}
 		else if(source_interpolation_method == Trilinear)
 		{
-			printf("Trilinear source interpolation not implemented yet!\n");
-			exit(-1);
+			dim3 blockShape3(1,1,1);
+			dim3 gridShape3(1,1,1);
+			cuApply_Trilinear_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
 		}
 		else if(source_interpolation_method == Sinc)
 		{

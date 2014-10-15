@@ -833,6 +833,41 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			if (!error)
 			{
+				int souidx, fileidx;
+				char gather_type_str[4096];
+				int matched = sscanf(s, "SHOT %d SEGY_FILE %d GATHER_TYPE %s", &souidx, &fileidx, gather_type_str);
+				if (matched == 3)
+				{
+					_tolower(gather_type_str);
+					Elastic_Shot* shot = Get_Shot(souidx);
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SEGY_FILE GATHER_TYPE shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
+					{
+						Elastic_SEGY_File* segy_file = shot->Get_SEGY_File(fileidx);
+						if (segy_file == 0L)
+						{
+							printf("%s (line %d): Error - SEGY_FILE GATHER_TYPE file with index %d not found.\n",parmfile_path,line_num,fileidx);
+							error = true;
+							break;
+						}
+						else
+						{
+							if (strcmp(gather_type_str,"common_receiver_gather") == 0)
+							{
+								segy_file->Set_Gather_Type(Common_Receiver_Gather);
+								if (_log_level >= 3) printf("Gather type set to %s for segy file %d in shot %d.\n",ToString_Elastic_Gather_Type_t(segy_file->Get_Gather_Type()),souidx,fileidx);
+							}
+						}
+					}
+				}
+			}
+			if (!error)
+			{
 				int souidx, fileidx, rangeidx;
 				double start, end, interval;
 				char unit[4096];

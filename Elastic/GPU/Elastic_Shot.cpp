@@ -16,14 +16,15 @@
 #include "DFT.hxx"
 #include "gpuAssert.h"
 
-//#define RESAMPLE_DEBUG
+//#define RESAMPLE_DEBUG 0
+//#define DEBUG_TMJ
 
 Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx, double x, double y, double z)
 {
 	_log_level = log_level;
 	_job = job;
 	_ordertime = 2;  // hardcode for now.
-	_souintrp = Point;
+	_souintrp = Trilinear; // 10/09/14 - Changed default from point to trilinear
 	_souidx = souidx;
 	_x = x;
 	_y = y;
@@ -236,8 +237,8 @@ void Elastic_Shot::_generate_ricker_wavelet(double dt, double fmax, int* tsrc, d
 		fflush(stdout);
 	}
 	double fpeak = fmax / 2.0;
-	double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
-//	double tshift = 0.107;  // HACK
+//	double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+	double tshift = 0.107;  // HACK
 	*tsrc = (int)round((2.0 * tshift) / dt);
 	for (int i = 0;  i < *tsrc;  ++i)
 	{
@@ -367,7 +368,7 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 	{
 		int ix = (int)truncf(recx);
 		int iy = (int)truncf(recy);
-		return _Range_Intersects(x0,x1,ix,ix+1) && _Range_Intersects(y0,y1,iy,iy+1);
+		return _Range_Intersects(x0,x1,ix,ix+2) && _Range_Intersects(y0,y1,iy-1,iy+1);
 	}
 	else if (interpolation_method == Sinc)
 	{
@@ -587,66 +588,6 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 		}
 	}
 
-	/*
-	int* jj_max = new int[num_blocks];
-	int** jj2iTrc = new int*[num_blocks];
-#pragma omp parallel for
-	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
-	{
-		jj_max[iBlk] = 0;
-		jj2iTrc[iBlk] = 0L;
-		if (num_rx[iBlk] > 0)
-		{
-			jj2iTrc[iBlk] = new int[num_rx[iBlk]];
-			int curr_timestep = timesteps[iBlk];
-			if (curr_timestep > 0)
-			{
-				int curr_blk_offset = block_offsets[iBlk];
-				int allowed_flags = flags[iBlk];
-				int* trcidx = _h_rcv_trcidx[pipe->Get_ID()][curr_blk_offset];
-				int* trcflag = _h_rcv_trcflag[pipe->Get_ID()][curr_blk_offset];
-				int jj = 0;
-				for (int ii = 0;  ii < num_rx[iBlk];  ++ii)
-				{
-					if (trcflag[ii] & allowed_flags)
-					{
-						jj2iTrc[iBlk][jj] = trcidx[ii];
-						++jj;
-					}
-				}
-				jj_max[iBlk] = jj;
-			}
-		}
-	}
-	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
-        {
-		if (jj_max[iBlk] > 0)
-		{
-#pragma omp parallel for
-			for (int jj = 0;  jj < jj_max[iBlk];  ++jj)
-			{
-				int iTrc = jj2iTrc[iBlk][jj];
-				int iFile = _h_trace_iFile[iTrc];
-				int nsamp_out = _h_trace_nsamp_out[iFile];
-				if (_h_trace_idx_out[iTrc] < nsamp_out)
-				{
-					int nsamp_in = _h_trace_nsamp_in[iFile];
-					int idx_in = timesteps[iBlk] - _h_trace_idx_in[iTrc];
-					if (idx_in >= 0 && idx_in < nsamp_in)
-					{
-						_h_trace_touched[iTrc] = true;
-						_h_trace_in[iTrc][idx_in] += rxres[iBlk][jj];
-						if (idx_in >= _h_trace_idx_in_nn[iTrc]) _h_trace_idx_in_nn[iTrc] = idx_in + 1;
-					}
-				}
-			}
-			delete [] jj2iTrc[iBlk];
-		}
-	}
-	delete [] jj2iTrc;
-	delete [] jj_max;
-	*/
-
 	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
 	{
 		int curr_timestep = timesteps[iBlk];
@@ -676,14 +617,13 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 							int idx_in = curr_timestep - _h_trace_idx_in[iTrc];
 							if (idx_in >= 0 && idx_in < nsamp_in)
 							{
-								_h_trace_touched[iTrc >> 5] |= (1 << (iTrc & 31));
-								//_h_trace_touched[iTrc] = true;
+								_h_trace_touched[iTrc] = 2;
 								_h_trace_in[iTrc][idx_in] += rxres[iBlk][jj];
 								if (idx_in >= _h_trace_idx_in_nn[iTrc]) _h_trace_idx_in_nn[iTrc] = idx_in + 1;
 #ifdef RESAMPLE_DEBUG
-								if (iTrc == 827)
+								if (iTrc == RESAMPLE_DEBUG)
 								{
-									printf("iTrc=%d, iPipe=%d, iBlk=%d, flags=%d, curr_timestep=%d, curr_blk_offset=%d, _h_trace_idx_out=%d, _h_trace_idx_in=%d, idx_in=%d, _h_trace_idx_in_nn=%d, _h_trace_in=%f\n",iTrc,pipe->Get_ID(),iBlk,allowed_flags,curr_timestep,curr_blk_offset,_h_trace_idx_out[iTrc],_h_trace_idx_in[iTrc],idx_in,_h_trace_idx_in_nn[iTrc],_h_trace_in[iTrc][idx_in]);
+									printf("iTrc=%d, iPipe=%d, iBlk=%d, flags=%d, curr_timestep=%d, curr_blk_offset=%d, _h_trace_idx_out=%d, _h_trace_idx_in=%d, idx_in=%d, _h_trace_idx_in_nn=%d, _h_trace_in=%e\n",iTrc,pipe->Get_ID(),iBlk,allowed_flags,curr_timestep,curr_blk_offset,_h_trace_idx_out[iTrc],_h_trace_idx_in[iTrc],idx_in,_h_trace_idx_in_nn[iTrc],_h_trace_in[iTrc][idx_in]);
 								}
 #endif
 							}
@@ -716,12 +656,13 @@ void Elastic_Shot::Resample_Receiver_Traces()
 		if (max_iTrc > _num_traces) max_iTrc = _num_traces;
 		for (int iTrc = min_iTrc;  iTrc < max_iTrc;  ++iTrc)
 		{
-			if ((iTrc&511) == 0) _mm_prefetch((char*)(_h_trace_touched[(iTrc>>5)+2]),_MM_HINT_T0);
-			//if (_h_trace_touched[iTrc])
-			if ((_h_trace_touched[iTrc >> 5] & (1 << (iTrc & 31))) != 0)
+			if (_h_trace_touched[iTrc] > 1)
 			{
-				//_h_trace_touched[iTrc] = false;
-				_h_trace_touched[iTrc >> 5] &= ~(1 << (iTrc & 31));
+				--_h_trace_touched[iTrc];
+			}
+			else if (_h_trace_touched[iTrc] == 1)
+			{
+				_h_trace_touched[iTrc] = 0;
 				int iFile = _h_trace_iFile[iTrc];
 				int nsamp_out = _h_trace_nsamp_out[iFile];
 				bool ding_dong = false, jabba_dabba_doo = false;
@@ -745,7 +686,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 								if (idx0 < 0)
 								{
 #ifdef RESAMPLE_DEBUG
-									if (iTrc == 827) printf("trace no %d - idxM = %d, idx0 = %d - linear\n",iTrc,idxM,idx0);
+									if (iTrc == RESAMPLE_DEBUG) printf("trace no %d - idxM = %d, idx0 = %d - linear\n",iTrc,idxM,idx0);
 #endif
 									// linear interpolation
 									val_out = _h_trace_in[iTrc][idxM+1] * coeffs[4] + _h_trace_in[iTrc][idxM] * coeffs[3];
@@ -753,7 +694,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 								else
 								{
 #ifdef RESAMPLE_DEBUG
-									if (iTrc == 827)
+									if (iTrc == RESAMPLE_DEBUG)
 									{
 										printf("trace no %d - idxM = %d, idx0 = %d - sinc(%f",iTrc,idxM,idx0,coeffs[0]);
 										for (int i = -2;  i <= 3;  ++i) printf(",%f",coeffs[i+3]);
@@ -778,7 +719,7 @@ void Elastic_Shot::Resample_Receiver_Traces()
 					if (idx0 > 0)
 					{
 #ifdef RESAMPLE_DEBUG
-						if (iTrc == 827) printf("...advancing _h_trace_idx_in[%d] from %d to ",iTrc,_h_trace_idx_in[iTrc]);
+						if (iTrc == RESAMPLE_DEBUG) printf("...advancing _h_trace_idx_in[%d] from %d to ",iTrc,_h_trace_idx_in[iTrc]);
 #endif
 						for (int i = 0;  i < _h_trace_idx_in_nn[iTrc] - idx0;  ++i)
 						{
@@ -791,13 +732,158 @@ void Elastic_Shot::Resample_Receiver_Traces()
 						_h_trace_idx_in_nn[iTrc] -= idx0;
 						_h_trace_idx_in[iTrc] += idx0;
 #ifdef RESAMPLE_DEBUG
-						if (iTrc == 827) printf("%d\n",_h_trace_idx_in[iTrc]);
+						if (iTrc == RESAMPLE_DEBUG) printf("%d\n",_h_trace_idx_in[iTrc]);
 #endif
 					}
 				}
 			}
 		}
 	}
+}
+
+float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float srcy, float srcz, float recx, float recy, float recz)
+{
+	int isx = (int)round(srcx) - _job->Get_Propagation_X0();
+	int isy = (int)round(srcy) - _job->Get_Propagation_Y0();
+	int isz = (int)round(srcz) - _job->Get_Propagation_Z0();
+	int irx = (int)round(recx) - _job->Get_Propagation_X0();
+	int iry = (int)round(recy) - _job->Get_Propagation_Y0();
+	int irz = (int)round(recz) - _job->Get_Propagation_Z0();
+
+	//printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - isx=%d, isy=%d, isz=%d, irx=%d, iry=%d, irz=%d\n",isx,isy,isz,irx,iry,irz);
+
+	float rhoA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, irx, iry, irz) * 1000.0f;
+	float rhoB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, isx, isy, isz) * 1000.0f;
+	float VpA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, irx, iry, irz);
+	float VpB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, isx, isy, isz);
+	float kA = VpA * VpA * rhoA;
+	float kB = VpB * VpB * rhoB;
+
+	float scalefac = 1.0f;
+	if (Get_Source_Type() == Source_Type_Pressure)
+	{
+		if (flag == 1)
+		{
+			//  P(A) <- P(B)
+			scalefac = -(kB/kA);
+		}
+		else if (flag == 2)
+		{
+			// Vx(A) <- P(B)
+			scalefac = -(rhoA*kB);
+		}
+		else if (flag == 4)
+		{
+			// Vy(A) <- P(B)
+			scalefac = -(rhoA*kB);
+		}
+		else if (flag == 8)
+		{
+			// Vz(A) <- P(B)
+			scalefac = -(rhoA*kB);
+		}
+		else
+		{
+			printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - Cannot use reciprocity for this receiver type.\n");
+			return 0.0f;
+		}
+	}
+	else
+	{
+		if (Get_Amplitude1() != 0.0f && Get_Amplitude2() == 0.0f && Get_Amplitude3() == 0.0f)
+		{
+			// Vx source
+			if (flag == 1)
+			{
+				//  P(A) <- Vx(B)
+				scalefac = -1.0f / (rhoB*kA);
+			}
+			else if (flag == 2)
+			{
+				// Vx(A) <- Vx(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 4)
+			{
+				// Vy(A) <- Vx(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 8)
+			{
+				// Vz(A) <- Vx(B)
+				scalefac = rhoA / rhoB;
+			}
+			else
+			{
+				printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - Cannot use reciprocity for this receiver type.\n");
+				return 0.0f;
+			}
+		}
+		else if (Get_Amplitude1() == 0.0f && Get_Amplitude2() != 0.0f && Get_Amplitude3() == 0.0f)
+		{
+			// Vy source
+			if (flag == 1)
+			{
+				//  P(A) <- Vy(B)
+				scalefac = -1.0f / (rhoB*kA);
+			}
+			else if (flag == 2)
+			{
+				// Vx(A) <- Vy(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 4)
+			{
+				// Vy(A) <- Vy(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 8)
+			{
+				// Vz(A) <- Vy(B)
+				scalefac = rhoA / rhoB;
+			}
+			else
+			{
+				printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - Cannot use reciprocity for this receiver type.\n");
+				return 0.0f;
+			}
+                }
+                else if (Get_Amplitude1() == 0.0f && Get_Amplitude2() == 0.0f && Get_Amplitude3() != 0.0f)
+                {
+                        // Vz source
+			if (flag == 1)
+			{
+				//  P(A) <- Vz(B)
+				scalefac = -1.0f / (rhoB*kA);
+			}
+			else if (flag == 2)
+			{
+				// Vx(A) <- Vz(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 4)
+			{
+				// Vy(A) <- Vz(B)
+				scalefac = rhoA / rhoB;
+			}
+			else if (flag == 8)
+			{
+				// Vz(A) <- Vz(B)
+				scalefac = rhoA / rhoB;
+			}
+			else
+			{
+				printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - Cannot use reciprocity for this receiver type.\n");
+				return 0.0f;
+			}
+                }
+		else
+		{
+			printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - Cannot use reciprocity for this velocity source.\n");
+			return 0.0f;
+		}
+	}
+	return scalefac;
 }
 
 void Elastic_Shot::Write_SEGY_Files()
@@ -830,6 +916,7 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *iline = new int[count];
 				int *xline = new int[count];
 				int *trcens = new int[count];
+				float* scalefac = new float[count];
 				for (int iTrc = 0, ii = 0;  iTrc < _num_traces;  ++iTrc)
 				{
 	                                if (_h_trace_iFile[iTrc] == iFile && _h_trace_flag[iTrc] == flag)
@@ -839,11 +926,28 @@ void Elastic_Shot::Write_SEGY_Files()
 						iline[ii] = _h_trace_iline[iTrc];
 						xline[ii] = _h_trace_xline[iTrc];
 						trcens[ii] = _h_trace_trcens[iTrc];
+						if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
+						{
+							scalefac[ii] = Compute_Reciprocal_Scale_Factor(flag,_x,_y,_z,_h_trace_rcv_x[iTrc],_h_trace_rcv_y[iTrc],_h_trace_rcv_z[iTrc]);
+						}
+						else
+						{
+							scalefac[ii] = 1.0f;
+						}
 						++ii;
 					}
 				}
 				int nsamp = _h_trace_nsamp_out[iFile];
+				if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
+				{
+					// scale traces using reciprocity formulas
+					for (int iTrc = 0;  iTrc < count;  ++iTrc)
+					{
+						for (int i = 0;  i < nsamp;  ++i) traces[iTrc][i] *= scalefac[iTrc];
+					}
+				}
 				_segy_files[iFile]->Write_SEGY_File(traces,srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,count,nsamp,flag);
+				delete [] scalefac;
 				delete [] traces;
 				delete [] recx;
 				delete [] recy;
@@ -1424,14 +1528,13 @@ void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
 	_h_trace_idx_in_nn = new int[_num_traces];
 	_h_trace_idx_out = new int[_num_traces];
 	_h_trace_iFile = new int[_num_traces];
-	//_h_trace_touched = new bool[_num_traces];
-	_h_trace_touched = new unsigned int[(_num_traces + 31) >> 5];
+	_h_trace_touched = new int[_num_traces];
 	_h_trace_nsamp_in = new int[_num_segy_files];
 	_h_trace_nsamp_out = new int[_num_segy_files];
 	_h_trace_out_idxM = new int*[_num_segy_files];
 	_h_trace_out_sinc_coeffs = new float**[_num_segy_files];
 	int nsamp_in = _totSteps + 12;
-	for (int i = 0;  i < ((_num_traces + 31) >> 5);  ++i) _h_trace_touched[i] = 0;
+	for (int i = 0;  i < _num_traces;  ++i) _h_trace_touched[i] = 0;
 	for (int iFile = 0, iTrc = 0;  iFile < _num_segy_files;  ++iFile)
         {
 		double tshift = _segy_files[iFile]->Get_Timeshift();

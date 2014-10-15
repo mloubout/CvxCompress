@@ -2,6 +2,7 @@
 #define CVX_ESDRD_MI_TMJ_ELASTIC_SHOT_HXX
 
 #include "Elastic_Interpolation.hxx"
+#include "Elastic_Gather_Type.hxx"
 
 class Elastic_Modeling_Job;
 class Elastic_SEGY_File;
@@ -154,6 +155,8 @@ private:
 	int _log_level;
 	Elastic_Modeling_Job* _job;
 
+	float Compute_Reciprocal_Scale_Factor(int flag, float srcx, float srcy, float srcz, float recx, float recy, float recz);
+
 	int _souidx;
 	double _x;
 	double _y;
@@ -209,8 +212,7 @@ private:
 	int* _h_trace_idx_in_nn;
 	int* _h_trace_idx_out;
 	int* _h_trace_iFile;  // iFile no for this trace
-	unsigned int* _h_trace_touched;
-	//bool* _h_trace_touched;
+	int* _h_trace_touched;
 
 	// indexed on _num_segy_files
 	int* _h_trace_nsamp_in;

@@ -2,6 +2,7 @@
 #define CVX_ESDRD_MI_TMJ_ELASTIC_SEGY_FILE_HXX
 
 #include "Elastic_Interpolation.hxx"
+#include "Elastic_Gather_Type.hxx"
 
 class Elastic_SEGY_File_Receiver_Range;
 class Elastic_Propagator;
@@ -26,6 +27,9 @@ public:
 
 	int Get_File_Index() {return _fileidx;}
 	void Set_File_Index(int fileidx) {_fileidx=fileidx;}
+
+	Elastic_Gather_Type_t Get_Gather_Type() {return _gather_type;}
+	void Set_Gather_Type(Elastic_Gather_Type_t gather_type) {_gather_type = gather_type;}
 
 	Elastic_Interpolation_t Get_Interpolation_Method() {return _interpolation_method;}
 	void Set_Interpolation_Method(Elastic_Interpolation_t interpolation_method) {_interpolation_method = interpolation_method;}
@@ -123,6 +127,8 @@ private:
 	bool _do_Vy;
 	bool _do_Vz;
 	Elastic_Interpolation_t _interpolation_method;
+
+	Elastic_Gather_Type_t _gather_type;
 
 	void swap2bytes(short *i2, int n);
 	void swap4bytes(int *i4, int n);

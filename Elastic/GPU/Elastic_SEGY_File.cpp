@@ -6,6 +6,7 @@
 #include "Elastic_Buffer.hxx"
 #include "Elastic_Pipeline.hxx"
 #include "Elastic_Propagator.hxx"
+#include "Elastic_Gather_Type.hxx"
 #include <cuda_runtime_api.h>
 #include "gpuAssert.h"
 
@@ -23,6 +24,7 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 {
 	_Is_Valid = false;
 	_fileidx = fileidx;
+	_gather_type = Common_Shot_Gather;
 	_base_filename = strdup(base_filename);
 	_sample_rate = sample_rate;
 	_tshift = tshift;
@@ -236,41 +238,63 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		reel_id_hdr2.sortcode = trc_sortcode2;
 		fwrite((void*)&reel_id_hdr2,1,400,fp);
 
-		/*** FILL SOURCE-RELATED PART OF TRACE HEADER ***/
-		int ffid = _fileidx;
-		int elevatsrc = 0;
-		int srcdepth = (int)(100.*srcz);
-		int xsrc = (int)(100.*srcx);
-		int ysrc = (int)(100.*srcy);
-		short tstartrec2 = (int)(_tshift*1000. + 0.5);
-		short neg100 = -100;
-		if(swapflag)
-		{
-			swap4bytes(&ffid, 1);
-			swap4bytes(&elevatsrc, 1);     swap4bytes(&srcdepth, 1);
-			swap4bytes(&xsrc, 1);          swap4bytes(&ysrc, 1);
-			swap2bytes(&tstartrec2, 1);
-			swap2bytes(&neg100, 1);
-		}
-		trc_id_hdr.isrc = ffid;
-		trc_id_hdr.elevatsrc = elevatsrc; 
-		trc_id_hdr.srcdepth = srcdepth;
-		trc_id_hdr.srcx = xsrc;           
-		trc_id_hdr.srcy = ysrc;
-		trc_id_hdr.nsamp = nsamp2;
-		trc_id_hdr.tstartrec = tstartrec2;
-		trc_id_hdr.dtmicro = dtmicro2;
-		trc_id_hdr.scalar1 = neg100;
-		trc_id_hdr.scalar2 = neg100;
-
 		float* trcbuf = new float[nsamp];
 		for (int iTrc = 0;  iTrc < num_traces;  ++iTrc)
 		{
-			int recelev = -(int)(100.*recz[iTrc]);
+			float sx, sy, sz, rx, ry, rz;
+			if (Get_Gather_Type() == Common_Receiver_Gather)
+			{
+				// common receiver gather generated through reciprocity
+				// flip source and receiver locations
+				sx = recx[iTrc];
+				sy = recy[iTrc];
+				sz = recz[iTrc];
+				rx = srcx;
+				ry = srcy;
+				rz = srcz;
+			}
+			else
+			{
+				sx = srcx;
+				sy = srcy;
+				sz = srcz;
+				rx = recx[iTrc];
+				ry = recy[iTrc];
+				rz = recz[iTrc];
+			}
+
+			/*** FILL SOURCE-RELATED PART OF TRACE HEADER ***/
+			int ffid = _fileidx;
+			int elevatsrc = 0;
+			int srcdepth = (int)(100.*sz);
+			int xsrc = (int)(100.*sx);
+			int ysrc = (int)(100.*sy);
+			short tstartrec2 = (int)(_tshift*1000. + 0.5);
+			short neg100 = -100;
+			if(swapflag)
+			{
+				swap4bytes(&ffid, 1);
+				swap4bytes(&elevatsrc, 1);     swap4bytes(&srcdepth, 1);
+				swap4bytes(&xsrc, 1);          swap4bytes(&ysrc, 1);
+				swap2bytes(&tstartrec2, 1);
+				swap2bytes(&neg100, 1);
+			}
+			trc_id_hdr.isrc = ffid;
+			trc_id_hdr.elevatsrc = elevatsrc; 
+			trc_id_hdr.srcdepth = srcdepth;
+			trc_id_hdr.srcx = xsrc;           
+			trc_id_hdr.srcy = ysrc;
+			trc_id_hdr.nsamp = nsamp2;
+			trc_id_hdr.tstartrec = tstartrec2;
+			trc_id_hdr.dtmicro = dtmicro2;
+			trc_id_hdr.scalar1 = neg100;
+			trc_id_hdr.scalar2 = neg100;
+
+			int recelev = -(int)(100.*rz);
 			if(swapflag) swap4bytes(&recelev, 1);
 			trc_id_hdr.recelev = recelev;
 
-			int yrec = (int)(100.*recy[iTrc]);
+			int yrec = (int)(100.*ry);
 			int xl = xline[iTrc];
 			if(swapflag) { swap4bytes(&yrec, 1); swap4bytes(&xl, 1); }
 			trc_id_hdr.recy = yrec;
@@ -279,11 +303,11 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			int trcseq = iTrc+1;       
 			int ichan = iTrc+1;      
 			int trce = trcens[iTrc];
-			int xrec = (int)(100.*recx[iTrc]);
-			double xoff = recx[iTrc] - srcx;        
-			double yoff = recy[iTrc] - srcy;
-			double cmpx = 0.5*(srcx + recx[iTrc]);  
-			double cmpy = 0.5*(srcy + recy[iTrc]);
+			int xrec = (int)(100.*rx);
+			double xoff = rx - sx;        
+			double yoff = ry - sy;
+			double cmpx = 0.5*(sx + rx);  
+			double cmpy = 0.5*(sy + ry);
 			int il = iline[iTrc];
 			int offset = (int)round(sqrt(yoff*yoff + xoff*xoff));
 			double azim = r2d*atan2(yoff, xoff);
