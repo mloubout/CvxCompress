@@ -765,7 +765,7 @@ float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float 
 		if (flag == 1)
 		{
 			//  P(A) <- P(B)
-			scalefac = -(kB/kA);
+			scalefac = (kB/kA);
 		}
 		else if (flag == 2)
 		{
