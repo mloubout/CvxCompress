@@ -1647,13 +1647,24 @@ float Elastic_Modeling_Job::_Unpack_Earth_Model_Attribute(unsigned int word, int
 	}
 }
 
+//
+// This method will terminate program if coordinates are outside modeling domain.
+//
 float Elastic_Modeling_Job::Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool& error)
+{
+	Elastic_Modeling_Job::Get_Earth_Model_Attribute(attr_idx,ix,iy,iz,false,error);
+}
+
+//
+// This method will return error code if silent is true and coordinates are outside of modeling domain.
+// It will not terminate program if silent is true.
+//
+float Elastic_Modeling_Job::Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool silent, bool& error)
 {
 	if (_propagator != 0L && attr_idx >= 0 && attr_idx < _num_em_props)
 	{
 		int widx = _pck_widx[attr_idx];
-		unsigned int word = _propagator->_Get_Earth_Model_Word(widx,ix,iy,iz);
-		error = false;
+		unsigned int word = _propagator->_Get_Earth_Model_Word(widx,ix,iy,iz,silent,error);
 		return _Unpack_Earth_Model_Attribute(word,attr_idx);
 	}
 	else
@@ -1668,10 +1679,9 @@ void Elastic_Modeling_Job::Set_Earth_Model_Attribute(int attr_idx, int ix, int i
 	if (_propagator != 0L && attr_idx >= 0 && attr_idx < _num_em_props)
         {
                 int widx = _pck_widx[attr_idx];
-		unsigned int word = _propagator->_Get_Earth_Model_Word(widx,ix,iy,iz);
+		unsigned int word = _propagator->_Get_Earth_Model_Word(widx,ix,iy,iz,false,error);
 		_Pack_Earth_Model_Attribute(word,attr_idx,new_value);
 		_propagator->_Set_Earth_Model_Word(widx,ix,iy,iz,word);
-		error = false;
 	}
 	else
 	{

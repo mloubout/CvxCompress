@@ -63,6 +63,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float Gamma2_range,
 	int one_y_size,
 	bool inject_source,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z,
 	Elastic_Interpolation_t source_interpolation_method,
 	bool is_pressure,
 	float ampl1,

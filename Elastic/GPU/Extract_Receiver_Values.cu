@@ -216,7 +216,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						float Vx_xd = recx - (float)Vx_ix + 0.5f;
 						res[outidx++] = 
 							cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp)
-							+ cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,Vx_xd,yd,zdg,cmp);
+							- cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,Vx_xd,yd,zdg,cmp);
 					}
 					if (recflags & 4)
 					{
@@ -225,7 +225,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						float Vy_yd = recy - (float)Vy_iy - 0.5f;
 						res[outidx++] = 
 							cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,Vy_yd,zdg,cmp+one_wf_size_f);
+							- cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,Vy_yd,zdg,cmp+one_wf_size_f);
 					}
 					if (recflags & 8)
 					{
@@ -236,7 +236,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						float Vz_zdg = 1.0f - Vz_zd;
 						res[outidx++] = 
 							cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_izg,nz-1,one_y_size_f,xd,yd,Vz_zdg,cmp+2*one_wf_size_f);
+							- cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_izg,nz-1,one_y_size_f,xd,yd,Vz_zdg,cmp+2*one_wf_size_f);
 					}
 				}
 				else
@@ -530,7 +530,7 @@ void cuExtract_Receiver_Pressure_Values(
 					float zdg = 1.0f - zd;
 					res[outidx++] = 
 						-(cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zd,cmp)
-								+cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zdg,cmp)) / 3.0f;
+								- cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zdg,cmp)) / 3.0f;
 				}
 				else
 				{

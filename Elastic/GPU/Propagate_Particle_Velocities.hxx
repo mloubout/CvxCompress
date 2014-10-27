@@ -43,6 +43,8 @@ Host_Propagate_Particle_Velocities_Kernel(
 	float Density_range,
 	int one_y_size,
 	bool inject_source,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z,
 	Elastic_Interpolation_t source_interpolation_method,
 	bool is_force,
 	bool is_velocity,

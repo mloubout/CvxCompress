@@ -752,10 +752,19 @@ float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float 
 
 	//printf("Elastic_Shot::Compute_Reciprocal_Scale_Factor - isx=%d, isy=%d, isz=%d, irx=%d, iry=%d, irz=%d\n",isx,isy,isz,irx,iry,irz);
 
-	float rhoA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, irx, iry, irz) * 1000.0f;
-	float rhoB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, isx, isy, isz) * 1000.0f;
-	float VpA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, irx, iry, irz);
-	float VpB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, isx, isy, isz);
+	bool silent=true, error=false, combined_error=false;
+	float rhoA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, irx, iry, irz, silent, error) * 1000.0f;
+	if (error) combined_error = true;
+	float rhoB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Density, isx, isy, isz, silent, error) * 1000.0f;
+	if (error) combined_error = true;
+	float VpA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, irx, iry, irz, silent, error);
+	if (error) combined_error = true;
+	float VpB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, isx, isy, isz, silent, error);
+	if (error) combined_error = true;
+
+	// return zero if an error was returned by earth model. zero scaling factor kills the trace.
+	if (combined_error) return 0.0f;
+
 	float kA = VpA * VpA * rhoA;
 	float kB = VpB * VpB * rhoB;
 
@@ -1292,7 +1301,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                         {
                                 int flags = _segy_files[iFile]->Get_Selection_Flags();
                                 Elastic_Interpolation_t interpolation_method = _segy_files[iFile]->Get_Interpolation_Method();
-                                bool receiver_ghost_enabled = !_job->Freesurface_Enabled() & _job->Receiver_Ghost_Enabled();
+                                bool receiver_ghost_enabled = !_job->Freesurface_Enabled() && _job->Receiver_Ghost_Enabled();
 				double *rcv_x = binRx_x[iFile][iBlk];
 				double *rcv_y = binRx_y[iFile][iBlk];
 				double *rcv_z = binRx_z[iFile][iBlk];

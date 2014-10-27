@@ -620,6 +620,9 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		Elastic_Modeling_Job* job = _prop->Get_Job();
 		bool isosphere = job->Use_Isotropic_Sphere_During_Source_Injection() && shot->Inject_Source(cmp_block_timestep);
 
+		bool source_ghost_enabled = !job->Freesurface_Enabled() && job->Source_Ghost_Enabled();
+		int ghost_sea_surface_z = -job->Get_Propagation_Z0();
+
 #ifdef GPU_DEBUG
 		char buf1[256];
 		char buf2[256];
@@ -695,6 +698,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Density,isosphere),
 				one_y_size,
 				shot->Inject_Source(cmp_block_timestep),
+				source_ghost_enabled,
+				ghost_sea_surface_z,
 				shot->Get_Source_Interpolation_Method(),
 				shot->Get_Source_Is_Force(),
 				shot->Get_Source_Is_Velocity(),
@@ -774,6 +779,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Gamma2,isosphere),
 				one_y_size,
 				shot->Inject_Source(cmp_block_timestep),
+				source_ghost_enabled,
+				ghost_sea_surface_z,
 				shot->Get_Source_Interpolation_Method(),
 				shot->Get_Source_Is_Pressure(),
 				shot->Get_Amplitude1(),

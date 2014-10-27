@@ -71,6 +71,11 @@ public:
 	int Get_Earth_Model_Attribute_Index(const char* moniker);
 	const char* Get_Earth_Model_Attribute_Moniker(int attr_idx);
 
+	//
+	// If silent is false and the coordinates are outside of the modeling domain, the program will be terminated.
+	// If silent is true and the coordinates are outisde of the modeling domain, an error code is returned instead.
+	//
+	float Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool silent, bool& error);
 	float Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool& error);
 	void Set_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, float new_value, bool& error);
 

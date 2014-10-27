@@ -71,10 +71,12 @@ public:
 			int x,
 			int y,
 			int z,
+			bool silent,
 			unsigned int& word0,
 			unsigned int& word1,
 			unsigned int& word2,
-			unsigned int& word3
+			unsigned int& word3,
+			bool& error
 			);
 
 	float Get_Receiver_Value(int wf_type, int ix, int iy, int iz);
@@ -183,7 +185,7 @@ private:
 			int z0,
 			int inc_z
 			);
-	unsigned int _Get_Earth_Model_Word(int widx, int x,int y,int z);
+	unsigned int _Get_Earth_Model_Word(int widx, int x,int y,int z, bool silent, bool& error);
 	void _Set_Earth_Model_Word(int widx, int x,int y,int z, unsigned int new_word);
 
 	void _NABC_TOP_Extend(int z0);

@@ -4,7 +4,7 @@
 //
 
 __device__ 
-void _cuApply_Source_Term_To_TxxTyyTzz(
+void __cuApply_Source_Term_To_TxxTyyTzz(
 	int thr_z,
 	int timestep,
 	float* cmp,
@@ -71,8 +71,8 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
         }
 }
 
-__global__
-void cuApply_Source_Term_To_TxxTyyTzz(
+__device__
+void _cuApply_Source_Term_To_TxxTyyTzz(
 	int timestep,
         float* cmp,
         int x0,
@@ -96,7 +96,34 @@ void cuApply_Source_Term_To_TxxTyyTzz(
 
 	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
 	{
-        	_cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell);
+        	__cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell);
+	}
+}
+
+__global__
+void cuApply_Source_Term_To_TxxTyyTzz(
+	int timestep,
+        float* cmp,
+        int x0,
+        int y0,
+        int z0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        float ampl1,
+        float xs,
+        float ys,
+        float zs,
+        float val,
+	bool source_ghost_enabled,
+	float ghost_sea_surface
+        )
+{
+	_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val);
+	if (source_ghost_enabled)
+	{
+		_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val);
 	}
 }
 
@@ -139,7 +166,9 @@ void cuApply_Point_Source_To_TxxTyyTzz(
         float xs,
         float ys,
         float zs,
-        float val
+        float val,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z
         )
 {
 	int ix = (int)lrintf(xs) - x0;
@@ -155,10 +184,20 @@ void cuApply_Point_Source_To_TxxTyyTzz(
 			-dti*val*ampl1,
 			one_wf_size_f,one_y_size_f
 			);
+	if (source_ghost_enabled)
+	{
+		int izd = 2 * ghost_sea_surface_z - iz;
+		cuApply_Point_Source_To_Single_TxxTyyTzz(
+                        cmp,nx,ny,nz,
+                        ix,iy,izd,
+                        dti*val*ampl1,
+                        one_wf_size_f,one_y_size_f
+                        );
+	}
 }
 
-__global__ 
-void cuApply_Trilinear_Source_To_TxxTyyTzz(
+__device__ 
+void _cuApply_Trilinear_Source_To_TxxTyyTzz(
 	float* cmp,
 	int x0,
         int y0,
@@ -232,6 +271,31 @@ void cuApply_Trilinear_Source_To_TxxTyyTzz(
 			-dti*val*ampl1*xd*(1.0f-yd)*(1.0f-zd),
 			one_wf_size_f,one_y_size_f
 			);
+}
+
+__global__ 
+void cuApply_Trilinear_Source_To_TxxTyyTzz(
+	float* cmp,
+	int x0,
+        int y0,
+        int nx,
+        int ny,
+        int nz,
+        float dti,
+        float ampl1,
+        float xs,
+        float ys,
+        float zs,
+        float val,
+	bool source_ghost_enabled,
+	float ghost_sea_surface
+        )
+{
+	_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,zs,val);
+	if (source_ghost_enabled)
+	{
+		_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val);
+	}
 }
 
 __device__ 
@@ -695,6 +759,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float Gamma2_range,
 	int one_y_size,
 	bool inject_source,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z,
 	Elastic_Interpolation_t source_interpolation_method,
 	bool is_pressure,
 	float ampl1,
@@ -755,24 +821,25 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	//
 	if (inject_source && is_pressure && ampl1 != 0.0f)
 	{
+		float ghost_sea_surface = (float)ghost_sea_surface_z;
 		if (source_interpolation_method == Point)
 		{
 			dim3 blockShape3(1,1,1);
 			dim3 gridShape3(1,1,1);
-			cuApply_Point_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+			cuApply_Point_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface_z);
 		}
 		else if(source_interpolation_method == Trilinear)
 		{
 			dim3 blockShape3(1,1,1);
 			dim3 gridShape3(1,1,1);
-			cuApply_Trilinear_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+			cuApply_Trilinear_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface);
 		}
 		else if(source_interpolation_method == Sinc)
 		{
 			// use only one thread along z to prevent possible race condition
 			dim3 blockShape2(8,8,1);
 			dim3 gridShape2(1,1,1);
-			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample);
+			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface);
 		}
 	}
 #ifdef GPU_DEBUG

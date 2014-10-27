@@ -1100,31 +1100,50 @@ void Elastic_Propagator::Get_EM_Cell(
 	int x,
 	int y,
 	int z,
+	bool silent,
 	unsigned int& word0,
         unsigned int& word1,
         unsigned int& word2,
-        unsigned int& word3
+        unsigned int& word3,
+	bool& error
         )
 {
         int xblk = x >> 2;
         int xidx = x & 3;
 
+	error = false;
 	if (xblk < 0 || xblk >= _NbX || y < 0 || y >= _ny || z < 0 || z >= _nz)
 	{
-		printf("Elastic_Propagator::Get_EM_Cell - Out of bounds - x=%d,y=%d,z=%d\n",x,y,z);
-		exit(0);
+		if (!silent)
+		{
+			printf("Elastic_Propagator::Get_EM_Cell - Out of bounds - x=%d,y=%d,z=%d\n",x,y,z);
+			exit(-1);
+		}
+		else
+		{
+			error = true;
+		}
 	}
+	if (!error)
+	{
+		int one_wf_size_f = 4 * _nz;
+		int one_y_size_f = one_wf_size_f * 4;
 
-        int one_wf_size_f = 4 * _nz;
-        int one_y_size_f = one_wf_size_f * 4;
+		int idx = one_y_size_f * (int)y + (int)z * 4 + xidx;
 
-        int idx = one_y_size_f * (int)y + (int)z * 4 + xidx;
-
-        word0 = ((unsigned int*)_EM[xblk])[idx                ];
-        word1 = ((unsigned int*)_EM[xblk])[idx+  one_wf_size_f];
-        word2 = ((unsigned int*)_EM[xblk])[idx+2*one_wf_size_f];
-        word3 = ((unsigned int*)_EM[xblk])[idx+3*one_wf_size_f];
-	//printf("x-y-z=%d,%d,%d :: words=%d,%d,%d,%d\n",x,y,z,word0,word1,word2,word3);
+		word0 = ((unsigned int*)_EM[xblk])[idx                ];
+		word1 = ((unsigned int*)_EM[xblk])[idx+  one_wf_size_f];
+		word2 = ((unsigned int*)_EM[xblk])[idx+2*one_wf_size_f];
+		word3 = ((unsigned int*)_EM[xblk])[idx+3*one_wf_size_f];
+		//printf("x-y-z=%d,%d,%d :: words=%d,%d,%d,%d\n",x,y,z,word0,word1,word2,word3);
+	}
+	else
+	{
+		word0 = 0;
+		word1 = 0;
+		word2 = 0;
+		word3 = 0;
+	}
 }
 
 //
@@ -1261,17 +1280,18 @@ void Elastic_Propagator::_Insert_Earth_Model_Stripe(
 	}
 }
 
-unsigned int Elastic_Propagator::_Get_Earth_Model_Word(int widx, int x,int y,int z)
+unsigned int Elastic_Propagator::_Get_Earth_Model_Word(int widx, int x,int y,int z, bool silent, bool& error)
 {
 	unsigned int word[4];
-	Get_EM_Cell(x,y,z,word[0],word[1],word[2],word[3]);
+	Get_EM_Cell(x,y,z,silent,word[0],word[1],word[2],word[3],error);
 	return word[widx];
 }
 
 void Elastic_Propagator::_Set_Earth_Model_Word(int widx, int x,int y,int z, unsigned int new_word)
 {
 	unsigned int word[4];
-        Get_EM_Cell(x,y,z,word[0],word[1],word[2],word[3]);
+	bool error;
+        Get_EM_Cell(x,y,z,false,word[0],word[1],word[2],word[3],error);
 	word[widx] = new_word;
 	Set_EM_Cell(x,y,z,word[0],word[1],word[2],word[3]);
 }
@@ -1288,7 +1308,8 @@ void Elastic_Propagator::_NABC_TOP_Extend(int z0)
 			for (int y = 0;  y < _ny;  ++y)
 			{
 				unsigned int word0, word1, word2, word3;
-				Get_EM_Cell(x,y,z0,word0,word1,word2,word3);
+				bool error;
+				Get_EM_Cell(x,y,z0,false,word0,word1,word2,word3,error);
 				for (int z = 0;  z < z0;  ++z)
 				{
 					Set_EM_Cell(x,y,z,word0,word1,word2,word3);
@@ -1310,7 +1331,8 @@ void Elastic_Propagator::_NABC_BOT_Extend(int z1)
 			for (int y = 0;  y < _ny;  ++y)
 			{
 				unsigned int word0, word1, word2, word3;
-				Get_EM_Cell(x,y,z1,word0,word1,word2,word3);
+				bool error;
+				Get_EM_Cell(x,y,z1,false,word0,word1,word2,word3,error);
 				for (int z = z1+1;  z < _nz;  ++z)
 				{
 					Set_EM_Cell(x,y,z,word0,word1,word2,word3);
@@ -1339,7 +1361,8 @@ void Elastic_Propagator::_NABC_SDX_Extend(int x0, int x1)
 				unsigned int word0, word1, word2, word3;
 				if (do_lo)
 				{
-					Get_EM_Cell(x0,y,z,word0,word1,word2,word3);
+					bool error;
+					Get_EM_Cell(x0,y,z,false,word0,word1,word2,word3,error);
 					for (int x = 0;  x < x0;  ++x)
 					{
 						Set_EM_Cell(x,y,z,word0,word1,word2,word3);
@@ -1347,7 +1370,8 @@ void Elastic_Propagator::_NABC_SDX_Extend(int x0, int x1)
 				}
 				if (do_hi)
 				{
-					Get_EM_Cell(x1,y,z,word0,word1,word2,word3);
+					bool error;
+					Get_EM_Cell(x1,y,z,false,word0,word1,word2,word3,error);
 					for (int x = x1+1;  x < _nx;  ++x)
 					{
 						Set_EM_Cell(x,y,z,word0,word1,word2,word3);
@@ -1377,7 +1401,8 @@ void Elastic_Propagator::_NABC_SDY_Extend(int y0, int y1)
 				unsigned int word0, word1, word2, word3;
 				if (do_lo)
 				{
-					Get_EM_Cell(x,y0,z,word0,word1,word2,word3);
+					bool error;
+					Get_EM_Cell(x,y0,z,false,word0,word1,word2,word3,error);
 					for (int y = 0;  y < y0;  ++y)
 					{
 						Set_EM_Cell(x,y,z,word0,word1,word2,word3);
@@ -1385,7 +1410,8 @@ void Elastic_Propagator::_NABC_SDY_Extend(int y0, int y1)
 				}
 				if (do_hi)
 				{
-					Get_EM_Cell(x,y1,z,word0,word1,word2,word3);
+					bool error;
+					Get_EM_Cell(x,y1,z,false,word0,word1,word2,word3,error);
 					for (int y = y1+1;  y < _ny;  ++y)
 					{
 						Set_EM_Cell(x,y,z,word0,word1,word2,word3);
