@@ -22,6 +22,35 @@ Global_Coordinate_System::Global_Coordinate_System(const char* path)
 		_NW = (int)round(sqrt(_W0*_W0+_W1*_W1+_W2*_W2) * (_LWMAX-_LWMIN) / _DW) + 1;
 	}
 	printf("_DU=%.7e, _DV=%.7f, _DW=%.7f\n",_DU,_DV,_DW);
+
+	double lenU = sqrt(_U0*_U0 + _U1*_U1 + _U2*_U2);
+	double lenV = sqrt(_V0*_V0 + _V1*_V1 + _V2*_V2);
+	double lenW = sqrt(_W0*_W0 + _W1*_W1 + _W2*_W2);
+	double u0 = _U0 / lenU;
+	double u1 = _U1 / lenU;
+	double u2 = _U2 / lenU;
+	double v0 = _V0 / lenV;
+	double v1 = _V1 / lenV;
+	double v2 = _V2 / lenV;
+	double w0 = _W0 / lenW;
+	double w1 = _W1 / lenW;
+	double w2 = _W2 / lenW;
+
+	double UonV = fabs(u0*v0 + u1*v1 + u2*v2);
+	double UonW = fabs(u0*w0 + u1*w1 + u2*w2);
+	double VonW = fabs(v0*w0 + v1*w1 + v1*w2);
+	if (UonV > 1e-7 || UonW > 1e-7 || VonW > 1e-7)
+	{
+		printf("WARNING! This is not an orthogonal coordinate system.\n");
+		printf("         Mapping between global and local coordinates will introduce errors.\n");
+		double maxU = UonV > UonW ? UonV : UonW;
+		double maxV = UonV > VonW ? UonV : VonW;
+		double maxW = UonW > VonW ? UonW : VonW;
+		if (maxU > 1e-7) printf("         Error per 100km for U axis is approximately %.2lfm.\n",maxU*1e5);
+		if (maxV > 1e-7) printf("         Error per 100km for V axis is approximately %.2lfm.\n",maxV*1e5);
+		if (maxW > 1e-7) printf("         Error per 100km for W axis is approximately %.2lfm.\n",maxW*1e5);
+	}
+
 	// override these so that meaning of local coordinate is what users expect.
 	//_LUMIN = 0.0;
 	//_LUMAX = _DU * (double)(_NU - 1);
