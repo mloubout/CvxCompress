@@ -2202,7 +2202,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 						long vals_off = (trace - trace_group) * nu;
 						long file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
 						//printf("_read :: file_off=%ld, vals_off=%ld, ilu=%ld, nu=%ld, ilv=%ld, ilw=%ld, trace-trace_group=%ld\n",file_off,vals_off,ilu,nu,ilv,ilw,trace-trace_group);
-						if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
+//						if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
 						fseek(fp, file_off*sizeof(float), SEEK_SET);
 						long nread = fread(vals+vals_off, sizeof(float), nu, fp);
 						if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
@@ -2233,7 +2233,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 					if (_props[attr_idx] != 0L)
 					{
 						_swap_endian(&(vals[vals_off+sample]));
-						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,val);
+						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,vals[vals_off+sample]);
 					}
 					else
 					{

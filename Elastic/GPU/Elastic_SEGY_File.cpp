@@ -609,7 +609,6 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		trcens = _h_user_trcens;
 		num = _num_user_rcv;		
 	}
-
 	return num;
 }
 
