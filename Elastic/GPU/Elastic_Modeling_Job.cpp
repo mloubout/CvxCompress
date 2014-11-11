@@ -1158,7 +1158,6 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					{
 						_pck_min[i] = _const_vals[i];
 						_pck_max[i] = _const_vals[i];
-						_pck_iso[i] = _const_vals[i];
 					}
 					else
 					{
@@ -1167,18 +1166,19 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 							prop->Get_MinMax_From_File();
 							if (i == Attr_Idx_Q) prop->Set_MinMax(1.0f/prop->Get_Max(), 1.0f/prop->Get_Min()); // for Q we pack reciprocal of Q
 						}
-						if (i == Attr_Idx_Q && _lower_Q_seafloor_enabled && prop->Get_Max() < 0.1f)
-						{
-							prop->Set_MinMax(prop->Get_Min(), 0.1f);
-							if (_log_level >= 3) printf("Minimum Q lowered to %f\n",1.0f/prop->Get_Max());
-						}
 						_pck_min[i] = prop->Get_Min();
 						_pck_max[i] = prop->Get_Max();
-						if (i == Attr_Idx_Vp || i == Attr_Idx_Density || i == Attr_Idx_Q)
-							_pck_iso[i] = prop->Get_Min();
-						else
-							_pck_iso[i] = 0.0f;
 					}
+					if (i == Attr_Idx_Q && _lower_Q_seafloor_enabled && _pck_max[i] < 0.1f)
+					{
+						_pck_max[i] = 0.1f;
+						if (_log_level >= 3) printf("Minimum Q lowered to %f\n",1.0f/_pck_max[i]);
+						if (prop != 0L) prop->Set_MinMax(prop->Get_Min(), _pck_max[i]);
+					}
+					if (i == Attr_Idx_Vp || i == Attr_Idx_Density || i == Attr_Idx_Q)
+						_pck_iso[i] = _pck_min[i];
+					else
+						_pck_iso[i] = 0.0f;
 					if (_pck_min[i] == _pck_max[i]) _pck_max[i] = _pck_min[i] + fabs(0.1f * _pck_min[i]);
 					_pck_range[i] = _pck_max[i] - _pck_min[i];
 					//printf("%s - Min=%f, Range=%f\n",_pck_moniker[i],_pck_min[i],_pck_range[i]);
@@ -2202,7 +2202,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 						long vals_off = (trace - trace_group) * nu;
 						long file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
 						//printf("_read :: file_off=%ld, vals_off=%ld, ilu=%ld, nu=%ld, ilv=%ld, ilw=%ld, trace-trace_group=%ld\n",file_off,vals_off,ilu,nu,ilv,ilw,trace-trace_group);
-//						if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
+						//if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
 						fseek(fp, file_off*sizeof(float), SEEK_SET);
 						long nread = fread(vals+vals_off, sizeof(float), nu, fp);
 						if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
