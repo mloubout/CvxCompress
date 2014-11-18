@@ -761,12 +761,16 @@ float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float 
 	if (error) combined_error = true;
 	float VpB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vp, isx, isy, isz, silent, error);
 	if (error) combined_error = true;
+	float VsA = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vs, irx, iry, irz, silent, error);
+	if (error) combined_error = true;
+	float VsB = _job->Get_Earth_Model_Attribute(_job->Attr_Idx_Vs, isx, isy, isz, silent, error);
+	if (error) combined_error = true;
 
 	// return zero if an error was returned by earth model. zero scaling factor kills the trace.
 	if (combined_error) return 0.0f;
 
-	float kA = VpA * VpA * rhoA;
-	float kB = VpB * VpB * rhoB;
+	float kA = (VpA * VpA - 1.333333333f * VsA * VsA) * rhoA;
+	float kB = (VpB * VpB - 1.333333333f * VsB * VsB) * rhoB;
 
 	float scalefac = 1.0f;
 	if (Get_Source_Type() == Source_Type_Pressure)
