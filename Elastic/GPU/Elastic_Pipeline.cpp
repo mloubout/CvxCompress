@@ -116,7 +116,6 @@ void Elastic_Pipeline::_Shift_Rx_Blocks()
 	//printf("Elastic_Pipeline::_Shift_Rx_Blocks - start\n");
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
-		int device_id = _device_IDs[iDev];
 		int nn = _h_RxLoc_num_blocks[iDev];
 		void* first_d_RxLoc_block = _d_RxLoc_block[iDev][0];
 		for (int ib = 1;  ib < nn;  ++ib)
@@ -273,23 +272,35 @@ void Elastic_Pipeline::Launch_Receiver_Data_Transfers(Elastic_Shot* shot)
 	}
 }
 
+void Elastic_Pipeline::DEMUX_Receiver_Values_For_One_Device(Elastic_Shot* shot, int device_index)
+{
+	if (device_index >= 0 && device_index < _num_devices)
+	{
+		if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[device_index] > 0)
+		{
+			shot->DEMUX_Receiver_Values(
+					this,
+					_h_RxRes_prev_block_offset[device_index],
+					_h_RxRes_prev_timestep[device_index],
+					_h_RxRes_prev_num_rx[device_index],
+					_h_RxRes_prev_flags[device_index],
+					_h_RxRes_prev_num_blocks[device_index],
+					(float*)(_h_RxRes_prev[device_index]));
+		}
+	}
+	else
+	{
+		printf("Error! Elastic_Pipeline::DEMUX_Receiver_Values_For_One_Device - Illegal device index, was %d, should be >= 0 and < %d\n",device_index,_num_devices);
+		exit(-1);
+	}
+}
+
 void Elastic_Pipeline::DEMUX_Receiver_Values(Elastic_Shot* shot)
 {
 #pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
-		//int device_id = _device_IDs[iDev];
-		if (_h_RxRes_prev_num_blocks != 0L && _h_RxRes_prev_num_blocks[iDev] > 0)
-		{
-			shot->DEMUX_Receiver_Values(
-					this, 
-					_h_RxRes_prev_block_offset[iDev],
-					_h_RxRes_prev_timestep[iDev],
-					_h_RxRes_prev_num_rx[iDev],
-					_h_RxRes_prev_flags[iDev],
-					_h_RxRes_prev_num_blocks[iDev],
-					(float*)(_h_RxRes_prev[iDev]));
-		}
+		DEMUX_Receiver_Values_For_One_Device(shot, iDev);
 	}
 }
 
@@ -528,7 +539,7 @@ bool Elastic_Pipeline::Verify_All_Devices_Have_Enough_Memory()
 		}
 		else
 		{
-			printf("Unable to check free memory for device %d.\n");
+			printf("Unable to check free memory for device %d.\n",device_id);
 			return false;
 		}
 	}

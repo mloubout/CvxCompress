@@ -763,7 +763,7 @@ void Global_Coordinate_System::_Read(const char* path)
 
 int Global_Coordinate_System::_Transpose_String2Idx(const char* str)
 {
-	char* s = 0L;
+	const char* s = 0L;
 	for (int i = 0;  (s = _Transpose_Idx2String(i)) != 0L;  ++i)
 	{
 		if (strcmp(s, str) == 0)
@@ -774,7 +774,7 @@ int Global_Coordinate_System::_Transpose_String2Idx(const char* str)
 	return -1;	
 }
 
-char* Global_Coordinate_System::_Transpose_Idx2String(int index)
+const char* Global_Coordinate_System::_Transpose_Idx2String(int index)
 {
 	switch (index)
 	{

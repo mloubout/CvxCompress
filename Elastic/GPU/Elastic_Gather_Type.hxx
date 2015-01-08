@@ -7,7 +7,7 @@ enum Elastic_Gather_Type_t
 	Common_Receiver_Gather = 2
 };
 
-static char* ToString_Elastic_Gather_Type_t(Elastic_Gather_Type_t gather_type)
+static const char* ToString_Elastic_Gather_Type_t(Elastic_Gather_Type_t gather_type)
 {
 	switch (gather_type)
 	{

@@ -246,7 +246,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					}
 					else
 					{
-						printf("%s (line %d) : Error - Set transpose to uvw -> %s failed.\n",parmfile_path,line_num);
+						printf("%s (line %d) : Error - Set transpose to uvw -> %s failed.\n",parmfile_path,line_num,transpose);
 						error = true;
 						break;
 					}
@@ -603,7 +603,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 							}
 							else
 							{
-								printf("%s (line %d): Error - SOURCE_LOCATION sub unit '%s' not supported.\n",sub_unit);
+								printf("%s (line %d): Error - SOURCE_LOCATION sub unit '%s' not supported.\n",parmfile_path,line_num,sub_unit);
 								error = true;
 								break;
 							}
@@ -1187,11 +1187,14 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			if (_Is_Valid)
 			{
 				// verify receiver locations for all shots
+				/*
+				// TMJ 01/05/15 Removed check to allow shots to be added after constructor
 				for (int i = 0;  i < _num_shots;  ++i)
 				{
 					Elastic_Shot* shot = _shots[i];
 						
 				}
+				*/
 			}
 			if (_log_level > 2) printf("Parameter file appears to be %s.\n",_Is_Valid?"valid":"invalid");
 		}
@@ -1510,7 +1513,7 @@ void Elastic_Modeling_Job::Write_XZ_Slice(const char* path, int wf_type, int iy)
 			}
 			fprintf(fp,"\n");
 		}
-		char* wf;
+		const char* wf;
 		switch (wf_type)
 		{
 		case 0: // Vx
@@ -1571,7 +1574,7 @@ void Elastic_Modeling_Job::Write_XY_Slice(const char* path, int wf_type, int iz)
 			}
 			fprintf(fp,"\n");
 		}
-		char* wf;
+		const char* wf;
 		switch (wf_type)
 		{
 		case 0: // Vx
@@ -1652,7 +1655,7 @@ float Elastic_Modeling_Job::_Unpack_Earth_Model_Attribute(unsigned int word, int
 //
 float Elastic_Modeling_Job::Get_Earth_Model_Attribute(int attr_idx, int ix, int iy, int iz, bool& error)
 {
-	Elastic_Modeling_Job::Get_Earth_Model_Attribute(attr_idx,ix,iy,iz,false,error);
+	return Elastic_Modeling_Job::Get_Earth_Model_Attribute(attr_idx,ix,iy,iz,false,error);
 }
 
 //
@@ -2072,7 +2075,7 @@ bool Elastic_Modeling_Job::_Check_Property(
 		struct stat fs;
 		if (stat(prop->Get_Full_Path(), &fs) == 0)
 		{
-			if (fs.st_size != expected_file_size)
+			if (fs.st_size != (off_t)expected_file_size)
 			{
 				printf("Property %s : Error - File %s is the wrong size (%ld, expected %ld)\n",prop_name,prop->Get_Full_Path(),fs.st_size,expected_file_size);
 				return true;
@@ -2091,7 +2094,7 @@ bool Elastic_Modeling_Job::_Check_Property(
 	}
 	else
 	{
-		if (_log_level > 3) printf("Property %s set to %lf.\n",prop_val);
+		if (_log_level > 3) printf("Property %s set to %lf.\n",prop_name,prop_val);
 		return false;
 	}
 }
@@ -2115,7 +2118,7 @@ Elastic_Modeling_Job::~Elastic_Modeling_Job()
 	delete [] _GPU_Devices;
 }
 
-void Elastic_Modeling_Job::_swap_endian(float* v)
+float Elastic_Modeling_Job::_swap_endian(float* v)
 {
         int* iv = (int*)v;
         *iv =
@@ -2123,6 +2126,7 @@ void Elastic_Modeling_Job::_swap_endian(float* v)
                 (((*iv) >>  8) & 65280) |
                 (((*iv) & 65280) <<  8) |
                 (((*iv) & 255) << 24);
+	return *((float*)iv);
 }
 
 void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
@@ -2232,7 +2236,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 				{
 					if (_props[attr_idx] != 0L)
 					{
-						_swap_endian(&(vals[vals_off+sample]));
+						vals[vals_off+sample] = _swap_endian(&(vals[vals_off+sample]));
 						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,vals[vals_off+sample]);
 					}
 					else
@@ -2248,6 +2252,8 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 					{
 						acctop += vals[vals_off];	++avgtop_cnt;
 						accbot += vals[vals_off+nu-1];	++avgbot_cnt;
+						//printf("acctop=%e, avgtop_cnt=%d\n, accbot=%e, avgbot_cnt=%d\n",acctop,avgtop_cnt,accbot,avgbot_cnt);
+						//printf("vals[vals_off]=%e, vals[vals_off+1]=%e, vals[vals_off+2]=%e\n",vals[vals_off],vals[vals_off+1],vals[vals_off+2]);
 					}
 					else
 					{

@@ -88,6 +88,7 @@ public:
 	void Launch_Simple_Copy_Kernel();
 	void Launch_Compute_Kernel(float dti, Elastic_Shot* shot, int num_z);
 
+	void DEMUX_Receiver_Values_For_One_Device(Elastic_Shot* shot, int device_index);
 	void DEMUX_Receiver_Values(Elastic_Shot* shot);
 
 private:

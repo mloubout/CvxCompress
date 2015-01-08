@@ -100,9 +100,9 @@ void Elastic_SEGY_File::swap4bytes(int *i4, int n)
 	}
 }
 
-char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
+const char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
 {
-	char* trace_type_str;
+	const char* trace_type_str;
 	if (flag == 1)
 		trace_type_str = "P";
 	else if (flag == 2)
@@ -338,12 +338,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 			if (swapflag)
 			{
-				for (int i = 0;  i < nsamp;  ++i)
-				{
-					float v = traces[iTrc][i];
-					swap4bytes((int*)&v, 1);
-					trcbuf[i] = v;
-				}
+				memcpy((void*)trcbuf, (void*)(traces[iTrc]), nsamp*sizeof(float));
+				swap4bytes((int*)trcbuf,nsamp);
 				fwrite((void*)trcbuf,4,nsamp,fp);
 			}
 			else

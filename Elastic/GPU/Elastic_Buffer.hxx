@@ -79,7 +79,7 @@ public:
 	//
 
 	// set Is_Device2Host flag to supplied value
-	bool Set_Is_Device2Host(int flag);
+	void Set_Is_Device2Host(int flag);
 	bool Is_Device2Host();
 	bool Is_Host2Device();
 

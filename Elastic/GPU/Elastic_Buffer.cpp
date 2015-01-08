@@ -287,6 +287,7 @@ int Elastic_Buffer::Get_Block_Offset(int block_id, int iteration)
 			return -1;
 		}
 	}
+	return -2;
 }
 
 int Elastic_Buffer::Get_Block_Timestep(int block_id, int iteration)
@@ -371,7 +372,7 @@ bool Elastic_Buffer::Block_Is_Host2Device_By_Relative_Offset(int relative_block_
 	return Block_Is_Input_By_Relative_Offset(relative_block_offset) && (_src == 0L);
 }
 
-bool Elastic_Buffer::Set_Is_Device2Host(int flag)
+void Elastic_Buffer::Set_Is_Device2Host(int flag)
 {
 	_Is_Device2Host = flag;
 }
@@ -613,9 +614,6 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		int one_wf_size = one_y_size / 6;
 		int em_one_word_size = one_wf_size;
 		int em_one_y_size = em_one_word_size * 4;
-
-		bool has_low_YHalo  = (_cmp_y0 - _inp_m1->Get_Y0()) >= 4 ? true : false;
-		bool has_high_YHalo = (_inp_m1->Get_Y1() - _cmp_y1) >= 4 ? true : false;
 
 		Elastic_Modeling_Job* job = _prop->Get_Job();
 		bool isosphere = job->Use_Isotropic_Sphere_During_Source_Injection() && shot->Inject_Source(cmp_block_timestep);

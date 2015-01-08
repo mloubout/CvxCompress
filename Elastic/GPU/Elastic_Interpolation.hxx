@@ -8,7 +8,7 @@ enum Elastic_Interpolation_t
 	Sinc = 3
 };
 
-static char* ToString_Elastic_Interpolation_t(Elastic_Interpolation_t interpolation_method)
+static const char* ToString_Elastic_Interpolation_t(Elastic_Interpolation_t interpolation_method)
 {
 	switch (interpolation_method)
 	{

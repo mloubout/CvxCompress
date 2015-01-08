@@ -3,6 +3,8 @@
 
 #include "Elastic_Interpolation.hxx"
 #include "Elastic_Gather_Type.hxx"
+#include "Elastic_Trace_Header.hxx"
+#include "Elastic_Resampled_Trace.hxx"
 
 class Elastic_Modeling_Job;
 class Elastic_SEGY_File;
@@ -105,11 +107,10 @@ public:
 			return 0L;
 	}
 
-	void Allocate_Pinned_Host_Memory(Elastic_Propagator* prop);
-	void Free_Pinned_Host_Memory(Elastic_Propagator* prop);
-
 	void Create_Trace_Resample_Buffers(Elastic_Propagator* prop);
 	void Free_Trace_Resample_Buffers();
+	void Allocate_Pinned_Host_Memory(Elastic_Propagator* prop);
+	void Free_Pinned_Host_Memory(Elastic_Propagator* prop);
 
 	void Calculate_RX_Locations_And_Results_Size(Elastic_Propagator* prop, int device_id, int& rxloc_size, int& rxres_size, int& num_full_compute);
 	void Start_Extract_Receiver_Values_From_Device(
@@ -147,13 +148,14 @@ public:
 			int num_blocks, 
 			float* h_rxres
 			);
-	void Resample_Receiver_Traces();
 
 	void Write_SEGY_Files();
 
 private:
 	int _log_level;
 	Elastic_Modeling_Job* _job;
+
+	double _dti;
 
 	float Compute_Reciprocal_Scale_Factor(int flag, float srcx, float srcy, float srcz, float recx, float recy, float recz);
 
@@ -197,6 +199,9 @@ private:
         int* _h_rcv_loc_size_f;
 
 	int _num_traces;
+	Elastic_Trace_Header** _h_traces_hdr;
+	Elastic_Resampled_Trace** _h_traces;
+	/*
 	double* _h_trace_rcv_x;
 	double* _h_trace_rcv_y;
 	double* _h_trace_rcv_z;
@@ -219,6 +224,7 @@ private:
 	int* _h_trace_nsamp_out;
 	int** _h_trace_out_idxM;
 	float*** _h_trace_out_sinc_coeffs;
+	*/
 
 	unsigned long _Comp_RxLoc_Length(float* rxloc);
 	unsigned long _Comp_RxRes_Length(float* rxloc, int flags);

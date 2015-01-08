@@ -29,7 +29,7 @@ public:
 	void Convert_Global_To_Normalized_Local(
 			double g0,
 			double g1,
-			double g1,
+			double g2,
 			double &nlu,
 			double &nlv,
 			double &nlw
@@ -267,7 +267,7 @@ public:
 private:
 	int _transpose;
 	int _Transpose_String2Idx(const char* str);
-	char* _Transpose_Idx2String(int index);
+	const char* _Transpose_Idx2String(int index);
 	bool _Transpose_Is_Valid();
 
 	void _Read(const char* path);

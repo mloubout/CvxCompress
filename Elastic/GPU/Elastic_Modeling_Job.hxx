@@ -233,7 +233,7 @@ private:
 	float _Courant_Factor;
 
 	char* _tolower(char* str);
-	void _swap_endian(float* v);
+	float _swap_endian(float* v);
 	bool _Check_Property(
 			const char* property_name,
 			Voxet_Property* prop,

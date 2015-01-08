@@ -40,7 +40,7 @@ public:
 
         int Get_Selection_Flags();
 
-	char* Get_Full_Path(char* buf, int flag);
+	const char* Get_Full_Path(char* buf, int flag);
 
 	void Add_Receiver_Range_X(
 		int range_idx,

@@ -64,14 +64,15 @@ const char* Voxet_Property::Get_Full_Path()
 	return _fullpath;
 }
 
-void Voxet_Property::_swap_endian(float* v)
+float Voxet_Property::_swap_endian(float* v)
 {
         int* iv = (int*)v;
-        *iv =
+        int swapped = 
                 (((*iv) >> 24) & 255) |
                 (((*iv) >>  8) & 65280) |
                 (((*iv) & 65280) <<  8) |
                 (((*iv) & 255) << 24);
+	return *((float*)&swapped);
 }
 
 void Voxet_Property::Get_MinMax_From_File()
@@ -92,10 +93,10 @@ void Voxet_Property::Get_MinMax_From_File()
                                 nread > 0;
                                 nread = fread(f, sizeof(float), 1024, fp))
                 {
-                        for (int i = 0;  i < nread;  ++i)
+                        for (size_t i = 0;  i < nread;  ++i)
                         {
-                                _swap_endian(f+i);
-                                float v = f[i];
+                                float v = _swap_endian(f+i);
+                                //float v = f[i];
                                 if (v < min) min = v;
                                 if (v > max) max = v;
                         }

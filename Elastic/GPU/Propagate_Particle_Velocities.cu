@@ -511,13 +511,17 @@ void _cuApply_Trilinear_Source_To_VxVyVz(
 	float yd = 1.0f - (ys - (float)(iy+y0));
 	float zd = 1.0f - (zs - (float)iz);
 
-	int Vx_ix = (int)truncf(xs+0.5f) - x0;
-	int Vy_iy = (int)truncf(ys-0.5f) - y0;
-	int Vz_iz = (int)truncf(zs-0.5f);
+	float Vx_xs = xs + 0.5f;
+	float Vy_ys = ys - 0.5f;
+	float Vz_zs = zs - 0.5f;
 
-	float Vx_xd = 1.0f - (xs - (float)(Vx_ix+x0) + 0.5f);
-	float Vy_yd = 1.0f - (ys - (float)(Vy_iy+y0) - 0.5f);
-	float Vz_zd = 1.0f - (zs - (float)Vz_iz - 0.5f);
+	int Vx_ix = (int)truncf(Vx_xs) - x0;
+	int Vy_iy = (int)truncf(Vy_ys) - y0;
+	int Vz_iz = (int)truncf(Vz_zs);
+
+	float Vx_xd = 1.0f - (Vx_xs - (float)(Vx_ix+x0));
+	float Vy_yd = 1.0f - (Vy_ys - (float)(Vy_iy+y0));
+	float Vz_zd = 1.0f - (Vz_zs - (float)Vz_iz);
 
 	int one_wf_size_f = nx * nz;
 	int one_y_size_f = one_wf_size_f * 6;

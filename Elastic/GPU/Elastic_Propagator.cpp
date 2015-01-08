@@ -106,7 +106,7 @@ void Elastic_Propagator::_init(
 	int num_cores = Get_Physical_Core_Count(Cache_Size_Per_Core_KB);
 	if (num_cores > 0)
 	{
-		int num_threads = num_cores >= 16 ? 12 : num_cores - 4;
+		int num_threads = num_cores - 2; // num_cores >= 16 ? 12 : num_cores - 4;
 		printf("Elastic_Propagator::_init - Machine has %d physical cores. Using %d threads for openmp.\n",num_cores,num_threads);
 		omp_set_num_threads(num_threads);
 	}
@@ -118,7 +118,7 @@ void Elastic_Propagator::_init(
 	_num_num_z = 0;
 	_curr_num_z = 0;
 	_dti = 0.0;
-	_slow_data_transfers;
+	_slow_data_transfers = false;
 	_timer1 = 0.0;
 	_timer2 = 0.0;
 	_timer3 = 0.0;
@@ -689,7 +689,6 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 						// do entire major iteration
 						const int max_num_iter = 10;
 						int num_iter = 0;
-						int curr_ts_out = ts_out;
 						while (num_iter < max_num_iter) {Propagate_One_Block(_num_timesteps, shot, true, false, !register_PV, !register_ST, !register_EM, ts_out); ++num_iter;}
 
 						struct timespec ts1;
@@ -734,7 +733,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			{
 				cudaSetDevice(iDev);
 				cudaFree(misc_buffer[iDev]);
-				misc_buffer[iDev];
+				misc_buffer[iDev] = 0L;
 			}
 		}
 		delete [] misc_buffer;
@@ -819,7 +818,7 @@ size_t Elastic_Propagator::Get_Minimum_Free_GPU_Memory()
 		cudaSetDevice(device_ID);
 		size_t free, total;
 		cudaError_t err = cudaMemGetInfo(&free,&total);
-		if (min_gpu_memory_left == 0 || free < min_gpu_memory_left) min_gpu_memory_left = free;
+		if (err == cudaSuccess && (min_gpu_memory_left == 0 || free < min_gpu_memory_left)) min_gpu_memory_left = free;
 	}
 	return min_gpu_memory_left;
 }
@@ -1008,6 +1007,7 @@ Elastic_Propagator* Elastic_Propagator::Create_Best_Propagator_Configuration(Ela
 static void* thread_start(void* arg)
 {
 	Elastic_Propagator* prop = (Elastic_Propagator*)arg;
+	/*
 	if (prop->Get_Number_Of_Pipelines() == 2)
 	{
 		prop->Register_As_Many_Pages_As_Possible(false,true,false,false);
@@ -1016,6 +1016,8 @@ static void* thread_start(void* arg)
 	{
 		prop->Register_As_Many_Pages_As_Possible(false,true,true,true);
 	}
+	*/
+	prop->Register_As_Many_Pages_As_Possible(false,true,true,true);
 	return 0L;
 }
 
@@ -1787,7 +1789,7 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 					if (Q > my_max_Q) my_max_Q = Q;
 				}
 			}
-#pragma omp criticial
+#pragma omp critical
 			{
 				if (my_max_Vp > glob_max_Vp) glob_max_Vp = my_max_Vp;
 				if (my_min_Q < glob_min_Q) glob_min_Q = my_min_Q;
@@ -2010,8 +2012,28 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 #endif
 
 	// demux receiver values from previous block
-	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->DEMUX_Receiver_Values(shot);
-	shot->Resample_Receiver_Traces();
+#pragma omp parallel for
+	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
+	{
+		// determine pipeline and device index
+		bool done = false;
+		for (int iPipe = 0, device_index_offset = 0;  !done && iPipe < _num_pipes;  ++iPipe)
+		{
+			int device_index = iDev - device_index_offset;
+			if (device_index < _pipes[iPipe]->Get_Device_Count())
+			{
+				done = true;
+				_pipes[iPipe]->DEMUX_Receiver_Values_For_One_Device(shot, device_index);
+				//printf("DEMUX_Receiver_Values_One_Device(pipe=%d, device_index=%d, iDev=%d)\n",iPipe,device_index,iDev);
+			}
+			else
+			{
+				device_index_offset += _pipes[iPipe]->Get_Device_Count();
+			}
+		}
+	}
+	//printf("\n");
+	//for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->DEMUX_Receiver_Values(shot);
 
 #ifdef DETAILED_TIMING
 	struct timespec ts3;
@@ -2282,14 +2304,14 @@ void Elastic_Propagator::omp_memclear(void* dst, size_t len)
 	size_t One_Thread_Full = NUM_PAGES * getpagesize() / sizeof(__m128);
 	//printf("omp_memclear len=%ld, leni=%ld, nn=%ld, One_Thread_Full=%ld\n",len,leni,nn,One_Thread_Full);
 #pragma omp parallel for schedule(static)
-        for (int i = 0;  i < nn;  ++i)
+        for (size_t i = 0;  i < nn;  ++i)
         {
                 __m128 zero = _mm_set_ps(0.0f, 0.0f, 0.0f, 0.0f);
                 size_t i0 = (size_t)i * One_Thread_Full;
                 size_t in = leni - i0;
                 if (in > One_Thread_Full) in = One_Thread_Full;
                 __m128* d = (__m128*)dst + i0;
-                for (int j = 0;  j < in;  ++j)
+                for (size_t j = 0;  j < in;  ++j)
                 {
                         _mm_stream_ps((float*)(d+j), zero);
                 }
@@ -2303,14 +2325,14 @@ void Elastic_Propagator::omp_memcpy(void* dst, void* src, size_t len)
         size_t nn = (len + NUM_PAGES*getpagesize()-1) / (NUM_PAGES*getpagesize());
 	size_t One_Thread_Full = NUM_PAGES * getpagesize() / sizeof(__m128);
 #pragma omp parallel for schedule(static)
-        for (int i = 0;  i < nn;  ++i)
+        for (size_t i = 0;  i < nn;  ++i)
         {
                 size_t i0 = (size_t)i * One_Thread_Full;
                 size_t in = leni - i0;
                 if (in > One_Thread_Full) in = One_Thread_Full;
                 __m128* d = (__m128*)dst + i0;
                 __m128* s = (__m128*)src + i0;
-                for (int j = 0;  j < in;  ++j)
+                for (size_t j = 0;  j < in;  ++j)
                 {
 			if ((j&3) == 0) _mm_prefetch((char*)(s+j+16),_MM_HINT_T0);
                         _mm_stream_ps((float*)(d+j),_mm_load_ps((float*)(s+j)));
@@ -2429,28 +2451,28 @@ void Elastic_Propagator::Allocate_Host_Memory(bool Pinned, bool Patterned)
 	if (_debug)
 	{
 		// initialize with pattern, used for debugging
-		size_t blkSize_PV_l = _blkSize_PV / 8;
-		for (size_t blk = 0;  blk < _NbX;  ++blk)
+		long blkSize_PV_l = _blkSize_PV / 8;
+		for (long blk = 0;  blk < _NbX;  ++blk)
 		{
-			for (size_t idx = 0;  idx < blkSize_PV_l;  ++idx)
+			for (long idx = 0;  idx < blkSize_PV_l;  ++idx)
 			{
 				((long**)_PV)[blk][idx] = blk * blkSize_PV_l + idx;
 			}
 		}
 
-		size_t blkSize_ST_l = _blkSize_ST / 8;
-                for (size_t blk = 0;  blk < _NbX;  ++blk)
+		long blkSize_ST_l = _blkSize_ST / 8;
+                for (long blk = 0;  blk < _NbX;  ++blk)
                 {
-                        for (size_t idx = 0;  idx < blkSize_ST_l;  ++idx)
+                        for (long idx = 0;  idx < blkSize_ST_l;  ++idx)
                         {
                                 ((long**)_ST)[blk][idx] = blk * blkSize_ST_l + idx;
                         }
                 }
 
-		size_t blkSize_EM_l = _blkSize_EM / 8;
-                for (size_t blk = 0;  blk < _NbX;  ++blk)
+		long blkSize_EM_l = _blkSize_EM / 8;
+                for (long blk = 0;  blk < _NbX;  ++blk)
                 {
-                        for (size_t idx = 0;  idx < blkSize_EM_l;  ++idx)
+                        for (long idx = 0;  idx < blkSize_EM_l;  ++idx)
                         {
                                 ((long**)_EM)[blk][idx] = blk * blkSize_EM_l + idx;
                         }
@@ -2468,12 +2490,12 @@ bool Elastic_Propagator::Check_Host_Memory()
 	{
 		bool Error = false;
 
-		size_t blkSize_PV_l = _blkSize_PV / 8;
-		for (size_t blk = 0;  blk < _NbX && !Error;  ++blk)
+		long blkSize_PV_l = _blkSize_PV / 8;
+		for (long blk = 0;  blk < _NbX && !Error;  ++blk)
 		{
-			for (size_t idx = 0;  idx < blkSize_PV_l && !Error;  ++idx)
+			for (long idx = 0;  idx < blkSize_PV_l && !Error;  ++idx)
 			{
-				size_t val = blk * blkSize_PV_l + idx;
+				long val = blk * blkSize_PV_l + idx;
 				if (((long**)_PV)[blk][idx] != val)
 				{
 					Error = true;
@@ -2485,12 +2507,12 @@ bool Elastic_Propagator::Check_Host_Memory()
 		{
 			printf("PV host memory test PASSED!\n");
 
-			size_t blkSize_ST_l = _blkSize_ST / 8;
-			for (size_t blk = 0;  blk < _NbX && !Error;  ++blk)
+			long blkSize_ST_l = _blkSize_ST / 8;
+			for (long blk = 0;  blk < _NbX && !Error;  ++blk)
 			{
-				for (size_t idx = 0;  idx < blkSize_ST_l && !Error;  ++idx)
+				for (long idx = 0;  idx < blkSize_ST_l && !Error;  ++idx)
 				{
-					size_t val = blk * blkSize_ST_l + idx;
+					long val = blk * blkSize_ST_l + idx;
 					if (((long**)_ST)[blk][idx] != val)
 					{
 						Error = true;
@@ -2502,12 +2524,12 @@ bool Elastic_Propagator::Check_Host_Memory()
 			{
 				printf("ST host memory test PASSED!\n");
 
-				size_t blkSize_EM_l = _blkSize_EM / 8;
-				for (size_t blk = 0;  blk < _NbX && !Error;  ++blk)
+				long blkSize_EM_l = _blkSize_EM / 8;
+				for (long blk = 0;  blk < _NbX && !Error;  ++blk)
 				{
-					for (size_t idx = 0;  idx < blkSize_EM_l && !Error;  ++idx)
+					for (long idx = 0;  idx < blkSize_EM_l && !Error;  ++idx)
 					{
-						size_t val = blk * blkSize_EM_l + idx;
+						long val = blk * blkSize_EM_l + idx;
 						if (((long**)_EM)[blk][idx] != val)
 						{
 							Error = true;
@@ -2579,8 +2601,10 @@ bool Elastic_Propagator::Enable_Peer_Access(int device_id, int peer_device_id)
 			cudaSetDevice(device_id);
 			gpuErrchk( cudaDeviceEnablePeerAccess(peer_device_id,0) );
 			if (_log_level >= 4) printf("Enabled peer access for device %d to device %d\n",device_id,peer_device_id);
+			return true;
 		}
 	}
+	return false;
 }
 
 int Elastic_Propagator::Get_Number_Of_Pipelines()
@@ -2654,7 +2678,7 @@ bool Elastic_Propagator::Print_Device_Stats(int device_id, double& TFLOPS, doubl
 			{
 				double dFree_MB = (double)free / 1048576.0;
 				GB_per_s = (double)devProps.memoryBusWidth * (double)devProps.memoryClockRate / 4e6;
-				int Cores_per_SM;
+				int Cores_per_SM = 0;
 				if (devProps.major == 1)
 				{
 					Cores_per_SM = 8;

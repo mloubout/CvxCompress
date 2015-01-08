@@ -43,8 +43,9 @@ Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx,
 	_segy_files = 0L;
 	_num_segy_files = 0;
         _totSteps = 0;
-        _nBlks = 0;
+        _nBlks = 0;	
         _num_pipes = 0;
+	_dti = 0.0;
         _h_rcv_loc = 0L;
         _h_pinned_rcv_loc = 0L;
         _h_rcv_binned = 0L;
@@ -52,6 +53,9 @@ Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx,
         _h_rcv_trcflag = 0L;
         _h_rcv_loc_size_f = 0L;
 	_num_traces = 0;
+	_h_traces_hdr = 0L;
+	_h_traces = 0L;
+	/*
 	_h_trace_rcv_x = 0L;
 	_h_trace_rcv_y = 0L;
 	_h_trace_rcv_z = 0L;
@@ -70,8 +74,7 @@ Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx,
 	_h_trace_touched = 0L;
 	_h_trace_nsamp_in = 0L;
 	_h_trace_nsamp_out = 0L;
-	_h_trace_out_idxM = 0L;
-	_h_trace_out_sinc_coeffs = 0L;
+	*/
 }
 
 Elastic_Shot::~Elastic_Shot()
@@ -84,17 +87,7 @@ Elastic_Shot::~Elastic_Shot()
 		for (int i = 0;  i < _num_segy_files;  ++i)
 		{
 			delete _segy_files[i];
-			for (int idx = 0;  idx < _h_trace_nsamp_out[i];  ++idx)
-			{
-				delete [] _h_trace_out_sinc_coeffs[i][idx];
-			}
-			delete [] _h_trace_out_sinc_coeffs[i];
-			delete [] _h_trace_out_idxM[i];
 		}
-		delete [] _h_trace_out_sinc_coeffs;
-		delete [] _h_trace_out_idxM;
-		delete [] _h_trace_nsamp_in;
-		delete [] _h_trace_nsamp_out;
 		delete [] _segy_files;
 	}
 	if (_wavelet_path != 0L) free(_wavelet_path);
@@ -259,8 +252,8 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
         if (type == 1)
         {
                 /* type==1: first derivative of a Gaussian, with linear extension tapers */
-                int i, imax, imaxhalf, ntap;
-                double w0, wmax, ts,t,rt, wt, wt2, diff;
+                int i, imax, ntap;
+                double w0, wmax, ts,t,rt, diff;
 
                 wmax = 2.0*M_PI*fmax;
                 /* Note:   tsrc = ts/dt = 2/(gam*khmax)*(rt*rt)*(Vmax/Vmin) */
@@ -486,7 +479,6 @@ void Elastic_Shot::Extract_Receiver_Values_From_Device(
 
 								int x0 = rx_block_offset * prop->Get_Block_Size_X();
 								int y0 = pipe->Get_Y0();
-								Elastic_Modeling_Job* job = prop->Get_Job();
 								int nx = prop->Get_Block_Size_X();
 								int ny = pipe->Get_Width();
 								int nz = buffer->Get_Z1() - buffer->Get_Z0() + 1;
@@ -588,6 +580,9 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 		}
 	}
 
+	// TMJ 12/18/2014
+	// Blocks cannot be processed in parallel.
+	// Two adjacent blocks may contribute to the same trace.
 	for (int iBlk = 0;  iBlk < num_blocks;  ++iBlk)
 	{
 		int curr_timestep = timesteps[iBlk];
@@ -609,25 +604,8 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 					if (trcflag[ii] & allowed_flags)
 					{
 						int iTrc = trcidx[ii];
-						int iFile = _h_trace_iFile[iTrc];
-						int nsamp_out = _h_trace_nsamp_out[iFile];
-						if (_h_trace_idx_out[iTrc] < nsamp_out)
-						{
-							int nsamp_in = _h_trace_nsamp_in[iFile];
-							int idx_in = curr_timestep - _h_trace_idx_in[iTrc];
-							if (idx_in >= 0 && idx_in < nsamp_in)
-							{
-								_h_trace_touched[iTrc] = 2;
-								_h_trace_in[iTrc][idx_in] += rxres[iBlk][jj];
-								if (idx_in >= _h_trace_idx_in_nn[iTrc]) _h_trace_idx_in_nn[iTrc] = idx_in + 1;
-#ifdef RESAMPLE_DEBUG
-								if (iTrc == RESAMPLE_DEBUG)
-								{
-									printf("iTrc=%d, iPipe=%d, iBlk=%d, flags=%d, curr_timestep=%d, curr_blk_offset=%d, _h_trace_idx_out=%d, _h_trace_idx_in=%d, idx_in=%d, _h_trace_idx_in_nn=%d, _h_trace_in=%e\n",iTrc,pipe->Get_ID(),iBlk,allowed_flags,curr_timestep,curr_blk_offset,_h_trace_idx_out[iTrc],_h_trace_idx_in[iTrc],idx_in,_h_trace_idx_in_nn[iTrc],_h_trace_in[iTrc][idx_in]);
-								}
-#endif
-							}
-						}
+						Elastic_Resampled_Trace* trace = _h_traces[iTrc];
+						trace->Add_To_Trace(curr_timestep, rxres[iBlk][jj]);
 						++jj;
 					}
 				}
@@ -637,108 +615,6 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 
 	delete [] rxres;
 	//printf("Elastic_Shot::DEMUX_Receiver_Values - end\n");
-}
-
-void Elastic_Shot::Resample_Receiver_Traces()
-{
-	int num_threads = 0;
-#pragma omp parallel
-	{
-		num_threads = omp_get_num_threads();
-	}
-	int trc_per_thread = (_num_traces + num_threads - 1) / num_threads;
-
-#pragma omp parallel for	
-	for (int iThr = 0;  iThr < num_threads;  ++iThr)
-	{
-		int min_iTrc = iThr * trc_per_thread;
-		int max_iTrc = min_iTrc + trc_per_thread;
-		if (max_iTrc > _num_traces) max_iTrc = _num_traces;
-		for (int iTrc = min_iTrc;  iTrc < max_iTrc;  ++iTrc)
-		{
-			if (_h_trace_touched[iTrc] > 1)
-			{
-				--_h_trace_touched[iTrc];
-			}
-			else if (_h_trace_touched[iTrc] == 1)
-			{
-				_h_trace_touched[iTrc] = 0;
-				int iFile = _h_trace_iFile[iTrc];
-				int nsamp_out = _h_trace_nsamp_out[iFile];
-				bool ding_dong = false, jabba_dabba_doo = false;
-				do
-				{
-					jabba_dabba_doo = false;
-					int idx_out = _h_trace_idx_out[iTrc];
-					if (idx_out < nsamp_out)
-					{
-						float* coeffs = _h_trace_out_sinc_coeffs[iFile][idx_out];
-						int idxM = _h_trace_out_idxM[iFile][idx_out] - _h_trace_idx_in[iTrc];
-						if (idxM >= 0)
-						{
-							int idx0 = idxM - 3;
-							int idx1 = idx0 + 7;
-							if (idx1 < _h_trace_idx_in_nn[iTrc] - 12)
-							{
-								jabba_dabba_doo = true;
-								ding_dong = true;
-								float val_out = 0.0f;
-								if (idx0 < 0)
-								{
-#ifdef RESAMPLE_DEBUG
-									if (iTrc == RESAMPLE_DEBUG) printf("trace no %d - idxM = %d, idx0 = %d - linear\n",iTrc,idxM,idx0);
-#endif
-									// linear interpolation
-									val_out = _h_trace_in[iTrc][idxM+1] * coeffs[4] + _h_trace_in[iTrc][idxM] * coeffs[3];
-								}
-								else
-								{
-#ifdef RESAMPLE_DEBUG
-									if (iTrc == RESAMPLE_DEBUG)
-									{
-										printf("trace no %d - idxM = %d, idx0 = %d - sinc(%f",iTrc,idxM,idx0,coeffs[0]);
-										for (int i = -2;  i <= 3;  ++i) printf(",%f",coeffs[i+3]);
-										printf(",%f)\n",coeffs[7]);
-									}
-#endif
-									for (int i = -3;  i <= 4;  ++i)
-									{
-										val_out += _h_trace_in[iTrc][idxM+i] * coeffs[i+3];
-									}
-								}	
-								_h_trace_out[iTrc][idx_out] = val_out;
-								++_h_trace_idx_out[iTrc];
-							}
-						}
-					}
-				} while (jabba_dabba_doo);
-				if (ding_dong && _h_trace_idx_out[iTrc] < nsamp_out)
-				{
-					// processed at least one output sample, so advance input buffer
-					int idx0 = _h_trace_out_idxM[iFile][_h_trace_idx_out[iTrc]] - 3 - _h_trace_idx_in[iTrc];
-					if (idx0 > 0)
-					{
-#ifdef RESAMPLE_DEBUG
-						if (iTrc == RESAMPLE_DEBUG) printf("...advancing _h_trace_idx_in[%d] from %d to ",iTrc,_h_trace_idx_in[iTrc]);
-#endif
-						for (int i = 0;  i < _h_trace_idx_in_nn[iTrc] - idx0;  ++i)
-						{
-							_h_trace_in[iTrc][i] = _h_trace_in[iTrc][i+idx0];
-						}
-						for (int i = _h_trace_idx_in_nn[iTrc] - idx0;  i < _h_trace_idx_in_nn[iTrc];  ++i)
-						{
-							_h_trace_in[iTrc][i] = 0.0f;
-						}
-						_h_trace_idx_in_nn[iTrc] -= idx0;
-						_h_trace_idx_in[iTrc] += idx0;
-#ifdef RESAMPLE_DEBUG
-						if (iTrc == RESAMPLE_DEBUG) printf("%d\n",_h_trace_idx_in[iTrc]);
-#endif
-					}
-				}
-			}
-		}
-	}
 }
 
 float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float srcy, float srcz, float recx, float recy, float recz)
@@ -901,7 +777,28 @@ float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float 
 
 void Elastic_Shot::Write_SEGY_Files()
 {
+	/*
+        // TMJ 01/07/15 Debug outputs
 	printf("Elastic_Shot::Write_SEGY_Files\n");
+	float min_before =  1e37f;
+	float max_before = -1e37f;
+	float min_after  =  1e37f;
+	float max_after  = -1e37f;
+#pragma omp parallel for
+	for (int iTrace = 0;  iTrace < _num_traces;  ++iTrace) 
+	{
+		float local_min_before, local_max_before, local_min_after, local_max_after;
+		_h_traces[iTrace]->Correct_Amplitudes(local_min_before,local_max_before,local_min_after,local_max_after);
+#pragma omp critical
+		{
+			if (local_min_before < min_before) min_before = local_min_before;
+			if (local_max_before > max_before) max_before = local_max_before;
+			if (local_min_after < min_after) min_after = local_min_after;
+			if (local_max_after > max_after) max_after = local_max_after;
+		}
+	}
+	printf("MIN MAX :: before=[%e,%e], after=[%e,%e]\n",min_before,max_before,min_after,max_after);
+	*/
 	Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
 	{
@@ -912,7 +809,7 @@ void Elastic_Shot::Write_SEGY_Files()
 			// count number of traces belonging to this file with this flag
 			int count = 0;
 			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
-				if (_h_trace_iFile[iTrc] == iFile && _h_trace_flag[iTrc] == flag)
+				if (_h_traces_hdr[iTrc]->Get_File_Number() == iFile && _h_traces_hdr[iTrc]->Get_Flags() == flag)
 					++count;
 			char filename[4096];
 			printf("%s has %d traces.\n",_segy_files[iFile]->Get_Full_Path(filename,flag),count);
@@ -930,18 +827,28 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *xline = new int[count];
 				int *trcens = new int[count];
 				float* scalefac = new float[count];
+				int nsamp = 0;
 				for (int iTrc = 0, ii = 0;  iTrc < _num_traces;  ++iTrc)
 				{
-	                                if (_h_trace_iFile[iTrc] == iFile && _h_trace_flag[iTrc] == flag)
+					if (_h_traces_hdr[iTrc]->Get_File_Number() == iFile && _h_traces_hdr[iTrc]->Get_Flags() == flag)
 					{
-						traces[ii] = _h_trace_out[iTrc];
-						gcs->Convert_Transposed_Fractional_Index_To_Global(_h_trace_rcv_x[iTrc],_h_trace_rcv_y[iTrc],_h_trace_rcv_z[iTrc],recx[ii],recy[ii],recz[ii]);
-						iline[ii] = _h_trace_iline[iTrc];
-						xline[ii] = _h_trace_xline[iTrc];
-						trcens[ii] = _h_trace_trcens[iTrc];
+						nsamp = _h_traces[iTrc]->Get_NSAMP();
+						traces[ii] = _h_traces[iTrc]->Get_Samples();
+						gcs->Convert_Transposed_Fractional_Index_To_Global(
+							_h_traces_hdr[iTrc]->Get_Location_X(),_h_traces_hdr[iTrc]->Get_Location_Y(),_h_traces_hdr[iTrc]->Get_Location_Z(),
+							recx[ii],recy[ii],recz[ii]
+							);
+						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
+						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
+						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
 						if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
 						{
-							scalefac[ii] = Compute_Reciprocal_Scale_Factor(flag,_x,_y,_z,_h_trace_rcv_x[iTrc],_h_trace_rcv_y[iTrc],_h_trace_rcv_z[iTrc]);
+							scalefac[ii] = Compute_Reciprocal_Scale_Factor(
+									flag,_x,_y,_z,
+									_h_traces_hdr[iTrc]->Get_Location_X(),
+									_h_traces_hdr[iTrc]->Get_Location_Y(),
+									_h_traces_hdr[iTrc]->Get_Location_Z()
+									);
 						}
 						else
 						{
@@ -950,10 +857,8 @@ void Elastic_Shot::Write_SEGY_Files()
 						++ii;
 					}
 				}
-				int nsamp = _h_trace_nsamp_out[iFile];
 				if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
 				{
-					// scale traces using reciprocity formulas
 					for (int iTrc = 0;  iTrc < count;  ++iTrc)
 					{
 						for (int i = 0;  i < nsamp;  ++i) traces[iTrc][i] *= scalefac[iTrc];
@@ -1097,7 +1002,6 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
         // create binned receiver locations for all files
         //
 
-	double dti = prop->Get_Internal_Sample_Rate();
         _totSteps = prop->Get_Total_Number_Of_Timesteps();
         _nBlks = prop->Get_Number_Of_Blocks();
         _num_pipes = prop->Get_Number_Of_Pipelines();
@@ -1144,23 +1048,21 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 	struct timespec ts2;
 	clock_gettime(CLOCK_REALTIME, &ts2);
 
-	_h_trace_rcv_x = new double[_num_traces];
-	_h_trace_rcv_y = new double[_num_traces];
-	_h_trace_rcv_z = new double[_num_traces];
-	_h_trace_iline = new int[_num_traces];
-	_h_trace_xline = new int[_num_traces];
-	_h_trace_trcens = new int[_num_traces];
+	_h_traces_hdr = new Elastic_Trace_Header*[_num_traces];
 	for (int iFile = 0, trace_no_idx = 0;  iFile < _num_segy_files;  ++iFile)
         {
                 double *rcv_x, *rcv_y, *rcv_z;
 		int *il, *xl, *trce;
-                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z, il, xl, trce);
+		int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z, il, xl, trce);
+		double tshift = _segy_files[iFile]->Get_Timeshift();
+		double sample_rate = _segy_files[iFile]->Get_Sample_Rate();
+		int nsamp_out = (int)round(_segy_files[iFile]->Get_Record_Length() / sample_rate) + 1;
 		int flags = _segy_files[iFile]->Get_Selection_Flags();
+
 		int num_wf = 0;
 		for (int iSel = 0;  iSel < 4;  ++iSel) if (flags & (1 << iSel)) ++num_wf;
 		if (num_wf > 0)
 		{
-#pragma omp parallel for
 			for (int iRx = 0;  iRx < num_rx;  ++iRx)
 			{
 				int curr_trace_no_idx = trace_no_idx + iRx * num_wf;
@@ -1168,12 +1070,13 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				{
 					if (flags & (1 << iSel))
 					{
-						_h_trace_rcv_x[curr_trace_no_idx] = rcv_x[iRx];
-						_h_trace_rcv_y[curr_trace_no_idx] = rcv_y[iRx];
-						_h_trace_rcv_z[curr_trace_no_idx] = rcv_z[iRx];
-						_h_trace_iline[curr_trace_no_idx] = il[iRx];
-						_h_trace_xline[curr_trace_no_idx] = xl[iRx];
-						_h_trace_trcens[curr_trace_no_idx] = trce[iRx];
+						// To-Do: Adjust & verify input start-time for velocity receiver. Make sure _dti is valid.
+						_h_traces_hdr[curr_trace_no_idx] = new Elastic_Trace_Header(
+							tshift,				// trace start time
+							sample_rate,			// trace sample rate
+							nsamp_out,			// # samples in trace, length of sinc operator
+							iFile,1<<iSel,rcv_x[iRx],rcv_y[iRx],rcv_z[iRx],il[iRx],xl[iRx],trce[iRx]
+							);
 						++curr_trace_no_idx;
 					}
 				}
@@ -1280,9 +1183,6 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				}
 			}
 		}
-		// binRx_num[iFile][iBlk]
-		// binRx_x[iFile][iBlk][i] - min(i)=0, max(i)=binRx_num[iFile][iBlk]-1
-		// binRx_y and binRx_z are same as binRx_x
 
                 // ..bin receiver locations
                 _h_rcv_loc_size_f[iPipe] = _nBlks * (1 + 2 * _num_segy_files) + 3 * tot_rx;
@@ -1298,8 +1198,6 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
                         _h_rcv_trcidx[iPipe][iBlk] = trcidx;
                         _h_rcv_trcflag[iPipe][iBlk] = trcflag;
                         int blk_offset = 0;
-                        int trace_blk_offset = 0;
-                        int rxres_length_f = 0;
                         int trace_no_idx = 0;
                         for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
                         {
@@ -1311,7 +1209,6 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				double *rcv_z = binRx_z[iFile][iBlk];
 				int* traceno = binRx_trcno[iFile][iBlk];
 				int num_rx = binRx_num[iFile][iBlk];
-                                int pr_rx = (flags & 1) ? num_rx : 0;
                                 iloc[1+2*iFile] = 0;
                                 // 0001 -> P
                                 // 0010 -> Vx
@@ -1446,56 +1343,47 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 #endif
 }
 
+void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
+{
+	double dti = prop->Get_Internal_Sample_Rate();
+	_dti = dti;
+
+	_h_traces = new Elastic_Resampled_Trace*[_num_traces];
+	for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
+	{
+		_h_traces[iTrc] = new Elastic_Resampled_Trace(
+			_h_traces_hdr[iTrc]->Is_Velocity() ? (_dti/2.0) : 0.0,	// wavefield start time
+			_dti,							// wavefield timestep
+			_h_traces_hdr[iTrc]->Get_Start_Time(),			// trace start time
+			_h_traces_hdr[iTrc]->Get_Sample_Rate(),			// trace sample rate
+			_h_traces_hdr[iTrc]->Get_NSAMP(),			// # samples in trace
+			2							// length of sinc operator, ==2 yields linear interpolation
+			);
+	}
+}
+
 void Elastic_Shot::Free_Trace_Resample_Buffers()
 {
 	if (_num_traces > 0)
 	{
-		if (_h_trace_in != 0L)
+		if (_h_traces != 0L)
 		{
 			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
-			{
-				delete [] _h_trace_in[iTrc];
+                        {
+				delete _h_traces[iTrc];
 			}
-			delete [] _h_trace_in;
-			_h_trace_in = 0L;
+			delete [] _h_traces;
+			_h_traces = 0L;
 		}
-		if (_h_trace_out != 0L)
+		if (_h_traces_hdr != 0L)
 		{
 			for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
-			{
-				delete [] _h_trace_out[iTrc];
-			}
-			delete [] _h_trace_out;
-			_h_trace_out = 0L;
+                        {
+                                delete _h_traces_hdr[iTrc];
+                        }
+                        delete [] _h_traces_hdr;
+                        _h_traces_hdr = 0L;
 		}
-		delete [] _h_trace_flag;
-		_h_trace_flag = 0L;
-		delete [] _h_trace_rcv_x;
-		_h_trace_rcv_x = 0L;
-		delete [] _h_trace_rcv_y;
-		_h_trace_rcv_y = 0L;
-		delete [] _h_trace_rcv_z;
-		_h_trace_rcv_z = 0L;
-		delete [] _h_trace_iline;
-		_h_trace_iline = 0L;
-		delete [] _h_trace_xline;
-		_h_trace_xline = 0L;
-		delete [] _h_trace_trcens;
-		_h_trace_trcens = 0L;
-		delete [] _h_trace_tshift;
-		_h_trace_tshift = 0L;
-		delete [] _h_trace_sample_rate;
-		_h_trace_sample_rate = 0L;
-		delete [] _h_trace_idx_in;
-		_h_trace_idx_in = 0L;
-		delete [] _h_trace_idx_in_nn;
-		_h_trace_idx_in_nn = 0L;
-		delete [] _h_trace_idx_out;
-		_h_trace_idx_out = 0L;
-		delete [] _h_trace_iFile;
-		_h_trace_iFile = 0L;
-		delete [] _h_trace_touched;
-		_h_trace_touched = 0L;
 		_num_traces = 0;
 	}
 	if (_num_pipes > 0)
@@ -1524,119 +1412,6 @@ void Elastic_Shot::Free_Trace_Resample_Buffers()
 		_h_rcv_trcidx = 0L;
 		_h_rcv_trcflag = 0L;
 		_num_pipes = 0;
-	}
-}
-
-void Elastic_Shot::Create_Trace_Resample_Buffers(Elastic_Propagator* prop)
-{
-	double dti = prop->Get_Internal_Sample_Rate();
-
-	// create structures needed for temporal resampling
-	_h_trace_tshift = new double[_num_traces];
-	_h_trace_sample_rate = new double[_num_traces];
-	_h_trace_in = new float*[_num_traces];
-	_h_trace_out = new float*[_num_traces];
-	_h_trace_flag = new int[_num_traces];
-	_h_trace_idx_in = new int[_num_traces];
-	_h_trace_idx_in_nn = new int[_num_traces];
-	_h_trace_idx_out = new int[_num_traces];
-	_h_trace_iFile = new int[_num_traces];
-	_h_trace_touched = new int[_num_traces];
-	_h_trace_nsamp_in = new int[_num_segy_files];
-	_h_trace_nsamp_out = new int[_num_segy_files];
-	_h_trace_out_idxM = new int*[_num_segy_files];
-	_h_trace_out_sinc_coeffs = new float**[_num_segy_files];
-	int nsamp_in = _totSteps + 12;
-	for (int i = 0;  i < _num_traces;  ++i) _h_trace_touched[i] = 0;
-	for (int iFile = 0, iTrc = 0;  iFile < _num_segy_files;  ++iFile)
-        {
-		double tshift = _segy_files[iFile]->Get_Timeshift();
-		double sample_rate = _segy_files[iFile]->Get_Sample_Rate();
-		int nsamp_out = (int)round(_segy_files[iFile]->Get_Record_Length() / sample_rate);
-		int flags = _segy_files[iFile]->Get_Selection_Flags();
-
-		// create trace info
-                double *rcv_x, *rcv_y, *rcv_z;
-                int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z);
-                if (num_rx > 0)
-                {
-			for (int iRx = 0;  iRx < num_rx;  ++iRx)
-			{
-				for (int iSel = 0;  iSel < 4;  ++iSel)
-				{
-					if (flags & (1 << iSel))
-					{
-						_h_trace_tshift[iTrc] = tshift;
-						_h_trace_sample_rate[iTrc] = sample_rate;
-						_h_trace_flag[iTrc] = 1 << iSel;
-						double t0 = tshift + sample_rate;
-						int cnt = 0;
-						for (double tcurr = (double)cnt * dti;  tcurr < t0;  tcurr = (double)cnt * dti) ++cnt;
-						cnt -= 4;
-						if (cnt < 0) cnt = 0;
-#ifdef TRACE_DEBUG
-						printf("iFile=%d, iRx=%d, tshift=%f, dti=%f, cnt=%d\n",iFile,iRx,tshift,dti,cnt);
-#endif
-						_h_trace_idx_in[iTrc] = cnt;
-						_h_trace_idx_in_nn[iTrc] = 0;
-						_h_trace_idx_out[iTrc] = 1;
-						_h_trace_in[iTrc] = new float[nsamp_in];
-						for (int i = 0;  i < nsamp_in;  ++i) _h_trace_in[iTrc][i] = 0.0f;
-						_h_trace_out[iTrc] = new float[nsamp_out];
-						for (int i = 0;  i < nsamp_out;  ++i) _h_trace_out[iTrc][i] = 0.0f;
-						_h_trace_iFile[iTrc] = iFile;
-						++iTrc;
-					}
-				}
-			}
-		}
-
-		// create sinc coefficients for each file
-		_h_trace_nsamp_in[iFile] = nsamp_in;
-		_h_trace_nsamp_out[iFile] = nsamp_out;
-		_h_trace_out_idxM[iFile] = new int[nsamp_out];
-		_h_trace_out_sinc_coeffs[iFile] = new float*[nsamp_out];
-		_h_trace_out_sinc_coeffs[iFile][0] = 0L;
-		_h_trace_out_idxM[iFile][0] = 0;
-		for (int idx = 1;  idx < nsamp_out;  ++idx)
-		{
-			double t_out = (double)idx * sample_rate + tshift;
-			double i_out = trunc(t_out/dti);
-			double remainder = (t_out - i_out * dti) / sample_rate;
-		
-			_h_trace_out_idxM[iFile][idx] = (int)i_out;
-			_h_trace_out_sinc_coeffs[iFile][idx] = new float[8];
-			int idx0 = _h_trace_out_idxM[iFile][idx] - 3;
-			if (idx0 < 0 || remainder == 0.0)
-			{
-				// linear interpolation
-				_h_trace_out_sinc_coeffs[iFile][idx][0] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][1] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][2] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][3] = 1.0f - remainder;
-				_h_trace_out_sinc_coeffs[iFile][idx][4] = remainder;
-				_h_trace_out_sinc_coeffs[iFile][idx][5] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][6] = 0.0f;
-				_h_trace_out_sinc_coeffs[iFile][idx][7] = 0.0f;
-			}
-			else
-			{
-				double sum_val = 0.0;
-				for (int i = -3;  i <= 4;  ++i)
-				{
-					double x = 3.1415926535897932384626433832795 * ((double)i - remainder);
-					double val = x == 0.0 ? 1.0 : sin(x) / x;
-					sum_val += val;
-					_h_trace_out_sinc_coeffs[iFile][idx][i+3] = val;
-				}
-				// normalize coefficients so that sum becomes 1.0
-				double mul_fac = 1.0 / sum_val;
-				for (int i = -3;  i <= 4;  ++i)
-                                {
-					_h_trace_out_sinc_coeffs[iFile][idx][i+3] *= mul_fac;
-				}
-			}
-		}
 	}
 }
 
