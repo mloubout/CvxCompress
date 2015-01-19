@@ -354,7 +354,7 @@ void cuAdd_Source_Term_To_Single_VxVyVz(
 	int em_one_y_size_f
         )
 {
-	if (delta_Vz != 0.0f && Vx_ix >= 0 && Vx_ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
+	if (delta_Vx != 0.0f && Vx_ix >= 0 && Vx_ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
 	{
 		int idx_Vx = Vx_ix +    iy * one_y_size_f +    iz * 4;
 
