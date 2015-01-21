@@ -75,7 +75,7 @@ int Elastic_SEGY_File::Get_Selection_Flags()
 }
 
 /***** swap2bytes ba --> ab *****/
-void Elastic_SEGY_File::swap2bytes(short *i2, int n)
+static void swap2bytes(short *i2, int n)
 {
 	int i;
 	short a,b;
@@ -89,7 +89,7 @@ void Elastic_SEGY_File::swap2bytes(short *i2, int n)
 
 
 /***** swap4bytes:  dcba --> abcd *****/
-void Elastic_SEGY_File::swap4bytes(int *i4, int n)
+static void swap4bytes(int *i4, int n)
 {
 	int k, i, a, b, c, d, bmask = 16711680, cmask = 65280, dmask = 255;
 	for(k=0; k<n; k++)
@@ -118,6 +118,35 @@ const char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
 	return buf;
 }
 
+void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
+	double* filtered,
+	double* filtered_int,
+	double sample_rate,
+	int nsamp,
+	double srcx,
+	double srcy,
+        double srcz
+	)
+{
+	char buf[4096];
+	sprintf(buf,"%s_%05d_Source_Wavelet.segy",_base_filename,_fileidx);
+	float* traces[2];
+	traces[0] = new float[nsamp];
+	traces[1] = new float[nsamp];
+	for (int i = 0;  i < nsamp;  ++i) {traces[0][i] = (float)filtered[i]; traces[1][i] = (float)filtered_int[i];}
+	double recx[2], recy[2], recz[2];
+	recx[0] = recx[1] = srcx;
+	recy[0] = recy[1] = srcy;
+	recz[0] = recz[1] = srcz;
+	int iline[2], xline[2], trcens[2];
+	iline[0] = iline[1] = 1;
+	xline[0] = xline[1] = 1;
+	trcens[0] = trcens[1] = 1;
+	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],2,nsamp);
+	delete [] traces[0];
+	delete [] traces[1];
+}
+
 void Elastic_SEGY_File::Write_SEGY_File(
 	float** traces,
 	double srcx,
@@ -132,6 +161,31 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int num_traces,
 	int nsamp,
 	int flag
+	)
+{
+	char filename[4096];
+	Get_Full_Path(filename,flag);
+	this->Write_SEGY_File(filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,num_traces,nsamp);
+}
+
+void Elastic_SEGY_File::Write_SEGY_File(
+	const char* filename,
+	double sample_rate,
+	Elastic_Gather_Type_t gather_type,
+	int file_idx,
+	double start_time,
+	float** traces,
+	double srcx,
+	double srcy,
+	double srcz,
+	double* recx,
+	double* recy,
+	double* recz,
+	int* iline,
+	int* xline,
+	int* trcens,
+	int num_traces,
+	int nsamp
 	)
 {
 	const int swapflag = 1;
@@ -174,7 +228,10 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 int recelev;
                 int elevatsrc;
                 int srcdepth;
-                char skip4[16];
+		int recdatumelevat;
+		int srcdatumelevat;
+		int srcwaterdepth;
+		int recwaterdepth;
                 short scalar1;
                 short scalar2;
                 int srcx;
@@ -200,8 +257,6 @@ void Elastic_SEGY_File::Write_SEGY_File(
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
 	/* cmp_x starts at byte position 201 */
 
-	char filename[4096];
-	Get_Full_Path(filename,flag);
 	FILE* fp = fopen(filename, "wb");
 	if (fp != 0L)
 	{
@@ -212,7 +267,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		fwrite((void*)reel_id_hdr1,1,3200,fp);
 
 		/*** FILL REEL ID HEADER 2 ***/
-		int dtmicro = (int)(1000000.*_sample_rate + 0.5);
+		int dtmicro = (int)(1000000.*sample_rate + 0.5);
 		short trc_sortcode2 = 1;  /* as recorded, no sorting */
 		short fold2 = 1;
 		short one2 = 1;       
@@ -242,7 +297,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		for (int iTrc = 0;  iTrc < num_traces;  ++iTrc)
 		{
 			float sx, sy, sz, rx, ry, rz;
-			if (Get_Gather_Type() == Common_Receiver_Gather)
+			if (gather_type == Common_Receiver_Gather)
 			{
 				// common receiver gather generated through reciprocity
 				// flip source and receiver locations
@@ -264,12 +319,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			}
 
 			/*** FILL SOURCE-RELATED PART OF TRACE HEADER ***/
-			int ffid = _fileidx;
+			int ffid = file_idx;
 			int elevatsrc = 0;
 			int srcdepth = (int)(100.*sz);
 			int xsrc = (int)(100.*sx);
 			int ysrc = (int)(100.*sy);
-			short tstartrec2 = (int)(_tshift*1000. + 0.5);
+			short tstartrec2 = (int)(start_time*1000. + 0.5);
 			short neg100 = -100;
 			if(swapflag)
 			{

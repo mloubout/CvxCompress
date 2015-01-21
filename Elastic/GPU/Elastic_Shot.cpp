@@ -166,6 +166,13 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wa
 	Compute_Time_Integrated_Source_Wavelet(_log_level,_stf,_stf_int,_tsrc,dt);
 	if (debug_output_source_wavelet)
 	{
+		for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
+		{
+			double srcx, srcy, srcz;
+			Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
+			gcs->Convert_Transposed_Fractional_Index_To_Global(_x,_y,_z,srcx,srcy,srcz);
+			_segy_files[iFile]->Write_Source_Wavelet_To_SEGY_File(_stf,_stf_int,dt,_tsrc,srcx,srcy,srcz);
+		}
 		FILE* fp = fopen("filtered.txt", "w");
 		if (fp != 0L)
 		{

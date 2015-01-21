@@ -98,6 +98,15 @@ public:
 		int*& trcens
 		);
 	
+	void Write_Source_Wavelet_To_SEGY_File(
+			double* filtered,
+			double* filtered_int,
+			double sample_rate,
+			int nsamp,
+			double srcx,
+			double srcy,
+			double srcz
+			);
 	void Write_SEGY_File(
 		float** traces,
 		double srcx,
@@ -112,6 +121,25 @@ public:
 		int num_traces,
 		int nsamp,
 		int flag
+		);
+	static void Write_SEGY_File(
+		const char* filename,
+		double sample_rate,
+		Elastic_Gather_Type_t gather_type,
+		int file_idx,
+		double start_time,
+		float** traces,
+		double srcx,
+		double srcy,
+		double srcz,
+		double* recx,
+		double* recy,
+		double* recz,
+		int* iline,
+		int* xline,
+		int* trcens,
+		int num_traces,
+		int nsamp
 		);
 
 	void printRec();
@@ -129,9 +157,6 @@ private:
 	Elastic_Interpolation_t _interpolation_method;
 
 	Elastic_Gather_Type_t _gather_type;
-
-	void swap2bytes(short *i2, int n);
-	void swap4bytes(int *i4, int n);
 
 	Elastic_SEGY_File_Receiver_Range** _rcv_ranges;
 	int _num_rcv_ranges;

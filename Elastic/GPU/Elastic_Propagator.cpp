@@ -14,6 +14,7 @@
 #include "Elastic_Propagator.hxx"
 #include "Elastic_Modeling_Job.hxx"
 #include "Elastic_Shot.hxx"
+#include "Elastic_SEGY_File.hxx"
 #include "Global_Coordinate_System.hxx"
 #include "Voxet.hxx"
 
@@ -1731,12 +1732,12 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 	}
 	_curr_num_z = 0;
 
-	const double courant_safe = 0.95;
+	const double courant_safe = 0.97;
  
 	// determine internal timestepping
 	// ..Courant# for O(2) time leap frog SG FD
 	double courant = 1.0 / (sqrt(3.0) * (Elastic_Buffer::_C0 - Elastic_Buffer::_C1 + Elastic_Buffer::_C2 - Elastic_Buffer::_C3));
-	courant = courant_safe * _job->Get_Courant_Factor() * courant;  // drop Courant# by this safety factor
+	courant = courant_safe * courant;  // drop Courant# by this safety factor
 	if (!is_profiling_run) printf("Courant# = %f\n",courant);
 	if (shot->Get_Ordertime() == 4) 
 	{
@@ -1800,9 +1801,34 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 	if (!is_profiling_run) printf("Vp max = %lf\n",glob_max_Vp);
 	if (!is_profiling_run) printf("Q=[%e,%e]\n",glob_min_Q,glob_max_Q);
 
+	// find lowest output sample rate
+	double output_sample_rate = shot->Get_SEGY_File_by_Index(0)->Get_Sample_Rate();
+	for (int i = 1;  i < shot->Get_Number_Of_SEGY_Files();  ++i)
+	{
+		if (shot->Get_SEGY_File_by_Index(i)->Get_Sample_Rate() < output_sample_rate)
+		{
+			output_sample_rate = shot->Get_SEGY_File_by_Index(i)->Get_Sample_Rate();
+		}
+	}
+
 	double dti_max = courant * dl_min / glob_max_Vp;
-	_dti = dti_max;  // use time step determined by FD stability
+	if (!is_profiling_run && _log_level > 2) printf("Maximum internal dt for stability is %lfms\n",dti_max*1e3);
+	double dti_courant_factor = dti_max * _job->Get_Courant_Factor();
+	if (!is_profiling_run && _log_level > 2) printf("Internal dt adjusted by Courant factor is %lfms\n",dti_courant_factor*1e3);
+	
+	if (dti_courant_factor >= output_sample_rate)
+	{
+		// dti = output_sample_rate in this case
+		_dti = dti_courant_factor;
+	}
+	else
+	{
+		// round dti so that output_sample_rate becomes a multiple of dti
+		double multiple = ceil(output_sample_rate / dti_courant_factor);
+		_dti = output_sample_rate / multiple;
+	}
 	if (!is_profiling_run && _log_level > 2) printf("Internal dt is %lfms\n",_dti*1e3);
+
 	_num_timesteps = (int)ceil(shot->Get_Propagation_Time()/_dti);
 	if (!is_profiling_run) printf("%d timesteps.\n",_num_timesteps);
 
