@@ -91,6 +91,8 @@ public:
 	float Get_IsoOrEarth_Model_Attribute_Min(int attr_idx, bool isosphere);
 	float Get_IsoOrEarth_Model_Attribute_Range(int attr_idx, bool isosphere);
 
+	bool Compute_Model_Water_Depth_And_Avg_Vp(int ix, int iy, float& model_water_depth, float& model_water_Vp);
+
 	void Write_Earth_Model_Attribute_XZ_Slice(const char* path, int attr_idx, int iy);
 	void Write_Earth_Model_XZ_Slice(const char* path, int iy);
 
@@ -233,7 +235,6 @@ private:
 	float _Courant_Factor;
 
 	char* _tolower(char* str);
-	float _swap_endian(float* v);
 	bool _Check_Property(
 			const char* property_name,
 			Voxet_Property* prop,

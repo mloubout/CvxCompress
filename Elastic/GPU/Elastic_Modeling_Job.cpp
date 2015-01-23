@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <omp.h>
+#include "swapbytes.h"
 #include "Elastic_Modeling_Job.hxx"
 #include "Elastic_Shot.hxx"
 #include "Voxet.hxx"
@@ -1650,6 +1651,79 @@ float Elastic_Modeling_Job::_Unpack_Earth_Model_Attribute(unsigned int word, int
 	}
 }
 
+bool Elastic_Modeling_Job::Compute_Model_Water_Depth_And_Avg_Vp(
+	int ix, 
+	int iy,
+	float& model_water_depth,
+	float& model_water_Vp
+	)
+{
+	//printf("Compute_Model_Water_Depth_And_Avg_Vp ix=%d, iy=%d\n",ix,iy);
+
+	model_water_depth = 0.0f;
+	model_water_Vp = 0.0f;
+
+	// check if horizontal coordinates fall within model
+	bool error = false;
+	float dummy = Get_Earth_Model_Attribute(Attr_Idx_Vs, ix, iy, 0, false, error);
+	if (error) return false;
+
+	//printf("ix=%d, iy=%d is within volume!\n",ix,iy);
+
+	// try to determine water depth from Vs
+	int iwVs = -1;
+	for (int i = 0;  i < (_prop_nz-1);  ++i)
+	{
+		bool error;
+		float Vs = Get_Earth_Model_Attribute(Attr_Idx_Vs, ix, iy, i+1, true, error);
+		if (!error && Vs > 0.0f)
+		{
+			// found it
+			iwVs = i;
+			break;
+		}
+	}
+
+	//printf("iwVs=%d\n",iwVs);
+	
+	// try to determine water depth from Density
+	int iwDn = -1;
+	for (int i = 0;  i < (_prop_nz-1);  ++i)
+        {
+                bool error;
+                float Dn = Get_Earth_Model_Attribute(Attr_Idx_Density, ix, iy, i+1, true, error);
+		//printf("ix=%d, iy=%d, iz=%d, Dn=%e\n",ix,iy,i+1,Dn);
+		if (!error && Dn > 1.1f)
+		{
+			// found it
+			iwDn = i;
+			break;
+		}
+        }
+
+	//printf("iwDn=%d\n",iwDn);
+
+	bool iwVs_Valid = iwVs >= 0 ? true : false;
+	bool iwDn_Valid = iwDn >= 0 ? true : false;
+
+	int i_model_water_depth = -1;
+	if (iwVs_Valid && iwDn_Valid) i_model_water_depth = iwVs > iwDn ? iwVs : iwDn;
+	else if (iwVs_Valid) i_model_water_depth = iwVs;
+	else if (iwDn_Valid) i_model_water_depth = iwDn;
+	//printf("i_model_water_depth=%d\n",i_model_water_depth);
+	if (i_model_water_depth >= 0)
+	{
+		model_water_depth = ((float)i_model_water_depth + 0.5f) * _propagator->Get_DZ();
+		// calculate average Vp for water column
+		model_water_Vp = Get_Earth_Model_Attribute(Attr_Idx_Vp, ix, iy, 0, true, error);
+		for (int i = 1;  i <= i_model_water_depth;  ++i) model_water_Vp += Get_Earth_Model_Attribute(Attr_Idx_Vp, ix, iy, i, true, error);
+		model_water_Vp /= (float)(i_model_water_depth+1);
+		//printf("model_water_depth=%e, model_water_Vp=%e\n",model_water_depth,model_water_Vp);
+		return true;
+	}
+	return false;
+}
+
 //
 // This method will terminate program if coordinates are outside modeling domain.
 //
@@ -2118,17 +2192,6 @@ Elastic_Modeling_Job::~Elastic_Modeling_Job()
 	delete [] _GPU_Devices;
 }
 
-float Elastic_Modeling_Job::_swap_endian(float* v)
-{
-        int* iv = (int*)v;
-        *iv =
-                (((*iv) >> 24) & 255) |
-                (((*iv) >>  8) & 65280) |
-                (((*iv) & 65280) <<  8) |
-                (((*iv) & 255) << 24);
-	return *((float*)iv);
-}
-
 void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 {
 	printf("Reading earth model...\n");
@@ -2236,7 +2299,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 				{
 					if (_props[attr_idx] != 0L)
 					{
-						vals[vals_off+sample] = _swap_endian(&(vals[vals_off+sample]));
+						swap4bytes((int*)&(vals[vals_off+sample]),1);
 						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,vals[vals_off+sample]);
 					}
 					else

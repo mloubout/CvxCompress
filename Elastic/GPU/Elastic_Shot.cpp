@@ -826,6 +826,12 @@ void Elastic_Shot::Write_SEGY_Files()
 			{
 				double srcx, srcy, srcz;
 				gcs->Convert_Transposed_Fractional_Index_To_Global(_x,_y,_z,srcx,srcy,srcz);
+				float src_model_water_depth, src_model_water_Vp;
+				_job->Compute_Model_Water_Depth_And_Avg_Vp((int)round(_x-_job->Get_Propagation_X0()),(int)round(_y-_job->Get_Propagation_Y0()),src_model_water_depth,src_model_water_Vp);
+				double src_bath_z;
+				// HACK: src_bath_z contains the true bathymetry water depth at the source location.
+				// For Agbami job, this is alway 1.5 cells shallower than the Z source placement.
+				src_bath_z = fabs(srcz) - 1.5f * gcs->Get_DZ();
 				float** traces = new float*[count];
 				double* recx = new double[count];
 				double* recy = new double[count];
@@ -834,6 +840,9 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *xline = new int[count];
 				int *trcens = new int[count];
 				float* scalefac = new float[count];
+				float* rec_model_water_depth = new float[count];
+				float* rec_model_water_Vp = new float[count];
+				float* rec_bath_z = new float[count];
 				int nsamp = 0;
 				for (int iTrc = 0, ii = 0;  iTrc < _num_traces;  ++iTrc)
 				{
@@ -845,6 +854,13 @@ void Elastic_Shot::Write_SEGY_Files()
 							_h_traces_hdr[iTrc]->Get_Location_X(),_h_traces_hdr[iTrc]->Get_Location_Y(),_h_traces_hdr[iTrc]->Get_Location_Z(),
 							recx[ii],recy[ii],recz[ii]
 							);
+						_job->Compute_Model_Water_Depth_And_Avg_Vp(
+							(int)round(_h_traces_hdr[iTrc]->Get_Location_X()-_job->Get_Propagation_X0()),(int)round(_h_traces_hdr[iTrc]->Get_Location_Y()-_job->Get_Propagation_Y0()),
+							rec_model_water_depth[ii],rec_model_water_Vp[ii]
+							);
+						// HACK: rec_bath_z contains the true bathymetry water depth at the receiver location.
+						// For Agbami job, this is always 1.5 cells shallower than the Z receiver placement.
+						rec_bath_z[ii] = fabs(recz[ii]) - 1.5f * gcs->Get_DZ();
 						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
 						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
 						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
@@ -871,7 +887,14 @@ void Elastic_Shot::Write_SEGY_Files()
 						for (int i = 0;  i < nsamp;  ++i) traces[iTrc][i] *= scalefac[iTrc];
 					}
 				}
-				_segy_files[iFile]->Write_SEGY_File(traces,srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,count,nsamp,flag);
+				_segy_files[iFile]->Write_SEGY_File(
+					traces,
+					srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
+					src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,count,nsamp,flag
+					);
+				delete [] rec_bath_z;
+				delete [] rec_model_water_Vp;
+				delete [] rec_model_water_depth;
 				delete [] scalefac;
 				delete [] traces;
 				delete [] recx;

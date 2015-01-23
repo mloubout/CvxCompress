@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include "swapbytes.h"
 #include "Elastic_SEGY_File.hxx"
 #include "Elastic_SEGY_File_Receiver_Range.hxx"
 #include "Elastic_Buffer.hxx"
@@ -74,32 +75,6 @@ int Elastic_SEGY_File::Get_Selection_Flags()
         return flags;
 }
 
-/***** swap2bytes ba --> ab *****/
-static void swap2bytes(short *i2, int n)
-{
-	int i;
-	short a,b;
-	for (i=0; i<n; i++)
-	{
-		a = i2[i] << 8;
-		b = (i2[i] >> 8) & 255;
-		i2[i] = a | b;
-	}
-}
-
-
-/***** swap4bytes:  dcba --> abcd *****/
-static void swap4bytes(int *i4, int n)
-{
-	int k, i, a, b, c, d, bmask = 16711680, cmask = 65280, dmask = 255;
-	for(k=0; k<n; k++)
-	{ i = i4[k];
-		a =  i << 24;          b = (i << 8)  & bmask;
-		c = (i >> 8) & cmask;  d = (i >> 24) & dmask;
-		i4[k] = a | b | c | d ;
-	}
-}
-
 const char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
 {
 	const char* trace_type_str;
@@ -142,7 +117,11 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	iline[0] = iline[1] = 1;
 	xline[0] = xline[1] = 1;
 	trcens[0] = trcens[1] = 1;
-	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],2,nsamp);
+	float rec_model_water_depth[2], rec_model_Vp[2], rec_bath_z[2];
+	rec_model_water_depth[0] = rec_model_water_depth[1] = 0.0f;
+	rec_model_Vp[0] = rec_model_Vp[1] = 0.0f;
+	rec_bath_z[0] = rec_bath_z[1] = 0.0f;
+	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
 	delete [] traces[0];
 	delete [] traces[1];
 }
@@ -158,6 +137,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int* iline,
 	int* xline,
 	int* trcens,
+	float src_model_water_depth,
+	float src_model_water_Vp,
+	float src_bath_z,
+	float* rec_model_water_depth,
+	float* rec_model_water_Vp,
+	float* rec_bath_z,
 	int num_traces,
 	int nsamp,
 	int flag
@@ -165,7 +150,11 @@ void Elastic_SEGY_File::Write_SEGY_File(
 {
 	char filename[4096];
 	Get_Full_Path(filename,flag);
-	this->Write_SEGY_File(filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,num_traces,nsamp);
+	this->Write_SEGY_File(
+		filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,
+		srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
+		src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,num_traces,nsamp
+		);
 }
 
 void Elastic_SEGY_File::Write_SEGY_File(
@@ -184,6 +173,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int* iline,
 	int* xline,
 	int* trcens,
+	float src_model_water_depth,
+	float src_model_water_Vp,
+	float src_bath_z,
+	float* rec_model_water_depth,
+	float* rec_model_water_Vp,
+	float* rec_bath_z,
 	int num_traces,
 	int nsamp
 	)
@@ -215,44 +210,150 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
         struct
         {
+		// 0-3
                 int trcseqno;
+
+		// 4-7
                 int skip0;
+
+		// 8-11
                 int isrc;
+
+		// 12-15
                 int ichan;
+
+		// 16-19
                 int skip1;
+
+		// 20-23
                 int cmpbin;
+
+		// 24-27
                 int trcensemb;
+
+		// 28-29
                 short code;
-                char skip3[6];
+
+		// 30-35
+                char skip2[6];
+
+		// 36-39
                 int offset;
+
+		// 40-43
                 int recelev;
+
+		// 44-47
                 int elevatsrc;
+
+		// 48-51
                 int srcdepth;
-		int recdatumelevat;
-		int srcdatumelevat;
+
+		// 52-59
+		char skip3[8];
+
+		// 60-63
 		int srcwaterdepth;
+
+		// 64-67
 		int recwaterdepth;
+
+		// 68-69
                 short scalar1;
+
+		// 70-71
                 short scalar2;
+
+		// 72-75
                 int srcx;
+
+		// 76-79
                 int srcy;
+
+		// 80-83
                 int recx;
+	
+		// 84-87
                 int recy;
+	
+		// 88-89
                 short lenunit;
-                char skip5[18];
+		
+		// 90-97
+		char skip4[8];
+
+		// 98-99
+		short srcstatic;
+
+		// 100-101
+		short recstatic;
+
+		// 102-107
+                char skip5[6];
+
+		// 108-109
                 short tstartrec;
+
+		// 110-113
                 char skip6[4];
+
+		// 114-115
                 short nsamp;
+
+		// 116-117
                 short dtmicro;
-                char skip7[82];
-                float cmp_x;
-                float cmp_y;
+
+		// 118-119
+		char skip7[2];
+
+		// 120-127
+		double sou_xd;
+
+		// 128-135
+		double sou_yd;
+
+		// 136-143
+		double rec_xd;
+
+		// 144-151
+		double rec_yd;
+
+		// 152-179
+		char skip8[28];
+
+		// 180-183
+                int cmp_x;
+
+		// 184-187
+                int cmp_y;
+	
+		// 188-191
                 int iline_no;
+
+		// 192-195
                 int xline_no;
-                float xoff;
-                float yoff;
-                float azim;
-                char skip8[12];
+
+		// 196-199
+                int shot_point;
+
+		// 200-201
+		short scalar3;
+
+		// 202-213
+		char skip9[12];
+
+		// 214-215
+		short scalar4;
+
+		// 216-227
+		float src_water_model_depth;
+		float src_water_bathymetry_depth;
+		float src_water_Vp;
+		
+		// 228-239
+		float rec_water_model_depth;
+		float rec_water_bathymetry_depth;
+		float rec_water_Vp;
         } trc_id_hdr;
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
 	/* cmp_x starts at byte position 201 */
@@ -296,7 +397,13 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		float* trcbuf = new float[nsamp];
 		for (int iTrc = 0;  iTrc < num_traces;  ++iTrc)
 		{
-			float sx, sy, sz, rx, ry, rz;
+			double sx, sy, sz, rx, ry, rz;
+			float src_water_model_depth;
+			float src_water_bathymetry_depth;
+			float src_water_Vp;
+			float rec_water_model_depth;
+			float rec_water_bathymetry_depth;
+			float rec_water_Vp;
 			if (gather_type == Common_Receiver_Gather)
 			{
 				// common receiver gather generated through reciprocity
@@ -307,6 +414,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rx = srcx;
 				ry = srcy;
 				rz = srcz;
+				rec_water_model_depth = src_model_water_depth;
+				rec_water_bathymetry_depth = src_bath_z;
+				rec_water_Vp = src_model_water_Vp;
+				src_water_model_depth = rec_model_water_depth[iTrc];
+				src_water_bathymetry_depth = rec_bath_z[iTrc];
+				src_water_Vp = rec_model_water_Vp[iTrc];
 			}
 			else
 			{
@@ -316,7 +429,20 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rx = recx[iTrc];
 				ry = recy[iTrc];
 				rz = recz[iTrc];
+				src_water_model_depth = src_model_water_depth;
+				src_water_bathymetry_depth = src_bath_z;
+				src_water_Vp = src_model_water_Vp;
+				rec_water_model_depth = rec_model_water_depth[iTrc];
+				rec_water_bathymetry_depth = rec_bath_z[iTrc];
+				rec_water_Vp = rec_model_water_Vp[iTrc];
 			}
+		
+			int recwaterdepthbathymetry = (int)(10.*rec_water_bathymetry_depth);
+			int srcwaterdepthbathymetry = (int)(10.*src_water_bathymetry_depth);
+			int srcwaterVp = (int)(10.*src_water_Vp);
+			int recwaterVp = (int)(10.*rec_water_Vp);
+			int srcwaterdepth = (int)(100.*src_water_model_depth);
+			int recwaterdepth = (int)(100.*rec_water_model_depth);
 
 			/*** FILL SOURCE-RELATED PART OF TRACE HEADER ***/
 			int ffid = file_idx;
@@ -325,18 +451,43 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			int xsrc = (int)(100.*sx);
 			int ysrc = (int)(100.*sy);
 			short tstartrec2 = (int)(start_time*1000. + 0.5);
+			short neg10 = -10;
 			short neg100 = -100;
+			short srcstatic = recwaterdepthbathymetry;
+			short recstatic = recwaterVp;
 			if(swapflag)
 			{
 				swap4bytes(&ffid, 1);
 				swap4bytes(&elevatsrc, 1);     swap4bytes(&srcdepth, 1);
+				swap4bytes(&srcwaterdepth, 1);
+				swap4bytes(&recwaterdepth, 1);
+				swap2bytes(&srcstatic, 1);
+				swap2bytes(&recstatic, 1);
 				swap4bytes(&xsrc, 1);          swap4bytes(&ysrc, 1);
 				swap2bytes(&tstartrec2, 1);
 				swap2bytes(&neg100, 1);
+				swap2bytes(&neg10, 1);
+
+				swap4bytes((int*)&src_water_bathymetry_depth, 1);
+				swap4bytes((int*)&src_water_model_depth, 1);
+				swap4bytes((int*)&src_water_Vp, 1);
+				swap4bytes((int*)&rec_water_bathymetry_depth, 1);
+				swap4bytes((int*)&rec_water_model_depth, 1);
+				swap4bytes((int*)&rec_water_Vp, 1);
 			}
 			trc_id_hdr.isrc = ffid;
 			trc_id_hdr.elevatsrc = elevatsrc; 
 			trc_id_hdr.srcdepth = srcdepth;
+			trc_id_hdr.srcwaterdepth = srcwaterdepth;
+			trc_id_hdr.recwaterdepth = recwaterdepth;
+			//trc_id_hdr.srcstatic = srcstatic;
+			//trc_id_hdr.recstatic = recstatic;
+			trc_id_hdr.src_water_bathymetry_depth = src_water_bathymetry_depth;
+			trc_id_hdr.src_water_model_depth = src_water_model_depth;
+			trc_id_hdr.src_water_Vp = src_water_Vp;
+			trc_id_hdr.rec_water_bathymetry_depth = rec_water_bathymetry_depth;
+			trc_id_hdr.rec_water_model_depth = rec_water_model_depth;
+			trc_id_hdr.rec_water_Vp = rec_water_Vp;
 			trc_id_hdr.srcx = xsrc;           
 			trc_id_hdr.srcy = ysrc;
 			trc_id_hdr.nsamp = nsamp2;
@@ -344,6 +495,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.dtmicro = dtmicro2;
 			trc_id_hdr.scalar1 = neg100;
 			trc_id_hdr.scalar2 = neg100;
+			trc_id_hdr.scalar3 = neg100;
+			trc_id_hdr.scalar4 = neg10;
 
 			int recelev = -(int)(100.*rz);
 			if(swapflag) swap4bytes(&recelev, 1);
@@ -367,15 +520,25 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			int offset = (int)round(sqrt(yoff*yoff + xoff*xoff));
 			double azim = r2d*atan2(yoff, xoff);
 
+			int xcmp = (int)(100.*cmpx);
+			int ycmp = (int)(100.*cmpy);
 			if(swapflag)
 			{
 				swap4bytes(&trcseq, 1);  swap4bytes(&ichan, 1);  swap4bytes(&trce, 1);
 				swap4bytes(&xrec, 1);
-				swap4bytes((int*)(&cmpx), 1); swap4bytes((int*)(&cmpy), 1);
+				swap4bytes((int*)(&xcmp), 1); swap4bytes((int*)(&ycmp), 1);
 				swap4bytes(&il, 1);
-				swap4bytes((int*)(&xoff), 1); swap4bytes((int*)(&yoff), 1);
-				swap4bytes(&offset, 1);       swap4bytes((int*)(&azim), 1);
+				swap4bytes(&offset, 1);
+
+				swap8bytes((long*)&sx, 1);
+				swap8bytes((long*)&sy, 1);
+				swap8bytes((long*)&rx, 1);
+				swap8bytes((long*)&ry, 1);
 			}
+			trc_id_hdr.sou_xd = sx;
+			trc_id_hdr.sou_yd = sy;
+			trc_id_hdr.rec_xd = rx;
+			trc_id_hdr.rec_yd = ry;
 
 			/* Assign & Write Trace Header */
 			trc_id_hdr.trcseqno = trcseq;
@@ -383,12 +546,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.trcensemb = trce;
 			trc_id_hdr.offset = offset;
 			trc_id_hdr.recx = xrec;
-			trc_id_hdr.cmp_x = cmpx;
-			trc_id_hdr.cmp_y = cmpy;
+			trc_id_hdr.cmp_x = xcmp;
+			trc_id_hdr.cmp_y = ycmp;
 			trc_id_hdr.xline_no = il; /* yes, this is correct */
-			trc_id_hdr.xoff = xoff;
-			trc_id_hdr.yoff = yoff;
-			trc_id_hdr.azim = azim;
+			//trc_id_hdr.xoff = xoff;
+			//trc_id_hdr.yoff = yoff;
+			//trc_id_hdr.azim = azim;
 			fwrite((void*)&trc_id_hdr,1,240,fp);
 
 			if (swapflag)

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include "swapbytes.h"
 #include "Voxet_Property.hxx"
 
 Voxet_Property::Voxet_Property(int logLevel, const char* moniker, int id)
@@ -64,17 +65,6 @@ const char* Voxet_Property::Get_Full_Path()
 	return _fullpath;
 }
 
-float Voxet_Property::_swap_endian(float* v)
-{
-        int* iv = (int*)v;
-        int swapped = 
-                (((*iv) >> 24) & 255) |
-                (((*iv) >>  8) & 65280) |
-                (((*iv) & 65280) <<  8) |
-                (((*iv) & 255) << 24);
-	return *((float*)&swapped);
-}
-
 void Voxet_Property::Get_MinMax_From_File()
 {
 	FILE* fp = fopen(_fullpath, "rb");
@@ -93,10 +83,10 @@ void Voxet_Property::Get_MinMax_From_File()
                                 nread > 0;
                                 nread = fread(f, sizeof(float), 1024, fp))
                 {
+			swap4bytes((int*)f, nread);
                         for (size_t i = 0;  i < nread;  ++i)
                         {
-                                float v = _swap_endian(f+i);
-                                //float v = f[i];
+				float v = f[i];
                                 if (v < min) min = v;
                                 if (v > max) max = v;
                         }

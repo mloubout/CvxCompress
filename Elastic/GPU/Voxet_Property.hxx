@@ -39,7 +39,6 @@ private:
 	double _max;
 
 	char* _strdup(const char* src);
-	float _swap_endian(float* v);
 };
 
 #endif
