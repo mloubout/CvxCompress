@@ -1665,7 +1665,7 @@ bool Elastic_Modeling_Job::Compute_Model_Water_Depth_And_Avg_Vp(
 
 	// check if horizontal coordinates fall within model
 	bool error = false;
-	float dummy = Get_Earth_Model_Attribute(Attr_Idx_Vs, ix, iy, 0, false, error);
+	float dummy = Get_Earth_Model_Attribute(Attr_Idx_Vs, ix, iy, 0, true, error);
 	if (error) return false;
 
 	//printf("ix=%d, iy=%d is within volume!\n",ix,iy);
