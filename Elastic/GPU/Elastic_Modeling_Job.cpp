@@ -1237,7 +1237,7 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 			Elastic_Shot* shot = Get_Shot_By_Index(iShot);
 			if (_source_ghost_enabled)
 			{
-				int zs = (int)lrintf(shot->Get_Propagation_Source_Z()) + 1;
+				int zs = (int)lrintf(shot->Get_Source_Z()) + 1;
 				if (zs > ghost_padding) ghost_padding = zs;
 			}
 			if (_receiver_ghost_enabled)
