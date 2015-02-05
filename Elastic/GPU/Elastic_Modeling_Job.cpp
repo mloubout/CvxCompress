@@ -1713,7 +1713,7 @@ bool Elastic_Modeling_Job::Compute_Model_Water_Depth_And_Avg_Vp(
 	//printf("i_model_water_depth=%d\n",i_model_water_depth);
 	if (i_model_water_depth >= 0)
 	{
-		model_water_depth = ((float)i_model_water_depth + 0.5f) * _propagator->Get_DZ();
+		model_water_depth = ((float)(i_model_water_depth + _prop_z0) + 0.5f) * _propagator->Get_DZ();
 		// calculate average Vp for water column
 		model_water_Vp = Get_Earth_Model_Attribute(Attr_Idx_Vp, ix, iy, 0, true, error);
 		for (int i = 1;  i <= i_model_water_depth;  ++i) model_water_Vp += Get_Earth_Model_Attribute(Attr_Idx_Vp, ix, iy, i, true, error);
