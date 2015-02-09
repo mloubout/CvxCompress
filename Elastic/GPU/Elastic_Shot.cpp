@@ -236,9 +236,9 @@ void Elastic_Shot::_generate_ricker_wavelet(double dt, double fmax, int* tsrc, d
 		printf("_generate_ricker_wavelet(dt=%e, fmax=%e, tsrc=%s, stf=%s)\n",dt,fmax,tsrc!=0L?"ok":"nil",stf!=0L?"ok":"nil");
 		fflush(stdout);
 	}
-	double fpeak = fmax / 2.0;
-//	double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
-	double tshift = 0.107;  // HACK
+	double fpeak = fmax / 2.77;
+	double tshift = 5.0 * sqrt(1.5) / (fpeak * 3.1415926535897932384626433832795);
+//	double tshift = 0.107;  // HACK
 	*tsrc = (int)round((2.0 * tshift) / dt);
 	for (int i = 0;  i < *tsrc;  ++i)
 	{
@@ -272,7 +272,7 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
                                            and: wmax/w0 = rt = w0*ts/2  */
                         w0 = wmax/rt;  /* w0i = 1./w0; */
                         ts = 2.0*rt/w0;  /* total source time */
-                        imax = (int)(ts/dt) + 1;
+                        imax = (int)(2.0*ts/dt) + 1;
 
                         for(i=0;i<imax;i++)
                         { t=i*dt-0.5*ts;

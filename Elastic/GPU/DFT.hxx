@@ -1,6 +1,14 @@
 #ifndef CVX_SEISMOD_ELASTIC_DFT_HXX
 #define CVX_SEISMOD_ELASTIC_DFT_HXX
 
+void cmplx_DFT(
+	double* real_in,
+	double* imag_in,
+	double* real_out,
+	double* imag_out,
+	int len
+	);
+
 void Apply_Butterworth_Low_Pass_Filter(
 	int log_level,
 	double* signal_in,
