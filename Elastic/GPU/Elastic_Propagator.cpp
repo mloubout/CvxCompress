@@ -551,7 +551,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 		// determine best fit for available hardware.
                 printf("Automatic determination of best GPU configuration...\n");
 		int done = false, done_steps = false;
-		const int max_pipes = 8;
+		const int max_pipes = cu_device_count > 8 ? 8 : cu_device_count;
 		const int max_steps = 6;
 		int num_configs = max_pipes * (max_steps - 2);
 		float* performance = new float[num_configs];
@@ -573,6 +573,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			cudaSetDevice(iDev);
 			cudaMalloc((void**)(misc_buffer+iDev),misc_buffer_size);
 		}
+		printf("MAXIMUM PIPES = %d\n",max_pipes);
 		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  num_pipes=num_pipes*2)
 		{
 			done_steps = false;

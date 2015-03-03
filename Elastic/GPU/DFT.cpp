@@ -25,8 +25,10 @@ void cmplx_DFT(
 		for (int n = 0;  n < len;  ++n)
 		{
 			double arg = -6.283185307179586476925286766559 * (double)(k * n) / (double)len;
-			double euler_real = cos(arg);
-			double euler_imag = sin(arg);
+			double euler_real, euler_imag;
+			sincos(arg, &euler_imag, &euler_real);
+			//double euler_real = cos(arg);
+			//double euler_imag = sin(arg);
 			real += (real_in[n] * euler_real - imag_in[n] * euler_imag);
 			imag += (real_in[n] * euler_imag + imag_in[n] * euler_real);
 		}

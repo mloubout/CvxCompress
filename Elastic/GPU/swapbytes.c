@@ -1,7 +1,7 @@
-void swap2bytes(short *i2, int n)
+void swap2bytes(short *i2, long n)
 {
 	asm("");  // this seemingly meaningless line prevents function from being optimized away
-	int k;
+	long k;
 	short i;
 	for (k = 0;  k < n;  ++k)
         {
@@ -12,10 +12,11 @@ void swap2bytes(short *i2, int n)
 	}
 }
 
-void swap4bytes(int *i4, int n)
+void swap4bytes(int *i4, long n)
 {
 	asm("");  // this seemingly meaningless line prevents function from being optimized away
-	int k, i;
+	long k;
+	int i;
 	for (k = 0;  k < n;  ++k)
         {
 		i = i4[k];
@@ -27,10 +28,10 @@ void swap4bytes(int *i4, int n)
 	}
 }
 
-void swap8bytes(long* i8, int n)
+void swap8bytes(long* i8, long n)
 {
 	asm("");  // this seemingly meaningless line prevents function from being optimized away
-	int k;
+	long k;
 	long i;
 	for (k = 0;  k < n;  ++k)
 	{

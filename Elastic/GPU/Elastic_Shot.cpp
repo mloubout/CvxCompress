@@ -368,7 +368,7 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 	{
 		int ix = (int)truncf(recx);
 		int iy = (int)truncf(recy);
-		return _Range_Intersects(x0,x1,ix,ix+2) && _Range_Intersects(y0,y1,iy-1,iy+1);
+		return _Range_Intersects(x0,x1,ix,ix+1) && _Range_Intersects(y0,y1,iy,iy+1);
 	}
 	else if (interpolation_method == Sinc)
 	{

@@ -7,7 +7,7 @@
 // 
 //
 
-__device__ 
+__device__ __forceinline__ 
 int cuCompTXXIdx(int offset)
 {
 	int abs_offset = offset + (threadIdx.x & 3) + 4;
@@ -16,7 +16,7 @@ int cuCompTXXIdx(int offset)
 	return threadIdx.y*96 + quotient*32 + (threadIdx.x&28) + remainder;
 }
 
-__device__ 
+__device__ __forceinline__
 int cuCompTXXIdx_2(int offset)
 {
 	int abs_offset = offset + (threadIdx.x & 3) + 4;
@@ -25,13 +25,13 @@ int cuCompTXXIdx_2(int offset)
 	return (threadIdx.y+4)*96 + quotient*32 + (threadIdx.x&28) + remainder;
 }
 
-__device__ 
+__device__ __forceinline__
 int cuCompTYYIdx(int offset)
 {
 	return (offset + 4 + threadIdx.y) * 32 + threadIdx.x;
 }
 
-__device__ 
+__device__ __forceinline__
 int cuCompTYYIdx_2(int offset)
 {
 	return (offset + 8 + threadIdx.y) * 32 + threadIdx.x;
