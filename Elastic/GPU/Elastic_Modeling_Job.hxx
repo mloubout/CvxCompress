@@ -57,6 +57,7 @@ public:
 	bool Get_NABC_BOT_Extend();
 
 	bool Lower_Q_Seafloor_Enabled() {return _lower_Q_seafloor_enabled;}
+	bool Extend_Model_If_Necessary() {return _extend_model_if_necessary;}
 
 	float Get_Courant_Factor() {return _Courant_Factor;}
 
@@ -223,6 +224,7 @@ private:
 	int _sea_surface_z;
 	
 	bool _lower_Q_seafloor_enabled;
+	bool _extend_model_if_necessary;
 
 	Elastic_Shot** _shots;
 	int _num_shots;

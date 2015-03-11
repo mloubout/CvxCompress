@@ -164,6 +164,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_source_ghost_enabled = true;
 	_receiver_ghost_enabled = true;
 	_lower_Q_seafloor_enabled = false;
+	_extend_model_if_necessary = false;
 	_GPU_Devices = 0L;
 	_num_GPU_Devices = 0;
 	_GPU_Pipes = 0;
@@ -397,6 +398,19 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					printf("%s (line %d): Error - PROPAGATE_ORIGIN invalid origin string %s. Should be either Volume or Source.\n",parmfile_path,line_num,sub_origin);
 					error = true;
 					break;
+				}
+			}
+			if (!error)
+			{
+				char extend_model_str[4096];
+				if (sscanf(s, "PROPAGATE_EXTEND_MODEL %s", extend_model_str) == 1)
+				{	
+					_tolower(extend_model_str);
+					if (strcmp(extend_model_str, "enabled") == 0)
+					{
+						_extend_model_if_necessary = true;
+						if (_log_level >= 3) printf("Model will be extended if propagation volume exceeds model boundaries.\n");
+					}
 				}
 			}
 			double sub_min, sub_max;
@@ -1284,17 +1298,20 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 		_sub_iy0 += src_min_y;
 		_sub_iy1 += src_max_y;
 	}
-	// clip sub volume
 	Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
-	if (_sub_ix0 < 0) _sub_ix0 = 0;
-	if (_sub_ix1 >= gcs->Get_NX()) _sub_ix1 = gcs->Get_NX() - 1;
-	if (_sub_iy0 < 0) _sub_iy0 = 0;
-	if (_sub_iy1 >= gcs->Get_NY()) _sub_iy1 = gcs->Get_NY() - 1;
-	if (_log_level > 3)
+	if (!_extend_model_if_necessary)
 	{
-		printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
-		printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
-		printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
+		// clip sub volume
+		if (_sub_ix0 < 0) _sub_ix0 = 0;
+		if (_sub_ix1 >= gcs->Get_NX()) _sub_ix1 = gcs->Get_NX() - 1;
+		if (_sub_iy0 < 0) _sub_iy0 = 0;
+		if (_sub_iy1 >= gcs->Get_NY()) _sub_iy1 = gcs->Get_NY() - 1;
+		if (_log_level > 3)
+		{
+			printf("X : CLIPPED Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
+			printf("Y : CLIPPED Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
+			printf("Z : CLIPPED Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
+		}
 	}
 	// X
 	_prop_nx = _sub_ix1 - _sub_ix0 + 1;
@@ -1345,9 +1362,9 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 		printf("Propagation volume Y = [%d,%d].\n",_prop_y0,_prop_y0+_prop_ny-1);
 		printf("Propagation volume Z = [%d,%d].\n",_prop_z0,_prop_z0+_prop_nz-1);
 
-		printf("X : Sub volume is [%d,%d]\n",_sub_ix0,_sub_ix1);
-		printf("Y : Sub volume is [%d,%d]\n",_sub_iy0,_sub_iy1);
-		printf("Z : Sub volume is [%d,%d]\n",_sub_iz0,_sub_iz1);
+		printf("X : Sub volume with ABC is [%d,%d]\n",_sub_ix0,_sub_ix1);
+		printf("Y : Sub volume with ABC is [%d,%d]\n",_sub_iy0,_sub_iy1);
+		printf("Z : Sub volume with ABC is [%d,%d]\n",_sub_iz0,_sub_iz1);
 	}
 }
 
