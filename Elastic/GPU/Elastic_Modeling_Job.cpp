@@ -26,6 +26,8 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_Is_Valid = false;
 	_log_level = log_level;
 	_propagator = 0L;
+
+	_ebcdic_header_filename = 0L;
 	
 	_num_em_props = 14;
 
@@ -252,6 +254,15 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 						error = true;
 						break;
 					}
+				}
+			}
+			if (!error)
+			{
+				char EBCDIC_Header_Filename[4096];
+				if (sscanf(s, "EBCDIC_HEADER_PATH = %s", EBCDIC_Header_Filename) == 1)
+				{
+					_ebcdic_header_filename = strdup(EBCDIC_Header_Filename);
+					if (_log_level >= 3) printf("EBCDIC Header will be read from file %s\n",_ebcdic_header_filename);
 				}
 			}
 			char isostr[4096];
@@ -2192,6 +2203,7 @@ bool Elastic_Modeling_Job::_Check_Property(
 
 Elastic_Modeling_Job::~Elastic_Modeling_Job()
 {
+	if (_ebcdic_header_filename != 0L) free(_ebcdic_header_filename);
 	if (_shots != 0L)
 	{
 		for (int i = 0;  i < _num_shots;  ++i) delete _shots[i];

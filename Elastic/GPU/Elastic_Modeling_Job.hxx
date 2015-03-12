@@ -15,6 +15,8 @@ public:
 	bool Is_Valid() {return _Is_Valid;}
 	int Get_Log_Level() {return _log_level;}
 
+	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
+
 	bool Subvolume_Is_Relative_To_Source() {return _sub_origin == 0 ? true : false;}
 	void Compute_Subvolume();
 
@@ -143,6 +145,8 @@ private:
 
 	bool _Is_Valid;
 	int _log_level;
+
+	char* _ebcdic_header_filename;
 
 	int _prop_nx;
 	int _prop_ny;

@@ -8,6 +8,7 @@
 #include "Elastic_Pipeline.hxx"
 #include "Elastic_Propagator.hxx"
 #include "Elastic_Gather_Type.hxx"
+#include "ASCII2EBCDIC.h"
 #include <cuda_runtime_api.h>
 #include "gpuAssert.h"
 
@@ -121,13 +122,16 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	rec_model_water_depth[0] = rec_model_water_depth[1] = 0.0f;
 	rec_model_Vp[0] = rec_model_Vp[1] = 0.0f;
 	rec_bath_z[0] = rec_bath_z[1] = 0.0f;
-	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
+	char EBCDIC_Header[3200];
+	memset((void*)EBCDIC_Header, 0, 3200);
+	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],EBCDIC_Header,srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
 	delete [] traces[0];
 	delete [] traces[1];
 }
 
 void Elastic_SEGY_File::Write_SEGY_File(
 	float** traces,
+	char* EBCDIC_Header,
 	double srcx,
 	double srcy,
 	double srcz,
@@ -151,7 +155,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	char filename[4096];
 	Get_Full_Path(filename,flag);
 	this->Write_SEGY_File(
-		filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,
+		filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,EBCDIC_Header,
 		srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
 		src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,num_traces,nsamp
 		);
@@ -164,6 +168,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int file_idx,
 	double start_time,
 	float** traces,
+	char* EBCDIC_Header,
 	double srcx,
 	double srcy,
 	double srcz,
@@ -188,7 +193,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 	/* SEGY DATA TYPES ***/
         char reel_id_hdr1[3200];
-        memset((void*)reel_id_hdr1, 0, 3200);
+	Convert_ASCII_To_EBCDIC(EBCDIC_Header, reel_id_hdr1, 3200);
 
         struct
         {
@@ -204,7 +209,9 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 short datafmt;
                 short cmpfold;
                 short sortcode;
-                char skip[370];
+		char skip1[270];
+		short segyfmt;
+                char skip2[98];
         } reel_id_hdr2;
         memset((void*)&reel_id_hdr2, 0, sizeof(reel_id_hdr2));
 
@@ -362,9 +369,6 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	if (fp != 0L)
 	{
 		/*** FILL REEL ID HEADER 1 ***/
-		char hdrstring[4096];
-		sprintf(hdrstring,"Variable density elastic tilted orthorhombic seismic wave propagation.\nGPU code v0.9\n");
-		strcpy(reel_id_hdr1, hdrstring);
 		fwrite((void*)reel_id_hdr1,1,3200,fp);
 
 		/*** FILL REEL ID HEADER 2 ***/
@@ -377,13 +381,14 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		short nrec2 = num_traces;     
 		short dtmicro2 = dtmicro;
 		short nsamp2 = nsamp;
+		short segyfmt = 256;
 
 		if(swapflag)
 		{
 			swap2bytes(&one2, 1);        swap2bytes(&five2, 1);  swap4bytes(&one4, 1);
 			swap2bytes(&nrec2, 1);       swap2bytes(&dtmicro2, 1);
 			swap2bytes(&nsamp2, 1);      swap2bytes(&trc_sortcode2, 1);
-			swap2bytes(&fold2, 1);
+			swap2bytes(&fold2, 1);       swap2bytes(&segyfmt, 1);
 		}
 		reel_id_hdr2.jobid = reel_id_hdr2.lineid = reel_id_hdr2.reelid = one4;
 		reel_id_hdr2.ntrc_per_record = nrec2;
@@ -392,6 +397,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		reel_id_hdr2.datafmt = five2;
 		reel_id_hdr2.cmpfold = fold2;
 		reel_id_hdr2.sortcode = trc_sortcode2;
+		reel_id_hdr2.segyfmt = segyfmt;
 		fwrite((void*)&reel_id_hdr2,1,400,fp);
 
 		float* trcbuf = new float[nsamp];

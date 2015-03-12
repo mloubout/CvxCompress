@@ -1,7 +1,7 @@
 CPP=g++
 CC=gcc
 CFLAGS=-fopenmp -O3
-MODEL_OBJECTS=swapbytes.o DFT.o Elastic_Modeling_Job.o Elastic_Shot.o Elastic_Resampled_Trace.o Elastic_Trace_Header.o Elastic_Trace.o Elastic_SEGY_File.o Elastic_SEGY_File_Receiver_Range.o Global_Coordinate_System.o Voxet.o Voxet_Property.o 
+MODEL_OBJECTS=swapbytes.o DFT.o Elastic_Modeling_Job.o Elastic_Shot.o Elastic_Resampled_Trace.o Elastic_Trace_Header.o Elastic_Trace.o Elastic_SEGY_File.o Elastic_SEGY_File_Receiver_Range.o Global_Coordinate_System.o Voxet.o Voxet_Property.o ASCII2EBCDIC.o
 PROPAGATOR_OBJECTS=Elastic_Buffer.o Elastic_Pipeline.o Elastic_Propagator.o
 CUDA_FILES=Simple_Copy.cu Compute_ABC.cu Earth_Model.cu Propagate_Particle_Velocities.cu Propagate_Stresses_Orthorhombic.cu Elastic_Kernels.cu
 

@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -806,6 +807,39 @@ void Elastic_Shot::Write_SEGY_Files()
 	}
 	printf("MIN MAX :: before=[%e,%e], after=[%e,%e]\n",min_before,max_before,min_after,max_after);
 	*/
+	char EBCDIC_Header[3200];
+	memset(EBCDIC_Header, 32, 3200);  // fill with space
+	if (_job->Get_EBCDIC_Header_Filename() != 0L)
+	{
+		FILE* fp = fopen((char*)(_job->Get_EBCDIC_Header_Filename()), "r");
+		if (fp != 0L)
+		{
+			char buf[4096];
+			for (int i = 0;  i < 40 && !feof(fp);  ++i)
+			{
+				fgets(buf,4096,fp);
+				int len = strlen(buf);
+				len = len > 80 ? 80 : len;  // truncate string to max 80 characters
+				for (int j = 0;  j < len;  ++j)
+				{
+					// replace non-printable characters with space
+					EBCDIC_Header[i*80+j] = isprint(buf[j]) ? buf[j] : ' ';
+				}
+			}
+			fclose(fp);
+		}
+		printf("\nFormatted EBCDIC Header will be included in SEGY files.\n");
+		printf("--------------------------------------------------------------------------------\n");
+		printf("12345678901234567890123456789012345678901234567890123456789012345678901234567890\n");
+		for (int i = 0;  i < 40;  ++i)
+		{
+			char buf[81];
+			for (int j = 0;  j < 80;  ++j) buf[j] = EBCDIC_Header[i*80+j];
+			buf[80] = 0;
+			printf("%s\n",buf);
+		}
+		printf("--------------------------------------------------------------------------------\n\n");
+	}
 	Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile)
 	{
@@ -888,7 +922,7 @@ void Elastic_Shot::Write_SEGY_Files()
 					}
 				}
 				_segy_files[iFile]->Write_SEGY_File(
-					traces,
+					traces,EBCDIC_Header,
 					srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
 					src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,count,nsamp,flag
 					);

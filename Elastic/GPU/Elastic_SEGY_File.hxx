@@ -109,6 +109,7 @@ public:
 			);
 	void Write_SEGY_File(
 			float** traces,
+			char* EBCDIC_Header,
 			double srcx,
 			double srcy,
 			double srcz,
@@ -135,6 +136,7 @@ public:
 			int file_idx,
 			double start_time,
 			float** traces,
+			char* EBCDIC_Header,
 			double srcx,
 			double srcy,
 			double srcz,
