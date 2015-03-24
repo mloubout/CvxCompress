@@ -1155,8 +1155,8 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
         for (int iPipe = 0;  iPipe < _num_pipes;  ++iPipe)
         {
                 Elastic_Pipeline* pipe = prop->Get_Pipeline(iPipe);
-		int y0 = pipe->Get_Y0() + _job->Get_Propagation_Y0();
-		int y1 = pipe->Get_Y1() + _job->Get_Propagation_Y0();
+		int y0 = pipe->Get_Y0();
+		int y1 = pipe->Get_Y1();
 
                 int tot_rx = 0, tot_traces = 0;
 
@@ -1181,7 +1181,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 			for (int iBlk = 0;  iBlk < _nBlks;  ++iBlk) binRx_num[iFile][iBlk] = 0;
 			for (int iRx = 0;  iRx < num_rx;  ++iRx)
 			{
-				int ix = (int)trunc(rcv_x[iRx]) - _job->Get_Propagation_X0();
+				int ix = (int)truncf((float)(rcv_x[iRx] - _job->Get_Propagation_X0()));
 				int ixBlk = ix / prop->Get_Block_Size_X();
 				int iBlk_min = ixBlk-2;
 				if (iBlk_min < 0) iBlk_min = 0;
@@ -1190,10 +1190,10 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				//printf("rcv[%d][%d] = %f,%f,%f :: iBlk=[%d,%d]\n",iFile,iRx,rcv_x[iRx],rcv_y[iRx],rcv_z[iRx],iBlk_min,iBlk_max);
 				for (int iBlk = iBlk_min;  iBlk <= iBlk_max;  ++iBlk)
 				{
-					int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
+					int x0 = iBlk * prop->Get_Block_Size_X();
 					int x1 = x0 + prop->Get_Block_Size_X() - 1;
 					//printf(" => x0=%d, x1=%d\n",x0,x1);
-					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
+					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx]-_job->Get_Propagation_X0(),rcv_y[iRx]-_job->Get_Propagation_Y0()))
 					{
 						++binRx_num[iFile][iBlk];
 						++tot_rx;
@@ -1226,7 +1226,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 			}
 			for (int iRx = 0;  iRx < num_rx;  ++iRx, traceno+=num_wf)
 			{
-				int ix = (int)trunc(rcv_x[iRx]) - _job->Get_Propagation_X0();
+				int ix = (int)truncf((float)(rcv_x[iRx] - _job->Get_Propagation_X0()));
 				int ixBlk = ix / prop->Get_Block_Size_X();
 				int iBlk_min = ixBlk-2;
 				if (iBlk_min < 0) iBlk_min = 0;
@@ -1234,9 +1234,9 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 				if (iBlk_max >= _nBlks) iBlk_max = _nBlks-1;
 				for (int iBlk = iBlk_min;  iBlk <= iBlk_max;  ++iBlk)
 				{
-					int x0 = iBlk * prop->Get_Block_Size_X() + _job->Get_Propagation_X0();
+					int x0 = iBlk * prop->Get_Block_Size_X();
 					int x1 = x0 + prop->Get_Block_Size_X() - 1;
-					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx],rcv_y[iRx]))
+					if (_Receiver_Intersects(interpolation_method,x0,x1,y0,y1,rcv_x[iRx]-_job->Get_Propagation_X0(),rcv_y[iRx]-_job->Get_Propagation_Y0()))
 					{
 						binRx_x[iFile][iBlk][binRx_num[iFile][iBlk]] = rcv_x[iRx];
 						binRx_y[iFile][iBlk][binRx_num[iFile][iBlk]] = rcv_y[iRx];

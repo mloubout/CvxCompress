@@ -12,6 +12,11 @@ public:
 	Elastic_Modeling_Job(int log_level, const char* parmfile_path);
 	~Elastic_Modeling_Job();
 
+	static void Print_Version_Information()
+	{
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.00\n\n");
+	}
+
 	bool Is_Valid() {return _Is_Valid;}
 	int Get_Log_Level() {return _log_level;}
 

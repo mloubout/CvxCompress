@@ -12,14 +12,14 @@
 
 int main(int argc, char* argv[])
 {
-	printf("\n%s v1.00\nVariable density visco-elastic orthorhombic finite difference forward modeling.\n\n",argv[0]);
 	if (argc == 1)
 	{
+		Elastic_Modeling_Job::Print_Version_Information();
 		printf("Usage : %s <parmfile> [options]\n",argv[0]);
 		printf("Valid options are:\n");
 		printf("xz_model	Output X-Z crossplot of earth model intersecting source location.\n");
 		printf("xz_slices	Output X-Z crossplot of P wavefield intersecting source location during propagation.\n");
-		printf("source_wavelet	Output filtered and time integrated source wavelet.\n");
+		printf("source_wavelet	Output filtered and time integrated source wavelet.\n\n");
 		return -1;
 	}
 

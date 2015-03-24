@@ -23,6 +23,8 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	const char* parmfile_path
 	)
 {
+	Print_Version_Information();
+
 	_Is_Valid = false;
 	_log_level = log_level;
 	_propagator = 0L;
