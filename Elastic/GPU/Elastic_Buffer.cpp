@@ -8,6 +8,8 @@
 #include "Elastic_Pipeline.hxx"
 #include "Elastic_Modeling_Job.hxx"
 #include "Elastic_Shot.hxx"
+#include "Elastic_SEGY_File.hxx"
+#include "Elastic_Earth_Model_Interface.hxx"
 #include "Voxet.hxx"
 #include "Global_Coordinate_System.hxx"
 
@@ -621,6 +623,25 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		bool source_ghost_enabled = !job->Freesurface_Enabled() && job->Source_Ghost_Enabled();
 		int ghost_sea_surface_z = -job->Get_Propagation_Z0();
 
+		bool common_receiver_gather = shot->Get_SEGY_File_by_Index(0)->Get_Gather_Type() == Common_Receiver_Gather ? true : false;
+		bool is_p_reciprocity = common_receiver_gather && (shot->Get_SEGY_File_by_Index(0)->Do_P()) ? true : false;
+		int ixsou_ref = (int)lrintf(shot->Get_Propagation_Source_X()) + 1;
+		int iysou_ref = (int)lrintf(shot->Get_Propagation_Source_X()) + 1;
+		int izsou_ref = (int)lrintf(common_receiver_gather ? 1.0f : shot->Get_Propagation_Source_Z()) + 1;
+		float Vp = job->Get_Earth_Model_Attribute(Attr_Idx_Vp, ixsou_ref, iysou_ref, izsou_ref);
+		float Vs = job->Get_Earth_Model_Attribute(Attr_Idx_Vs, ixsou_ref, iysou_ref, izsou_ref);
+		float rho_ref = 1000.0f * job->Get_Earth_Model_Attribute(Attr_Idx_Density, ixsou_ref, iysou_ref, izsou_ref);
+		float bmod_ref = (Vp * Vp - 1.333333333f * Vs * Vs) * rho_ref;
+	
+#ifdef GPU_DEBUG	
+		static bool done_it = false;
+		if (!done_it)
+		{
+			done_it = true;
+			printf("\n*****\nrho_ref = %e, bmod_ref = %e\n*****\n\n",rho_ref,bmod_ref);
+		}
+#endif
+
 #ifdef GPU_DEBUG
 		char buf1[256];
 		char buf2[256];
@@ -692,6 +713,10 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				job->Get_IsoOrEarth_Model_Attribute_Min(job->Attr_Idx_Q,isosphere),
 				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Q,isosphere),
 				job->Get_FQ(),
+				job->Get_IsoOrEarth_Model_Attribute_Min(job->Attr_Idx_Vp,isosphere),
+				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Vp,isosphere),
+				job->Get_IsoOrEarth_Model_Attribute_Min(job->Attr_Idx_Vs,isosphere),
+				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Vs,isosphere),
 				job->Get_IsoOrEarth_Model_Attribute_Min(job->Attr_Idx_Density,isosphere),
 				job->Get_IsoOrEarth_Model_Attribute_Range(job->Attr_Idx_Density,isosphere),
 				one_y_size,
@@ -707,7 +732,10 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				shot->Get_Source_Wavelet_Sample(cmp_block_timestep,true),
 				shot->Get_Propagation_Source_X(),
 				shot->Get_Propagation_Source_Y(),
-				shot->Get_Propagation_Source_Z()
+				shot->Get_Propagation_Source_Z(),
+				is_p_reciprocity,
+				bmod_ref,
+				rho_ref
 				);
 		}
 		else
@@ -785,7 +813,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				swav,
 				shot->Get_Propagation_Source_X(),
 				shot->Get_Propagation_Source_Y(),
-				shot->Get_Propagation_Source_Z()
+				shot->Get_Propagation_Source_Z(),
+				bmod_ref
 				);
 		}
 	}

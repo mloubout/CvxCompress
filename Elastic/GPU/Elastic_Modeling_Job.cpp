@@ -642,6 +642,60 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			if (!error)
 			{
 				int souidx;
+				char sintrp[4096];
+				int matched = sscanf(s, "SHOT %d SOURCE_INTERPOLATION %s", &souidx, sintrp);
+				if (matched == 2)
+				{
+					Elastic_Shot* shot = Get_Shot(souidx);
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SOURCE_INTERPOLATION Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
+					{
+						_tolower(sintrp);
+						if (strcmp(sintrp, "point") == 0)
+						{
+							shot->Set_Source_Interpolation_Method(Point);
+							if (_log_level > 3) printf("Shot %d :: SOURCE_INTERPOLATION interpolation mode set to %s.\n",souidx,sintrp);
+						}
+						else if (strcmp(sintrp, "linear") == 0)
+						{
+							shot->Set_Source_Interpolation_Method(Trilinear);
+							if (_log_level > 3) printf("Shot %d :: SOURCE_INTERPOLATION interpolation mode set to %s.\n",souidx,sintrp);
+						}
+						else if (strcmp(sintrp, "sinc") == 0)
+						{
+							shot->Set_Source_Interpolation_Method(Sinc);
+							if (_log_level > 3) printf("Shot %d :: SOURCE_INTERPOLATION interpolation mode set to %s.\n",souidx,sintrp);
+						}
+						else
+						{
+							printf("%s (line %d): Error - SOURCE_INTERPOLATION Unknown interpolation mode %s.\n",parmfile_path,line_num,sintrp);
+							printf("Valid modes are point, linear and sinc.\n");
+							printf("Default mode is linear.\n");
+							error = true;
+						}
+						if (!error)
+						{
+							// set interpolation mode for all segy files that have been created so far
+							for (int iFile = 0;  iFile < shot->Get_Number_Of_SEGY_Files();  ++iFile)
+							{
+								shot->Get_SEGY_File_by_Index(iFile)->Set_Interpolation_Method(shot->Get_Source_Interpolation_Method());
+							}
+						}
+						else
+						{
+							break;
+						}
+					}
+				}
+			}
+			if (!error)
+			{
+				int souidx;
 				char stype[4096];
 				int matched = sscanf(s, "SHOT %d SOURCE_TYPE %s", &souidx, stype);
 				if (matched == 2)
@@ -764,6 +818,28 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			{
 				int souidx;
 				char wavelet_path[4096];
+				int matched = sscanf(s, "SHOT %d SOURCE_WAVELET FILE %s DONT_FILTER", &souidx, wavelet_path);
+				if (matched == 2)
+				{
+					Elastic_Shot* shot = Get_Shot(souidx);
+                                        if (shot == 0L)
+                                        {
+                                                printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+                                                error = true;
+                                                break;
+                                        }
+                                        else
+                                        {
+						error = shot->Read_Source_Wavelet_From_File(wavelet_path);
+                                                if (error) break;
+                                                if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s. NB! No filter will be applied, this may cause dispersion.\n",shot->Get_Source_Index(),wavelet_path);
+                                        }
+				}
+			}
+			if (!error)
+			{
+				int souidx;
+				char wavelet_path[4096];
 				double fmax;
 				int filter_order;
 				int matched = sscanf(s, "SHOT %d SOURCE_WAVELET FILE %s %lf %d", &souidx, wavelet_path, &fmax, &filter_order);
@@ -847,6 +923,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 							}
 							Elastic_SEGY_File* segy_file = new Elastic_SEGY_File(fileidx,base_filename,sample_rate,tshift,reclen,do_P,do_Vx,do_Vy,do_Vz);
 							shot->Add_SEGY_File(segy_file);
+							segy_file->Set_Interpolation_Method(shot->Get_Source_Interpolation_Method());
 							if (_log_level >= 3)
 							{
 								printf("Added SEGY FILE with idx %d to shot with source idx %d.\n",fileidx,souidx);

@@ -22,7 +22,15 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
         float val,
 	int icell,
 	int jcell,
-	int kcell
+	int kcell,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
 	)
 {
 	int my_x = icell + threadIdx.x - 3 - x0;
@@ -62,9 +70,21 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
                         int one_y_size_f = one_wf_size_f * 6;
                         int idx = my_x + my_y * one_y_size_f + my_z * 4;
 
-			cmp[idx                ] = cmp[idx                ] - fsinc * dti * val * ampl1;
-			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - fsinc * dti * val * ampl1;
-			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - fsinc * dti * val * ampl1;
+			int em_one_word_size_f = one_wf_size_f;
+			int em_one_y_size_f = em_one_word_size_f * 4;
+
+			int emIdx = my_x + my_y * em_one_y_size_f + my_z * 4;
+			unsigned int em_word0 = em[emIdx];
+			unsigned int em_word3 = em[emIdx + 3*em_one_word_size_f];
+			float rho, bmod;
+			cuUnpack_And_Compute_Bulk_Modulus(em_word0, em_word3, Vp_min, Vp_range, Vs_min, Vs_range, Density_min, Density_range, &rho, &bmod);
+			float scale_sou = bmod / bmod_ref;
+
+			//printf("\n*****\nmy_x=%d, my_y=%d, my_z=%d :: rho = %e, bmod = %e, scale_sou = %e\n*****\n\n",my_x,my_y,my_z,rho,bmod,scale_sou);
+
+			cmp[idx                ] = cmp[idx                ] - fsinc * scale_sou * dti * val * ampl1;
+			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
+			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
 
 			//if (timestep == 1) printf("TIMESTEP 1 :: FSINC ( %d, %d, %d ) = %e\n",my_x+x0,my_y+y0,my_z,fsinc);
                 }
@@ -86,7 +106,15 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
         float xs,
         float ys,
         float zs,
-        float val
+        float val,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
         // nearest grid point:
@@ -96,7 +124,7 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
 
 	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
 	{
-        	__cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell);
+        	__cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
 	}
 }
 
@@ -117,13 +145,21 @@ void cuApply_Source_Term_To_TxxTyyTzz(
         float zs,
         float val,
 	bool source_ghost_enabled,
-	float ghost_sea_surface
+	float ghost_sea_surface,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
-	_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val);
+	_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
 	if (source_ghost_enabled)
 	{
-		_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val);
+		_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
 	}
 }
 
@@ -138,16 +174,35 @@ void cuApply_Point_Source_To_Single_TxxTyyTzz(
 	int iz,
 	float delta,
 	int one_wf_size_f,
-	int one_y_size_f
+	int one_y_size_f,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
 	if (delta != 0.0f && ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
 	{
 		int idx = ix + iy * one_y_size_f + iz * 4;
 
-		cmp[idx                ] = cmp[idx                ] + delta;
-		cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + delta;
-		cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + delta;
+		int em_one_word_size_f = one_wf_size_f;
+		int em_one_y_size = em_one_word_size_f * 4;
+		int emIdx = ix + iy * em_one_y_size + iz * 4;
+		unsigned int em_word0 = em[emIdx];
+		unsigned int em_word3 = em[emIdx + 3*em_one_word_size_f];
+		float rho, bmod;
+		cuUnpack_And_Compute_Bulk_Modulus(em_word0, em_word3, Vp_min, Vp_range, Vs_min, Vs_range, Density_min, Density_range, &rho, &bmod);
+		float scale_sou = bmod / bmod_ref;
+
+		//printf("\n*****\nmy_x=%d, my_y=%d, my_z=%d :: rho = %e, bmod = %e, scale_sou = %e\n*****\n\n",my_x,my_y,my_z,rho,bmod,scale_sou);
+		
+		cmp[idx                ] = cmp[idx                ] + delta * scale_sou;
+		cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + delta * scale_sou;
+		cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + delta * scale_sou;
 	
 		//printf("Source Trilinear ix=%d, iy=%d, iz=%d, delta=%e\n",ix,iy,iz,delta);
 	}
@@ -168,7 +223,15 @@ void cuApply_Point_Source_To_TxxTyyTzz(
         float zs,
         float val,
 	bool source_ghost_enabled,
-	int ghost_sea_surface_z
+	int ghost_sea_surface_z,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
 	int ix = (int)lrintf(xs) - x0;
@@ -182,7 +245,8 @@ void cuApply_Point_Source_To_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix,iy,iz,
 			-dti*val*ampl1,
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	if (source_ghost_enabled)
 	{
@@ -191,7 +255,8 @@ void cuApply_Point_Source_To_TxxTyyTzz(
                         cmp,nx,ny,nz,
                         ix,iy,izd,
                         dti*val*ampl1,
-                        one_wf_size_f,one_y_size_f
+                        one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
                         );
 	}
 }
@@ -209,7 +274,15 @@ void _cuApply_Trilinear_Source_To_TxxTyyTzz(
         float xs,
         float ys,
         float zs,
-        float val
+        float val,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
 	int ix = (int)truncf(xs) - x0;
@@ -227,49 +300,57 @@ void _cuApply_Trilinear_Source_To_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix,iy,iz,
 			-dti*val*ampl1*xd*yd*zd,
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix+1,iy,iz,
 			-dti*val*ampl1*(1.0f-xd)*yd*zd,
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix+1,iy+1,iz,
 			-dti*val*ampl1*(1.0f-xd)*(1.0f-yd)*zd,
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix,iy+1,iz,
 			-dti*val*ampl1*xd*(1.0f-yd)*zd,
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix,iy,iz+1,
 			-dti*val*ampl1*xd*yd*(1.0f-zd),
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix+1,iy,iz+1,
 			-dti*val*ampl1*(1.0f-xd)*yd*(1.0f-zd),
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix+1,iy+1,iz+1,
 			-dti*val*ampl1*(1.0f-xd)*(1.0f-yd)*(1.0f-zd),
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 	cuApply_Point_Source_To_Single_TxxTyyTzz(
 			cmp,nx,ny,nz,
 			ix,iy+1,iz+1,
 			-dti*val*ampl1*xd*(1.0f-yd)*(1.0f-zd),
-			one_wf_size_f,one_y_size_f
+			one_wf_size_f,one_y_size_f,
+			em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref
 			);
 }
 
@@ -288,13 +369,21 @@ void cuApply_Trilinear_Source_To_TxxTyyTzz(
         float zs,
         float val,
 	bool source_ghost_enabled,
-	float ghost_sea_surface
+	float ghost_sea_surface,
+	unsigned int* em,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
+	float Density_min,
+	float Density_range,
+	float bmod_ref
         )
 {
-	_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,zs,val);
+	_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
 	if (source_ghost_enabled)
 	{
-		_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val);
+		_cuApply_Trilinear_Source_To_TxxTyyTzz(cmp,x0,y0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
 	}
 }
 
@@ -767,7 +856,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float svaw_sample,
 	float xsou,
 	float ysou,
-	float zsou
+	float zsou,
+	float bmod_ref
 	)
 {
 	//printf("inject_source=%s, is_pressure=%s, ampl1=%e, svaw_sample=%e, xsou=%f, ysou=%f, zsou=%f\n",inject_source?"Y":"N",is_pressure?"Y":"N",ampl1,svaw_sample,xsou,ysou,zsou);
@@ -826,20 +916,26 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 		{
 			dim3 blockShape3(1,1,1);
 			dim3 gridShape3(1,1,1);
-			cuApply_Point_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface_z);
+			cuApply_Point_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(
+					cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface_z,
+					em,Vp_min,Vp_range/65535.0f,Vs_min,Vs_range/65535.0f,Density_min,Density_range/255.0f,bmod_ref);
 		}
 		else if(source_interpolation_method == Trilinear)
 		{
 			dim3 blockShape3(1,1,1);
 			dim3 gridShape3(1,1,1);
-			cuApply_Trilinear_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface);
+			cuApply_Trilinear_Source_To_TxxTyyTzz<<<gridShape3,blockShape3,0,stream>>>(
+					cmp,x0,y0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface,
+					em,Vp_min,Vp_range/65535.0f,Vs_min,Vs_range/65535.0f,Density_min,Density_range/255.0f,bmod_ref);
 		}
 		else if(source_interpolation_method == Sinc)
 		{
 			// use only one thread along z to prevent possible race condition
 			dim3 blockShape2(8,8,1);
 			dim3 gridShape2(1,1,1);
-			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface);
+			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(
+				timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface,
+				em,Vp_min,Vp_range/65535.0f,Vs_min,Vs_range/65535.0f,Density_min,Density_range/255.0f,bmod_ref);
 		}
 	}
 #ifdef GPU_DEBUG

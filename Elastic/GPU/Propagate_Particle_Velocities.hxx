@@ -39,6 +39,10 @@ Host_Propagate_Particle_Velocities_Kernel(
 	float Q_min,
 	float Q_range,
 	float fq,
+	float Vp_min,
+	float Vp_range,
+	float Vs_min,
+	float Vs_range,
 	float Density_min,
 	float Density_range,
 	int one_y_size,
@@ -54,7 +58,10 @@ Host_Propagate_Particle_Velocities_Kernel(
 	float svaw_sample,
 	float xsou,
 	float ysou,
-	float zsou
+	float zsou,
+	bool is_p_reciprocity,
+	float bmod_ref,
+	float rho_ref
 	);
 
 #endif

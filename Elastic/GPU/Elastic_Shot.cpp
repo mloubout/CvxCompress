@@ -209,6 +209,24 @@ bool Elastic_Shot::Read_Source_Wavelet_From_File(const char* wavelet_path, doubl
 	}
 }
 
+bool Elastic_Shot::Read_Source_Wavelet_From_File(const char* wavelet_path)
+{
+	FILE* fp = fopen(wavelet_path, "rb");
+	if (fp != 0L)
+	{
+		fclose(fp);
+		_wavelet_path = strdup(wavelet_path);
+		_max_freq = -1.0;
+		_filter_order = -1;
+		_wavetype = 3;
+		return false;
+	}
+	else
+	{
+		return true;
+	}
+}
+
 bool Elastic_Shot::Use_Builtin_Source_Wavelet(const char* wavetype, double max_freq, const char* parmfile_path, int line_num)
 {
 	if (strcmp(wavetype, "gaussian") == 0)
@@ -320,10 +338,17 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
                 double* stffine = (double*)malloc((nfine+1)*sizeof(double));
                 for(int i=0; i<nfine; i++) fscanf(stffile,"%lf", &stffine[i]);
                 stffine[nfine] = 0.;
-		
-		double f_cut = Butterworth_Low_Pass_Filter_Find_Fcut_From_Fmax(_log_level,fmax,_filter_order);
-		if (_log_level >= 4) printf("Using f_cut = %.2lfHz for f_max = %.2lf\n",f_cut,fmax);
-		Apply_Butterworth_Low_Pass_Filter(_log_level,stffine,stffine,nfine,dtfine,f_cut,_filter_order);
+	
+		if (_filter_order > 0)
+		{	
+			double f_cut = Butterworth_Low_Pass_Filter_Find_Fcut_From_Fmax(_log_level,fmax,_filter_order);
+			if (_log_level >= 4) printf("Using f_cut = %.2lfHz for f_max = %.2lf\n",f_cut,fmax);
+			Apply_Butterworth_Low_Pass_Filter(_log_level,stffine,stffine,nfine,dtfine,f_cut,_filter_order);
+		}
+		else
+		{
+			if (_log_level >= 3) printf("Warning! No filter will be applied to this source wavelet, this may cause dispersion.\n");
+		}
 
                 int imax = (int)((nfine-1)*dtfine/dt) + 1;
                 double absmax = -1e37;
@@ -898,7 +923,7 @@ void Elastic_Shot::Write_SEGY_Files()
 						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
 						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
 						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
-						if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
+						if (false) //(_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
 						{
 							scalefac[ii] = Compute_Reciprocal_Scale_Factor(
 									flag,_x,_y,_z,

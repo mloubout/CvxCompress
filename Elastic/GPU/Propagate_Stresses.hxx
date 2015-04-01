@@ -71,7 +71,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float svaw_sample,
 	float xsou,
 	float ysou,
-	float zsou
+	float zsou,
+	float bmod_ref
 	);
 
 #endif

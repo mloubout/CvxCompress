@@ -80,6 +80,7 @@ public:
 
 	bool Use_Builtin_Source_Wavelet(const char* wavetype, double max_freq, const char* parmfile_path, int line_num);
 	bool Read_Source_Wavelet_From_File(const char* wavelet_path, double max_freq, int filter_order);
+	bool Read_Source_Wavelet_From_File(const char* wavelet_path);
 
 	void Prepare_Source_Wavelet(double dt, bool debug_output_source_wavelet);
 

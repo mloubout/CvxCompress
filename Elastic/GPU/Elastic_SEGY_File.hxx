@@ -39,6 +39,10 @@ public:
 	double Get_Record_Length() {return _reclen;}
 
         int Get_Selection_Flags();
+	bool Do_P() {return _do_P;}
+	bool Do_Vx() {return _do_Vx;}
+	bool Do_Vy() {return _do_Vy;}
+	bool Do_Vz() {return _do_Vz;}
 
 	const char* Get_Full_Path(char* buf, int flag);
 

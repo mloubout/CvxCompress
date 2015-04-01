@@ -25,6 +25,17 @@
 //
 
 __device__ 
+void cuUnpack_Density(
+	unsigned int Word3,
+	float Density_min,
+	float Density_range,
+	float* Density
+	)
+{
+	*Density = 1000.0f * (Density_min + (float)((Word3 >> 16) & 255) * Density_range);
+}
+
+__device__ 
 void cuUnpack_Q_Density(
 	unsigned int Word3,
 	float Q_min,
@@ -37,6 +48,26 @@ void cuUnpack_Q_Density(
 {
 	*Q = Q_min + (float)((Word3 >> 24) & 255) * Q_range;
 	*Density = 1000.0f * (Density_min + (float)((Word3 >> 16) & 255) * Density_range);
+}
+
+__device__ 
+void cuUnpack_And_Compute_Bulk_Modulus(
+	unsigned int Word0,
+	unsigned int Word3,
+	float Vp_min,
+        float Vp_range,
+        float Vs_min,
+        float Vs_range,
+        float Density_min,
+        float Density_range,
+        float* Density,
+	float* Bulk_Modulus
+	)
+{
+	*Density = 1000.0f * (Density_min + (float)((Word3 >> 16) & 255) * Density_range);
+	float Vp = Vp_min + (float)((Word0 >> 16) & 65535) * Vp_range;
+	float Vs = Vs_min + (float)(Word0 & 65535) * Vs_range;
+	*Bulk_Modulus = ( Vp * Vp - 1.333333333f * Vs * Vs ) * *Density;
 }
 
 __device__ 

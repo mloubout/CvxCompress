@@ -54,11 +54,19 @@ void Compute_Time_Integrated_Source_Wavelet(
 	double dt
 	)
 {
+	stf_int[0] = stf[0] * dt;
+	for (int i = 1;  i < len;  ++i) stf_int[i] = stf_int[i-1] + stf[i] * dt;
+}
+
+void Remove_DC_Component(
+	double* stf,
+	int len
+	)
+{
 	double dc = stf[0];
-	for (int i = 1;  i < len;  ++i) dc += stf[i];
-	dc /= (double)len;
-	stf_int[0] = (stf[0] - dc) * dt;
-	for (int i = 1;  i < len;  ++i) stf_int[i] = stf_int[i-1] + (stf[i] - dc) * dt;
+        for (int i = 1;  i < len;  ++i) dc += stf[i];
+        dc /= (double)len;
+	for (int i = 1;  i < len;  ++i) stf[i] = stf[i] - dc;
 }
 
 void Apply_Butterworth_Low_Pass_Filter(
@@ -99,6 +107,7 @@ void Apply_Butterworth_Low_Pass_Filter(
 	}
 	cmplx_DFT(real2,imag2,real1,imag1,filt_len);
 	for (int i = 0;  i < len;  ++i) signal_out[i] = real1[i];
+	Remove_DC_Component(signal_out,len);
 	delete [] imag2;
 	delete [] real2;
 	delete [] imag1;
