@@ -14,7 +14,7 @@ public:
 
 	static void Print_Version_Information()
 	{
-		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.03 - 03/31/15\n\n");
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.10 - 04/13/15\n\n");
 	}
 
 	bool Is_Valid() {return _Is_Valid;}
@@ -107,7 +107,7 @@ public:
 	void Write_Earth_Model_Attribute_XY_Slice(const char* path, int attr_idx, int iz);
 	void Write_Earth_Model_XY_Slice(const char* path, int iz);
 
-	// as name implies, a hack to test what happens if we manipulate Qp to mute Scholte waves
+	// a hack to test what happens if we manipulate Qp to mute Scholte waves
 	// traveling along the sea floor.
 	void Lower_Q_Seafloor();
 

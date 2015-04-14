@@ -202,29 +202,29 @@ void __cuApply_Source_Term_To_VxVyVz(
 	if (
 			(my_x >= 0 && my_x < nx) && 
 			(my_y >= 0 && my_y < ny) && 
-			(my_z > -4 && my_z < nz) 
+			(my_z >= 0 && my_z < nz) // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
 	   )
 	{
 		// ..fractional distance from grid pt to sou:
-		float dx_frac = xs - (float)(icell - 1);
-		float dy_frac = ys - (float)(jcell - 1);
-                float dz_frac = zs - (float)(kcell - 1);
+		float dx_frac = xs - (float)icell;
+		float dy_frac = ys - (float)jcell;
+                float dz_frac = zs - (float)kcell;
 
 		// (fx/vx sou needs to be shifted +0.5icell to colloc w/ pr)
-		float vx_dx_frac = xs + 0.5 - (float)(icell - 1);
+		float vx_dx_frac = xs + 0.5f - (float)icell;
 		// (fy/vy sou needs to be shifted -0.5dy to colloc w/ pr)
-		float vy_dy_frac = ys - 0.5 - (float)(jcell - 1);
+		float vy_dy_frac = ys - 0.5f - (float)jcell;
 		// (fz/vz sou need to be shifted -0.5kcell to colloc w/ pr)
-		float vz_dz_frac = zs - 0.5 - (float)(kcell - 1);
+		float vz_dz_frac = zs - 0.5f - (float)kcell;
 
 		float vx_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,vx_dx_frac,dy_frac,dz_frac);
 		float vy_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,vy_dy_frac,dz_frac);
 		float vz_fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,dy_frac,vz_dz_frac);
 
-		if (vx_fsinc != 0.0 || vy_fsinc != 0.0 || vz_fsinc != 0.0)
+		if (vx_fsinc != 0.0f || vy_fsinc != 0.0f || vz_fsinc != 0.0f)
 		{
 			// mirror source if necessary
-			my_z = my_z < 0 ? -my_z : my_z;
+			//my_z = my_z < 0 ? -my_z : my_z;
 
 			int one_wf_size_f = nx * nz;
 			int one_y_size_f = one_wf_size_f * 6;
@@ -259,6 +259,11 @@ void __cuApply_Source_Term_To_VxVyVz(
 				{
 					scale_sou = rho_ref / rho;
 				}
+
+				//if (threadIdx.x == 3 && threadIdx.y == 3)
+				//{
+				//	printf("\n*****\nmy_z= %d, thr_z=%d :: rho = %e, bmod_ref = %e, scale_sou = %e, vz_fsinc = %e\n*****\n\n",my_z,thr_z,rho,bmod_ref,scale_sou,vz_fsinc);
+				//}
 
 				cmp[idx                ] = cmp[idx                ] + vx_fsinc * dti * scale_sou * val * ampl1;
 				cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] + vy_fsinc * dti * scale_sou * val * ampl2;
@@ -299,9 +304,9 @@ void _cuApply_Source_Term_To_VxVyVz(
 	// fx/vx contribution:
 
 	// nearest grid point:
-	int icell = (int)lrintf(xs) + 1; // to left of extrap pt
-	int jcell = (int)lrintf(ys) + 1;
-	int kcell = (int)lrintf(zs) + 1; // above interp pt:
+	int icell = (int)lrintf(xs);
+	int jcell = (int)lrintf(ys);
+	int kcell = (int)lrintf(zs);
 
 	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
 	{
@@ -1108,9 +1113,15 @@ cuPropagate_Particle_Velocities_Kernel(
 
 			float factor = dti / Density;
 
-			float vx = dabc*old_vx + factor*dxtxx + factor*dytxy + factor*dztxz + factor*sx;
-			float vy = dabc*old_vy + factor*dxtxy + factor*dytyy + factor*dztyz + factor*sy;
-			float vz = dabc*old_vz + factor*dxtxz + factor*dytyz + factor*dztzz + factor*sz;
+			float vx = factor * ( sx + dxtxx + dytxy + dztxz );
+			float vy = factor * ( sy + dxtxy + dytyy + dztyz );
+			float vz = factor * ( sz + dxtxz + dytyz + dztzz );
+			vx = vx + dabc * old_vx;
+			vy = vy + dabc * old_vy;
+			vz = vz + dabc * old_vz;
+			//float vx = dabc*old_vx + factor*dxtxx + factor*dytxy + factor*dztxz + factor*sx;
+			//float vy = dabc*old_vy + factor*dxtxy + factor*dytyy + factor*dztyz + factor*sy;
+			//float vz = dabc*old_vz + factor*dxtxz + factor*dytyz + factor*dztzz + factor*sz;
 
 			//if (timestep == 1 && vx != 0.0f) printf("TIMESTEP 1 :: VX ( %d,%d,%d ) = %e\n",x,y,z,vx);
 			//if (timestep == 1 && vy != 0.0f) printf("TIMESTEP 1 :: VY ( %d,%d,%d ) = %e\n",x,y,z,vy);

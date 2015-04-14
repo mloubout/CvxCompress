@@ -386,8 +386,8 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 {
 	if (interpolation_method == Point)
 	{
-		int ix = (int)truncf(recx);
-		int iy = (int)truncf(recy);
+		int ix = (int)lrintf(recx);
+		int iy = (int)lrintf(recy);
 		return _Range_Intersects(x0,x1,ix,ix) && _Range_Intersects(y0,y1,iy,iy);
 	}
 	else if (interpolation_method == Trilinear)
@@ -398,8 +398,8 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 	}
 	else if (interpolation_method == Sinc)
 	{
-		int ix = (int)lrintf(recx) + 1;
-		int iy = (int)lrintf(recy) + 1;
+		int ix = (int)lrintf(recx);
+		int iy = (int)lrintf(recy);
 		return _Range_Intersects(x0,x1,ix-3,ix+4) && _Range_Intersects(y0,y1,iy-3,iy+4);
 	}
 	else
@@ -898,7 +898,6 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *iline = new int[count];
 				int *xline = new int[count];
 				int *trcens = new int[count];
-				float* scalefac = new float[count];
 				float* rec_model_water_depth = new float[count];
 				float* rec_model_water_Vp = new float[count];
 				float* rec_bath_z = new float[count];
@@ -923,27 +922,7 @@ void Elastic_Shot::Write_SEGY_Files()
 						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
 						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
 						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
-						if (false) //(_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
-						{
-							scalefac[ii] = Compute_Reciprocal_Scale_Factor(
-									flag,_x,_y,_z,
-									_h_traces_hdr[iTrc]->Get_Location_X(),
-									_h_traces_hdr[iTrc]->Get_Location_Y(),
-									_h_traces_hdr[iTrc]->Get_Location_Z()
-									);
-						}
-						else
-						{
-							scalefac[ii] = 1.0f;
-						}
 						++ii;
-					}
-				}
-				if (_segy_files[iFile]->Get_Gather_Type() == Common_Receiver_Gather)
-				{
-					for (int iTrc = 0;  iTrc < count;  ++iTrc)
-					{
-						for (int i = 0;  i < nsamp;  ++i) traces[iTrc][i] *= scalefac[iTrc];
 					}
 				}
 				_segy_files[iFile]->Write_SEGY_File(
@@ -954,7 +933,6 @@ void Elastic_Shot::Write_SEGY_Files()
 				delete [] rec_bath_z;
 				delete [] rec_model_water_Vp;
 				delete [] rec_model_water_depth;
-				delete [] scalefac;
 				delete [] traces;
 				delete [] recx;
 				delete [] recy;

@@ -1889,7 +1889,7 @@ void Elastic_Modeling_Job::Lower_Q_Seafloor()
 				// set Q at sea floor plus two cells (vertically) to 10.
 				// note that earth model is compressed at this point, so there is additional code that ensures min(Q) <= 10 in parser
 				// if Q attenuation along sea floor is enabled.
-				for (int my_iz = iz;  my_iz < iz+3;  ++my_iz)
+				for (int my_iz = iz+1;  my_iz < iz+2;  ++my_iz)
 				{
 					float Q_val = 1.0f / Get_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz);
 					if (Q_val > Q_min_val) Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,1.0f/Q_min_val,error);

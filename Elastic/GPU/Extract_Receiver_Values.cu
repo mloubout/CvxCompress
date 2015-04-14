@@ -177,6 +177,8 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 
 			if (interpolation_method == Point)
 			{
+				// To-do: collocate point receivers with linear/sinc
+
 				// snap to nearest cell
 				int ix = (int)lrintf(recx);
 				int iy = (int)lrintf(recy);
@@ -267,14 +269,14 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 			else if (interpolation_method == Sinc)
 			{
 				// nearest grid point:
-				int icell = (int)lrintf(recx) + 1; // to left of extrap pt
-				int jcell = (int)lrintf(recy) + 1;
-				int kcell = (int)lrintf(recz) + 1; // above interp pt:
+				int icell = (int)lrintf(recx);
+				int jcell = (int)lrintf(recy);
+				int kcell = (int)lrintf(recz);
 
 				// ..fractional distance from grid pt to sou:
-				float dx_frac = recx - (float)(icell - 1);
-				float dy_frac = recy - (float)(jcell - 1);
-				float dz_frac = recz - (float)(kcell - 1);
+				float dx_frac = recx - (float)icell;
+				float dy_frac = recy - (float)jcell;
+				float dz_frac = recz - (float)kcell;
 
 				int ix_min = icell - 3;
 				int ix_max = icell + 4;
@@ -302,7 +304,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 				if (recflags & 2)
 				{
 					float sinc_Vx[8];
-					float vx_dx_frac = recx + 0.5f - (float)(icell - 1);
+					float vx_dx_frac = recx + 0.5f - (float)icell;
 					for (int ix = ix_min;  ix <= ix_max;  ++ix) sinc_Vx[ix-icell+3] = cuGen_Single_Sinc_Weight(ix-icell+3,vx_dx_frac);
 					for (int iz = iz_min;  iz <= iz_max;  ++iz)
 					{
@@ -322,7 +324,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 				if (recflags & 4)
 				{
 					float sinc_Vy[8];
-					float vy_dy_frac = recy - 0.5f - (float)(jcell - 1);
+					float vy_dy_frac = recy - 0.5f - (float)jcell;
 					for (int iy = iy_min;  iy <= iy_max;  ++iy) sinc_Vy[iy-jcell+3] = cuGen_Single_Sinc_Weight(iy-jcell+3,vy_dy_frac);
 					for (int iz = iz_min;  iz <= iz_max;  ++iz)
 					{
@@ -342,7 +344,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 				if (recflags & 8)
 				{
 					float sinc_Vz[8];
-					float vz_dz_frac = recz - 0.5f - (float)(kcell - 1);
+					float vz_dz_frac = recz - 0.5f - (float)kcell;
 					for (int iz = iz_min;  iz <= iz_max;  ++iz) sinc_Vz[iz-kcell+3] = cuGen_Single_Sinc_Weight(iz-kcell+3,vz_dz_frac);
 					for (int iz = iz_min;  iz <= iz_max;  ++iz)
 					{
@@ -374,7 +376,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 					if (recflags & 2)
 					{
 						float sinc_Vx[8];
-						float vx_dx_frac = recx + 0.5f - (float)(icell - 1);
+						float vx_dx_frac = recx + 0.5f - (float)icell;
 						for (int ix = ix_min;  ix <= ix_max;  ++ix) sinc_Vx[ix-icell+3] = cuGen_Single_Sinc_Weight(ix-icell+3,vx_dx_frac);
 						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
 						{
@@ -393,7 +395,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 					if (recflags & 4)
 					{
 						float sinc_Vy[8];
-						float vy_dy_frac = recy - 0.5f - (float)(jcell - 1);
+						float vy_dy_frac = recy - 0.5f - (float)jcell;
 						for (int iy = iy_min;  iy <= iy_max;  ++iy) sinc_Vy[iy-jcell+3] = cuGen_Single_Sinc_Weight(iy-jcell+3,vy_dy_frac);
 						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
 						{
@@ -412,7 +414,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 					if (recflags & 8)
 					{
 						float sinc_Vz_ghost[8];
-						float vz_dz_frac = recz - 0.5f - (float)(kcell - 1);
+						float vz_dz_frac = recz - 0.5f - (float)kcell;
 						float vz_dz_frac_ghost = 1.0f - vz_dz_frac;
 						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz) sinc_Vz_ghost[iz-kcell_ghost+3] = cuGen_Single_Sinc_Weight(iz-kcell_ghost+3,vz_dz_frac_ghost);
 						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
@@ -540,14 +542,14 @@ void cuExtract_Receiver_Pressure_Values(
 			else if (interpolation_method == Sinc)
 			{
 				// nearest grid point:
-				int icell = (int)lrintf(recx) + 1; // to left of extrap pt
-				int jcell = (int)lrintf(recy) + 1;
-				int kcell = (int)lrintf(recz) + 1; // above interp pt:
+				int icell = (int)lrintf(recx);
+				int jcell = (int)lrintf(recy);
+				int kcell = (int)lrintf(recz);
 
 				// ..fractional distance from grid pt to sou:
-				float dx_frac = recx - (float)(icell - 1);
-				float dy_frac = recy - (float)(jcell - 1);
-				float dz_frac = recz - (float)(kcell - 1);
+				float dx_frac = recx - (float)icell;
+				float dy_frac = recy - (float)jcell;
+				float dz_frac = recz - (float)kcell;
 
 				int ix_min = icell - 3;
 				int ix_max = icell + 4;

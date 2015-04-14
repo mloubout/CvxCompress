@@ -1707,21 +1707,21 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 	int vol_nz = _job->Get_Propagation_NZ() / 8;
 	if (_best_num_z <= 0)
 	{
-	_num_z = new int[vol_nz];
-	_num_z_throughput = new float[vol_nz];
-	_num_num_z = 0;
-	for (int num_z = 2;  num_z < vol_nz;  ++num_z)
-	{
-		int z_per_block = (vol_nz + num_z - 1) / num_z;
-		int z_remainder = vol_nz - (num_z-1) * z_per_block;
-		if (z_remainder > 0 && z_per_block >= 4)
+		_num_z = new int[vol_nz];
+		_num_z_throughput = new float[vol_nz];
+		_num_num_z = 0;
+		for (int num_z = 2;  num_z < vol_nz;  ++num_z)
 		{
-			_num_z[_num_num_z] = num_z;
-			_num_z_throughput[_num_num_z] = 0.0f;
-			if (!is_profiling_run) printf("num_z = %d -> z_per_block = %d\n",_num_z[_num_num_z],z_per_block);
-			++_num_num_z;
+			int z_per_block = (vol_nz + num_z - 1) / num_z;
+			int z_remainder = vol_nz - (num_z-1) * z_per_block;
+			if (z_remainder > 0 && z_per_block >= 4)
+			{
+				_num_z[_num_num_z] = num_z;
+				_num_z_throughput[_num_num_z] = 0.0f;
+				if (!is_profiling_run) printf("num_z = %d -> z_per_block = %d\n",_num_z[_num_num_z],z_per_block);
+				++_num_num_z;
+			}
 		}
-	}
 	}
 	else
 	{
@@ -1734,7 +1734,7 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 	_curr_num_z = 0;
 
 	const double courant_safe = 0.97;
- 
+
 	// determine internal timestepping
 	// ..Courant# for O(2) time leap frog SG FD
 	double courant = 1.0 / (sqrt(3.0) * (Elastic_Buffer::_C0 - Elastic_Buffer::_C1 + Elastic_Buffer::_C2 - Elastic_Buffer::_C3));

@@ -40,13 +40,13 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 	if (
 			(my_x >= 0 && my_x < nx) &&
 			(my_y >= 0 && my_y < ny) &&
-			(my_z > -4 && my_z < nz)
+			(my_z >= 0 && my_z < nz)  // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
 	   )
 	{
 		// ..fractional distance from grid pt to sou:
-		float dx_frac = (float)xs - (float)(icell - 1);
-		float dy_frac = (float)ys - (float)(jcell - 1);
-                float dz_frac = (float)zs - (float)(kcell - 1);
+		float dx_frac = xs - (float)icell;
+		float dy_frac = ys - (float)jcell;
+                float dz_frac = zs - (float)kcell;
 
                 float fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,dy_frac,dz_frac);
 		/*
@@ -57,10 +57,10 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 		if (timestep == 3) printf("TIMESTEP %d :: ys ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,ys);
 		if (timestep == 3) printf("TIMESTEP %d :: zs ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,zs);
 		*/
-                if (fsinc != 0.0)
+                if (fsinc != 0.0f)
                 {
 			// mirror source if necessary
-			my_z = my_z < 0 ? -my_z : my_z;
+			//my_z = my_z < 0 ? -my_z : my_z;
 		
 			// TMJ 05/06/14
 			// Mirroring introduces a potential race condition, two threads will update same cell
@@ -80,7 +80,10 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 			cuUnpack_And_Compute_Bulk_Modulus(em_word0, em_word3, Vp_min, Vp_range, Vs_min, Vs_range, Density_min, Density_range, &rho, &bmod);
 			float scale_sou = bmod / bmod_ref;
 
-			//printf("\n*****\nmy_x=%d, my_y=%d, my_z=%d :: rho = %e, bmod = %e, scale_sou = %e\n*****\n\n",my_x,my_y,my_z,rho,bmod,scale_sou);
+			//if (threadIdx.x == 3 && threadIdx.y == 3)
+			//{
+			//	printf("\n*****\nmy_z=%d :: rho = %e, bmod = %e, scale_sou = %e, fsinc = %e\n*****\n\n",my_z,rho,bmod,scale_sou,fsinc);
+			//}
 
 			cmp[idx                ] = cmp[idx                ] - fsinc * scale_sou * dti * val * ampl1;
 			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
@@ -118,9 +121,9 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
         )
 {
         // nearest grid point:
-        int icell = (int)lrintf(xs) + 1; // to left of extrap pt
-        int jcell = (int)lrintf(ys) + 1;
-        int kcell = (int)lrintf(zs) + 1; // above interp pt:
+        int icell = (int)lrintf(xs);
+        int jcell = (int)lrintf(ys);
+        int kcell = (int)lrintf(zs);
 
 	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
 	{
@@ -718,9 +721,9 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 				float dum1 = (c13_ * c13_) / c33;
 				float dum2 = c13_ - dum1;
 				dum1 = c11 - dum1;
-				txx = old_txx + dti * (dum1 * dxVx + dum2 * dyVy);
-				tyy = old_tyy + dti * (dum2 * dxVx + dum1 * dyVy);
-				txy = 0.0f;
+				txx = old_txx + 2.0f * dti * (dum1 * dxVx + dum2 * dyVy);
+				tyy = old_tyy + 2.0f * dti * (dum2 * dxVx + dum1 * dyVy);
+				// txy = 0.0f;  04/08/15 This was a bug, according to Kurt Nihei
 				tzz = 0.0f;
 			}
 
