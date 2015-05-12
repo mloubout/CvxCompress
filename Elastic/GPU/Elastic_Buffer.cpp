@@ -626,7 +626,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		bool common_receiver_gather = shot->Get_SEGY_File_by_Index(0)->Get_Gather_Type() == Common_Receiver_Gather ? true : false;
 		bool is_p_reciprocity = common_receiver_gather && (shot->Get_SEGY_File_by_Index(0)->Do_P()) ? true : false;
 		int ixsou_ref = (int)lrintf(shot->Get_Propagation_Source_X()) + 1;
-		int iysou_ref = (int)lrintf(shot->Get_Propagation_Source_X()) + 1;
+		int iysou_ref = (int)lrintf(shot->Get_Propagation_Source_Y()) + 1;
 		int izsou_ref = (int)lrintf(common_receiver_gather ? 1.0f : shot->Get_Propagation_Source_Z()) + 1;
 		float Vp = job->Get_Earth_Model_Attribute(Attr_Idx_Vp, ixsou_ref, iysou_ref, izsou_ref);
 		float Vs = job->Get_Earth_Model_Attribute(Attr_Idx_Vs, ixsou_ref, iysou_ref, izsou_ref);
