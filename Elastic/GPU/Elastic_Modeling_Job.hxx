@@ -14,7 +14,7 @@ public:
 
 	static void Print_Version_Information()
 	{
-		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.11 - 05/12/15\n\n");
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.15 - 05/14/15\n\n");
 	}
 
 	bool Is_Valid() {return _Is_Valid;}

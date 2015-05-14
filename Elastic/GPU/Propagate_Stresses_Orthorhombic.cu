@@ -30,7 +30,9 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 	float Vs_range,
 	float Density_min,
 	float Density_range,
-	float bmod_ref
+	float bmod_ref,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z
 	)
 {
 	int my_x = icell + threadIdx.x - 3 - x0;
@@ -40,7 +42,7 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 	if (
 			(my_x >= 0 && my_x < nx) &&
 			(my_y >= 0 && my_y < ny) &&
-			(my_z >= 0 && my_z < nz)  // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
+			(my_z >= ghost_sea_surface_z && my_z < nz)  // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
 	   )
 	{
 		// ..fractional distance from grid pt to sou:
@@ -68,7 +70,6 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 
                         int one_wf_size_f = nx * nz;
                         int one_y_size_f = one_wf_size_f * 6;
-                        int idx = my_x + my_y * one_y_size_f + my_z * 4;
 
 			int em_one_word_size_f = one_wf_size_f;
 			int em_one_y_size_f = em_one_word_size_f * 4;
@@ -85,11 +86,29 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 			//	printf("\n*****\nmy_z=%d :: rho = %e, bmod = %e, scale_sou = %e, fsinc = %e\n*****\n\n",my_z,rho,bmod,scale_sou,fsinc);
 			//}
 
+                        int idx = my_x + my_y * one_y_size_f + my_z * 4;
 			cmp[idx                ] = cmp[idx                ] - fsinc * scale_sou * dti * val * ampl1;
 			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
 			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
 
 			//if (timestep == 1) printf("TIMESTEP 1 :: FSINC ( %d, %d, %d ) = %e\n",my_x+x0,my_y+y0,my_z,fsinc);
+
+			if (source_ghost_enabled)
+			{
+				int my_z_ghost = 2 * ghost_sea_surface_z - my_z;
+				int emIdx_ghost = my_x + my_y * em_one_y_size_f + my_z_ghost * 4;
+				int idx_ghost = my_x + my_y * one_y_size_f + my_z_ghost * 4;
+
+				unsigned int em_word0_ghost = em[emIdx_ghost];
+				unsigned int em_word3_ghost = em[emIdx_ghost + 3*em_one_word_size_f];
+				float rho_ghost, bmod_ghost;
+				cuUnpack_And_Compute_Bulk_Modulus(em_word0_ghost, em_word3_ghost, Vp_min, Vp_range, Vs_min, Vs_range, Density_min, Density_range, &rho_ghost, &bmod_ghost);
+				float scale_sou_ghost = bmod_ghost / bmod_ref;
+
+				cmp[idx_ghost                ] = cmp[idx_ghost                ] + fsinc * scale_sou_ghost * dti * val * ampl1;
+				cmp[idx_ghost+  one_wf_size_f] = cmp[idx_ghost+  one_wf_size_f] + fsinc * scale_sou_ghost * dti * val * ampl1;
+				cmp[idx_ghost+2*one_wf_size_f] = cmp[idx_ghost+2*one_wf_size_f] + fsinc * scale_sou_ghost * dti * val * ampl1;
+			}
                 }
         }
 }
@@ -117,7 +136,9 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
 	float Vs_range,
 	float Density_min,
 	float Density_range,
-	float bmod_ref
+	float bmod_ref,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z
         )
 {
         // nearest grid point:
@@ -127,7 +148,7 @@ void _cuApply_Source_Term_To_TxxTyyTzz(
 
 	for (int thr_z = 0;  thr_z < 8;  ++thr_z)
 	{
-        	__cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
+        	__cuApply_Source_Term_To_TxxTyyTzz(thr_z,timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,icell,jcell,kcell,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref,source_ghost_enabled,ghost_sea_surface_z);
 	}
 }
 
@@ -148,7 +169,7 @@ void cuApply_Source_Term_To_TxxTyyTzz(
         float zs,
         float val,
 	bool source_ghost_enabled,
-	float ghost_sea_surface,
+	int ghost_sea_surface_z,
 	unsigned int* em,
 	float Vp_min,
 	float Vp_range,
@@ -159,11 +180,7 @@ void cuApply_Source_Term_To_TxxTyyTzz(
 	float bmod_ref
         )
 {
-	_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
-	if (source_ghost_enabled)
-	{
-		_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,2.0f*ghost_sea_surface-zs,-val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref);
-	}
+	_cuApply_Source_Term_To_TxxTyyTzz(timestep,cmp,x0,y0,z0,nx,ny,nz,dti,ampl1,xs,ys,zs,val,em,Vp_min,Vp_range,Vs_min,Vs_range,Density_min,Density_range,bmod_ref,source_ghost_enabled,ghost_sea_surface_z);
 }
 
 __device__ 
@@ -863,6 +880,8 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float bmod_ref
 	)
 {
+	if (!source_ghost_enabled) ghost_sea_surface_z = 0;
+
 	//printf("inject_source=%s, is_pressure=%s, ampl1=%e, svaw_sample=%e, xsou=%f, ysou=%f, zsou=%f\n",inject_source?"Y":"N",is_pressure?"Y":"N",ampl1,svaw_sample,xsou,ysou,zsou);
 
 	int one_wf_size = one_y_size / 6;
@@ -937,7 +956,7 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 			dim3 blockShape2(8,8,1);
 			dim3 gridShape2(1,1,1);
 			cuApply_Source_Term_To_TxxTyyTzz<<<gridShape2,blockShape2,0,stream>>>(
-				timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface,
+				timestep,cmp,x0,y0,0,nx,ny,nz,dti,ampl1,xsou,ysou,zsou,svaw_sample,source_ghost_enabled,ghost_sea_surface_z,
 				em,Vp_min,Vp_range/65535.0f,Vs_min,Vs_range/65535.0f,Density_min,Density_range/255.0f,bmod_ref);
 		}
 	}

@@ -290,7 +290,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 
 				int iz_min = kcell - 3;
 				int iz_max = kcell + 4;
-				if (iz_min < 0) iz_min = 0;
+				if (iz_min < ghost_sea_surface_z) iz_min = ghost_sea_surface_z;
 				if (iz_max >= nz) iz_max = nz - 1;
 
 				float sinc_Dx[8];
@@ -315,6 +315,12 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
 								float fsinc = sinc_Vx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 								acc_Vx += fsinc * cmp[idx];
+								if (rcv_ghost)
+								{
+									int iz_ghost = 2 * ghost_sea_surface_z - iz;
+									int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+									acc_Vx -= fsinc * cmp[idx_ghost];
+								}
 							}
 						}
 					}
@@ -335,6 +341,12 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
 								float fsinc = sinc_Dx[ix-icell+3] * sinc_Vy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 								acc_Vy += fsinc * cmp[idx+one_wf_size_f];
+								if (rcv_ghost)
+								{
+									int iz_ghost = 2 * ghost_sea_surface_z - iz;
+                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+                                                                        acc_Vy -= fsinc * cmp[idx_ghost+idx+one_wf_size_f];
+								}
 							}
 						}
 					}
@@ -355,77 +367,12 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
 								float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Vz[iz-kcell+3];
 								acc_Vz += fsinc * cmp[idx+2*one_wf_size_f];
-							}
-						}
-					}
-				}
-
-				if (rcv_ghost)
-				{
-					int kcell_ghost = 2 * ghost_sea_surface_z - kcell - 1;
-					float dz_frac_ghost = 1.0f - dz_frac;
-
-					int iz_min_ghost = kcell_ghost - 3;
-					int iz_max_ghost = kcell_ghost + 4;
-					if (iz_min_ghost < 0) iz_min_ghost = 0;
-					if (iz_max_ghost >= nz) iz_max_ghost = nz - 1;
-
-					float sinc_Dz_ghost[8];
-					for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz) sinc_Dz_ghost[iz-kcell_ghost+3] = cuGen_Single_Sinc_Weight(iz-kcell_ghost+3,dz_frac_ghost);
-					
-					if (recflags & 2)
-					{
-						float sinc_Vx[8];
-						float vx_dx_frac = recx + 0.5f - (float)icell;
-						for (int ix = ix_min;  ix <= ix_max;  ++ix) sinc_Vx[ix-icell+3] = cuGen_Single_Sinc_Weight(ix-icell+3,vx_dx_frac);
-						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
-						{
-							for (int iy = iy_min;  iy <= iy_max;  ++iy)
-							{
-								for (int ix = ix_min;  ix <= ix_max;  ++ix)
+								if (rcv_ghost)
 								{
-									int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
-									float fsinc = sinc_Vx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz_ghost[iz-kcell_ghost+3];
-									acc_Vx -= fsinc * cmp[idx];
-								}
-							}
-						}
-					}
-
-					if (recflags & 4)
-					{
-						float sinc_Vy[8];
-						float vy_dy_frac = recy - 0.5f - (float)jcell;
-						for (int iy = iy_min;  iy <= iy_max;  ++iy) sinc_Vy[iy-jcell+3] = cuGen_Single_Sinc_Weight(iy-jcell+3,vy_dy_frac);
-						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
-						{
-							for (int iy = iy_min;  iy <= iy_max;  ++iy)
-							{
-								for (int ix = ix_min;  ix <= ix_max;  ++ix)
-								{
-									int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
-									float fsinc = sinc_Dx[ix-icell+3] * sinc_Vy[iy-jcell+3] * sinc_Dz[iz-kcell_ghost+3];
-									acc_Vy -= fsinc * cmp[idx+one_wf_size_f];
-								}
-							}
-						}
-					}
-
-					if (recflags & 8)
-					{
-						float sinc_Vz_ghost[8];
-						float vz_dz_frac = recz - 0.5f - (float)kcell;
-						float vz_dz_frac_ghost = 1.0f - vz_dz_frac;
-						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz) sinc_Vz_ghost[iz-kcell_ghost+3] = cuGen_Single_Sinc_Weight(iz-kcell_ghost+3,vz_dz_frac_ghost);
-						for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
-						{
-							for (int iy = iy_min;  iy <= iy_max;  ++iy)
-							{
-								for (int ix = ix_min;  ix <= ix_max;  ++ix)
-								{
-									int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
-									float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Vz_ghost[iz-kcell_ghost+3];
-									acc_Vz -= fsinc * cmp[idx+2*one_wf_size_f];
+									// -1 because Vz is +0.5dz off
+									int iz_ghost = 2 * ghost_sea_surface_z - iz - 1;
+                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+                                                                        acc_Vz -= fsinc * cmp[idx_ghost+idx+2*one_wf_size_f];
 								}
 							}
 						}
@@ -563,7 +510,7 @@ void cuExtract_Receiver_Pressure_Values(
 
 				int iz_min = kcell - 3;
 				int iz_max = kcell + 4;
-				if (iz_min < 0) iz_min = 0;
+				if (iz_min < ghost_sea_surface_z) iz_min = ghost_sea_surface_z;
 				if (iz_max >= nz) iz_max = nz - 1;
 
 				float sinc_Dx[8];
@@ -585,31 +532,11 @@ void cuExtract_Receiver_Pressure_Values(
 							float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 							acc += fsinc * (cmp[idx] + cmp[idx+one_wf_size_f] + cmp[idx+2*one_wf_size_f]);
 							//printf("rec=[%f,%f,%f] = %f, x0=%d, y0=%d, ix=%d, iy=%d, iz=%d, fsinc_x=%f, fsinc_y=%f, fsinc_z=%f, txx=%f, tyy=%f, tzz=%f\n",recx,recy,recz,acc,x0,y0,ix,iy,iz,sinc_Dx[ix-icell+3],sinc_Dy[iy-jcell+3],sinc_Dz[iz-kcell+3],cmp[idx],cmp[idx+one_wf_size_f],cmp[idx+2*one_wf_size_f]);
-						}
-					}
-				}
-				if (rcv_ghost)
-				{
-					int kcell_ghost = 2 * ghost_sea_surface_z - kcell - 1;
-					float dz_frac_ghost = 1.0f - dz_frac;
-
-					int iz_min_ghost = kcell_ghost - 3;
-					int iz_max_ghost = kcell_ghost + 4;
-					if (iz_min_ghost < 0) iz_min_ghost = 0;
-					if (iz_max_ghost >= nz) iz_max_ghost = nz - 1;
-
-					float sinc_Dz_ghost[8];
-					for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz) sinc_Dz_ghost[iz-kcell_ghost+3] = cuGen_Single_Sinc_Weight(iz-kcell_ghost+3,dz_frac_ghost);
-
-					for (int iz = iz_min_ghost;  iz <= iz_max_ghost;  ++iz)
-					{
-						for (int iy = iy_min;  iy <= iy_max;  ++iy)
-						{
-							for (int ix = ix_min;  ix <= ix_max;  ++ix)
+							if (rcv_ghost)
 							{
-								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
-								float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz_ghost[iz-kcell_ghost+3];
-								acc -= fsinc * (cmp[idx] + cmp[idx+one_wf_size_f] + cmp[idx+2*one_wf_size_f]);
+								int iz_ghost = 2 * ghost_sea_surface_z - iz;
+								int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+								acc -= fsinc * (cmp[idx_ghost] + cmp[idx_ghost+one_wf_size_f] + cmp[idx_ghost+2*one_wf_size_f]);
 							}
 						}
 					}

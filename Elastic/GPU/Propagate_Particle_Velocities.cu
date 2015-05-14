@@ -192,7 +192,9 @@ void __cuApply_Source_Term_To_VxVyVz(
 	int kcell,
 	bool is_p_reciprocity,
 	float bmod_ref,
-	float rho_ref
+	float rho_ref,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z
 	)
 {
 	int my_x = icell + threadIdx.x - 3 - x0;
@@ -202,7 +204,7 @@ void __cuApply_Source_Term_To_VxVyVz(
 	if (
 			(my_x >= 0 && my_x < nx) && 
 			(my_y >= 0 && my_y < ny) && 
-			(my_z >= 0 && my_z < nz) // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
+			(my_z >= ghost_sea_surface_z && my_z < nz) // TMJ 04/08/15 Turned off mirroring, it's not in Kurt Nihei's original code
 	   )
 	{
 		// ..fractional distance from grid pt to sou:
@@ -230,6 +232,11 @@ void __cuApply_Source_Term_To_VxVyVz(
 			int one_y_size_f = one_wf_size_f * 6;
 			int idx = my_x + my_y * one_y_size_f + my_z * 4;
 
+			int my_z_ghost = 2 * ghost_sea_surface_z - my_z;
+			int idx_ghost = my_x + my_y * one_y_size_f + my_z_ghost * 4;
+			int my_z_vz_ghost = my_z_ghost - 1;
+			int idx_vz_ghost = my_x + my_y * one_y_size_f + my_z_vz_ghost * 4;
+
 			int em_one_word_size_f = one_wf_size_f;
 			int em_one_y_size_f = em_one_word_size_f * 4;
 
@@ -244,6 +251,17 @@ void __cuApply_Source_Term_To_VxVyVz(
 				cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + vz_fsinc * dti * (val * ampl3) / Density;
 
 				//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val/Density,my_x+x0,my_y+y0,my_z);
+
+				if (source_ghost_enabled)
+				{
+					int em_word3_ghost = em[my_x+my_y*em_one_y_size_f+my_z_ghost*4+3*em_one_word_size_f];
+					float Density_ghost;
+					cuUnpack_Density(em_word3_ghost,Density_min,Density_range,&Density_ghost);
+				
+					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * (val * ampl1) / Density_ghost;
+					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * (val * ampl2) / Density_ghost;
+					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] - vz_fsinc * dti * (val * ampl3) / Density_ghost;
+				}
 			}
 			else
 			{
@@ -270,6 +288,31 @@ void __cuApply_Source_Term_To_VxVyVz(
 				cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] + vz_fsinc * dti * scale_sou * val * ampl3;
 
 				//printf("Adding source term (%f * [%f-%f-%f] * %f) to Vx,Vy,Vz at %d,%d,%d\n",dti,vx_fsinc,vy_fsinc,vz_fsinc,val,my_x+x0,my_y+y0,my_z);
+
+				if (source_ghost_enabled)
+				{
+					int em_word3_ghost = em[my_x+my_y*em_one_y_size_f+my_z_ghost*4+3*em_one_word_size_f];
+					float rho_ghost;
+					cuUnpack_Density(em_word3_ghost,Density_min,Density_range,&rho_ghost);
+					float scale_sou_ghost = 1.0f;
+					if (is_p_reciprocity)
+					{
+						scale_sou_ghost = -1.0f / (rho_ghost * bmod_ref);
+					}
+					else
+					{
+						scale_sou_ghost = rho_ref / rho_ghost;
+					}
+
+					//if (threadIdx.x == 3 && threadIdx.y == 3)
+					//{
+					//      printf("\n*****\nmy_z= %d, thr_z=%d :: rho = %e, bmod_ref = %e, scale_sou = %e, vz_fsinc = %e\n*****\n\n",my_z,thr_z,rho,bmod_ref,scale_sou,vz_fsinc);
+					//}
+
+					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * scale_sou_ghost * val * ampl1;
+					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * scale_sou_ghost * val * ampl2;
+					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] - vz_fsinc * dti * scale_sou_ghost * val * ampl3;
+				}
 			}
 		}
 	}
@@ -298,7 +341,9 @@ void _cuApply_Source_Term_To_VxVyVz(
         float val,
 	bool is_p_reciprocity,
 	float bmod_ref,
-	float rho_ref
+	float rho_ref,
+	bool source_ghost_enabled,
+	int ghost_sea_surface_z
 	)
 {
 	// fx/vx contribution:
@@ -313,7 +358,7 @@ void _cuApply_Source_Term_To_VxVyVz(
 		__cuApply_Source_Term_To_VxVyVz(
 				thr_z,(unsigned int*)em,Density_min,Density_range,
 				(float*)cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,
-				xs,ys,zs,val,icell,jcell,kcell,is_p_reciprocity,bmod_ref,rho_ref);
+				xs,ys,zs,val,icell,jcell,kcell,is_p_reciprocity,bmod_ref,rho_ref,source_ghost_enabled,ghost_sea_surface_z);
 	}
 }
 
@@ -339,17 +384,13 @@ void cuApply_Source_Term_To_VxVyVz(
         float zs,
         float val,
 	bool source_ghost_enabled,
-	float ghost_sea_surface,
+	int ghost_sea_surface_z,
 	bool is_p_reciprocity,
 	float bmod_ref,
 	float rho_ref
 	)
 {
-	_cuApply_Source_Term_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref);
-	if (source_ghost_enabled)
-	{
-		_cuApply_Source_Term_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
-	}
+	_cuApply_Source_Term_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,z0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref,source_ghost_enabled,ghost_sea_surface_z);
 }
 
 __device__ 
@@ -1320,6 +1361,8 @@ Host_Propagate_Particle_Velocities_Kernel(
 	float rho_ref
 	)
 {
+	if (!source_ghost_enabled) ghost_sea_surface_z = 0;
+
 	int one_wf_size = one_y_size / 6;
 	int em_one_word_size = one_wf_size;
 	int em_one_y_size = em_one_word_size * 4;
@@ -1341,7 +1384,7 @@ Host_Propagate_Particle_Velocities_Kernel(
 
 	cuPropagate_Particle_Velocities_Kernel<<<gridShape,blockShape,0,stream>>>(
 		timestep,
-		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti,
+			x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti,
 		(unsigned int*)em,(float*)cmp,(float*)m1L,(float*)m1C,(float*)m1R,(float*)m2C,
 		C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,
 		vpvert_avtop,vpvert_avbot,nabc_sdx,nabc_sdy,nabc_top,nabc_bot,Q_min,Q_range/255.0f,fq,Density_min,Density_range/255.0f,
@@ -1386,7 +1429,7 @@ Host_Propagate_Particle_Velocities_Kernel(
 			cuApply_Source_Term_To_VxVyVz<<<gridShape2,blockShape2,0,stream>>>(
 					em,Density_min,Density_range/255.0f,cmp,x0,y0,0,nx,ny,nz,dti,is_force,
 					ampl1,ampl2,ampl3,xsou,ysou,zsou,svaw_sample,
-					source_ghost_enabled,ghost_sea_surface,
+					source_ghost_enabled,ghost_sea_surface_z,
 					is_p_reciprocity,bmod_ref,rho_ref);
 		}
 	}
