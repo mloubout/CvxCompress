@@ -1608,6 +1608,67 @@ bool Elastic_Modeling_Job::Get_NABC_BOT_Extend()
 	return _nabc_bot_extend;
 }
 
+void Elastic_Modeling_Job::Write_YZ_Slice(const char* path, int wf_type, int ix)
+{
+	FILE* fp = fopen(path, "w");
+	if (fp != 0L)
+	{
+		for (int iz = 0;  iz < _prop_nz;  ++iz)
+		{
+			for (int iy = 0;  iy < _prop_ny;  ++iy)
+			{
+				fprintf(fp,"%d %d %e\n",iy,iz,_propagator->Get_Receiver_Value(wf_type, ix, iy, iz));
+			}
+			fprintf(fp,"\n");
+		}
+		const char* wf;
+		switch (wf_type)
+		{
+		case 0: // Vx
+			wf = "Vx";
+			break;
+		case 1: // Vy
+			wf = "Vy";
+			break;
+		case 2: // Vz
+			wf = "Vz";
+			break;
+		case 3: // P
+			wf = "P";
+			break;
+		case 6: // Txx
+			wf = "Txx";
+			break;
+		case 7: // Tyy
+			wf = "Tyy";
+			break;
+		case 8: // Tzz
+			wf = "Tzz";
+			break;
+		case 9: // Txy
+			wf = "Txy";
+			break;
+		case 10: // Txz
+			wf = "Txz";
+			break;
+		case 11: // Tyz
+			wf = "Tyz";
+			break;
+		default:
+			wf = "??";
+			break;
+		}
+		printf("Y-Z Slice for %s wavefield written to %s.\n",wf,path);
+		fclose(fp);
+	}
+	else
+	{
+		char buf[4096];
+		sprintf(buf,"Write_YZ_Slice :: %s - ",path);
+		perror(buf);
+	}
+}
+
 void Elastic_Modeling_Job::Write_XZ_Slice(const char* path, int wf_type, int iy)
 {
 	FILE* fp = fopen(path, "w");
@@ -1889,7 +1950,7 @@ void Elastic_Modeling_Job::Lower_Q_Seafloor()
 				// set Q at sea floor plus two cells (vertically) to 10.
 				// note that earth model is compressed at this point, so there is additional code that ensures min(Q) <= 10 in parser
 				// if Q attenuation along sea floor is enabled.
-				for (int my_iz = iz+1;  my_iz < iz+2;  ++my_iz)
+				for (int my_iz = iz;  my_iz < iz+2;  ++my_iz)
 				{
 					float Q_val = 1.0f / Get_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz);
 					if (Q_val > Q_min_val) Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,1.0f/Q_min_val,error);
@@ -1933,6 +1994,43 @@ void Elastic_Modeling_Job::Write_Earth_Model_XZ_Slice(const char* path, int iy)
 	for (int attr_idx = 0;  attr_idx < _num_em_props;  ++attr_idx)
 	{
 		Write_Earth_Model_Attribute_XZ_Slice(path, attr_idx, iy);
+	}
+}
+
+void Elastic_Modeling_Job::Write_Earth_Model_Attribute_YZ_Slice(const char* path, int attr_idx, int ix)
+{
+	if (attr_idx >= 0 && attr_idx < _num_em_props)
+	{
+		char name[4096];
+		sprintf(name, "%s_%s", path, Get_Earth_Model_Attribute_Moniker(attr_idx));
+		FILE* fp = fopen(name, "w");
+		if (fp != 0L)
+		{
+			//printf("Write_YZ :: x=[%d,%d], z=[%d,%d]\n",0,_prop_nx-1,0,_prop_nz-1);
+			for (int iz = 0;  iz < _prop_nz;  ++iz)
+			{
+				for (int iy = 0;  iy < _prop_ny;  ++iy)
+				{
+					fprintf(fp,"%d %d %e\n",iy,iz,Get_Earth_Model_Attribute(attr_idx,ix,iy,iz));
+				}
+				fprintf(fp,"\n");
+			}
+			printf("Y-Z Slice for earth model attribute %s written to %s.\n",Get_Earth_Model_Attribute_Moniker(attr_idx),name);
+			fclose(fp);
+		}
+	}
+	else
+	{
+		printf("Elastic_Modeling_Job::Write_Earth_Model_Attribute_YZ_Slice - Error, invalid attribute index %d\n",attr_idx);
+		exit(0);
+	}
+}
+
+void Elastic_Modeling_Job::Write_Earth_Model_YZ_Slice(const char* path, int ix)
+{
+	for (int attr_idx = 0;  attr_idx < _num_em_props;  ++attr_idx)
+	{
+		Write_Earth_Model_Attribute_YZ_Slice(path, attr_idx, ix);
 	}
 }
 

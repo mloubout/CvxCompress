@@ -2182,10 +2182,21 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 				char path[4096];
 				sprintf(path, "slices/xz_slice_Y=%04d_%04d_P",iy,ts_output);
 				_job->Write_XZ_Slice(path, 3, iy);
+				sprintf(path, "slices/xz_slice_Y=%04d_%04d_Vz",iy,ts_output);
+				_job->Write_XZ_Slice(path, 2, iy);
 
 				int iz = (int)round(shot->Get_Propagation_Source_Z());
 				sprintf(path, "slices/xy_slice_Z=%04d_%04d_P",iz,ts_output);
 				_job->Write_XY_Slice(path, 3, iz);
+				sprintf(path, "slices/xy_slice_Z=%04d_%04d_Vz",iz,ts_output);
+				_job->Write_XY_Slice(path, 2, iz);
+
+				int ix = (int)round(shot->Get_Propagation_Source_X());
+				sprintf(path, "slices/yz_slice_X=%04d_%04d_P",ix,ts_output);
+				_job->Write_YZ_Slice(path, 3, ix);
+				sprintf(path, "slices/yz_slice_X=%04d_%04d_Vz",ix,ts_output);
+				_job->Write_YZ_Slice(path, 2, ix);
+
 				/*
 				   sprintf(path, "/panfs07/esdrd/tjhc/ELA_on_GPU/slices/xz_slice_Y=%04d_%04d_Vx",iy,ts);
 				   _job->Write_XZ_Slice(path, 0, iy);

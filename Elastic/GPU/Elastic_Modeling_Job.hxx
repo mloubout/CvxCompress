@@ -104,6 +104,9 @@ public:
 	void Write_Earth_Model_Attribute_XZ_Slice(const char* path, int attr_idx, int iy);
 	void Write_Earth_Model_XZ_Slice(const char* path, int iy);
 
+	void Write_Earth_Model_Attribute_YZ_Slice(const char* path, int attr_idx, int ix);
+	void Write_Earth_Model_YZ_Slice(const char* path, int ix);
+
 	void Write_Earth_Model_Attribute_XY_Slice(const char* path, int attr_idx, int iz);
 	void Write_Earth_Model_XY_Slice(const char* path, int iz);
 
@@ -114,6 +117,7 @@ public:
 	//
 	// wf_type : 0->Vx, 1->Vy, 2->Vz, 3->P
 	//
+	void Write_YZ_Slice(const char* path, int wf_type, int ix);
 	void Write_XZ_Slice(const char* path, int wf_type, int iy);
 	void Write_XY_Slice(const char* path, int wf_type, int iz);
 

@@ -52,7 +52,8 @@ int main(int argc, char* argv[])
 			{
 				Elastic_Shot* shot = job->Get_Shot_By_Index(0);
 				job->Write_Earth_Model_XZ_Slice("slices/xz_slice",(int)round(shot->Get_Propagation_Source_Y()));
-				//job->Write_Earth_Model_XY_Slice("slices/xy_slice",100);
+				job->Write_Earth_Model_YZ_Slice("slices/yz_slice",(int)round(shot->Get_Propagation_Source_X()));
+				job->Write_Earth_Model_XY_Slice("slices/xy_slice",(int)round(shot->Get_Propagation_Source_Z()));
 			}
 
 			for (int iShot = 0;  iShot < job->Get_Number_Of_Shots();  ++iShot)
