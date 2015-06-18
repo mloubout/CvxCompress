@@ -1342,7 +1342,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
         }
 
 #ifdef DEBUG_TMJ
-	FILE* fp = fopen("/panfs07/esdrd/tjhc/ELA_on_GPU/rx_locs.txt", "w");
+	FILE* fp = fopen("/cpfs/lfs01/ESDRD/tjhc/rx_locs.txt", "w");
 	if (fp != 0L)
 	{
 		fprintf(fp,"\n");
@@ -1372,7 +1372,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 					int num_rx = iloc[1+2*iFile];
 					int flags = iloc[1+2*iFile+1];
 					Elastic_Interpolation_t interpolation_method = (Elastic_Interpolation_t)((flags >> 16) & 3);
-					char* str_intrp = ToString_Elastic_Interpolation_t(interpolation_method);
+					char* str_intrp = (char*)ToString_Elastic_Interpolation_t(interpolation_method);
 					bool receiver_ghost_enabled = ((flags & (1 << 31)) != 0) ? true : false;
 					fprintf(fp,"      F I L E   %d - %d receivers, RX Ghost %s, %s interpolation, selected %s%s%s%s\n\n",iFile,num_rx,receiver_ghost_enabled?"enabled":"disabled",str_intrp,(flags&1)?"P ":"",(flags&2)?"Vx ":"",(flags&4)?"Vy ":"",(flags&8)?"Vz ":"");
 					for (int iRx = 0;  iRx < num_rx;  ++iRx)
@@ -1385,11 +1385,11 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 						{
 							if (flags & (1 << iSel))
 							{
-								char* FlagStr = "";
-								if (trcflag[trace_no_idx] & 1) FlagStr = "P";
-								else if (trcflag[trace_no_idx] & 2) FlagStr = "Vx";
-								else if (trcflag[trace_no_idx] & 4) FlagStr = "Vy";
-								else if (trcflag[trace_no_idx] & 8) FlagStr = "Vz";
+								char* FlagStr = (char*)"";
+								if (trcflag[trace_no_idx] & 1) FlagStr = (char*)"P";
+								else if (trcflag[trace_no_idx] & 2) FlagStr = (char*)"Vx";
+								else if (trcflag[trace_no_idx] & 4) FlagStr = (char*)"Vy";
+								else if (trcflag[trace_no_idx] & 8) FlagStr = (char*)"Vz";
 								fprintf(fp," %d(%s)",trcidx[trace_no_idx],FlagStr);
 								++trace_no_idx;
 							}

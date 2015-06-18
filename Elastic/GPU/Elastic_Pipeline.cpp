@@ -811,12 +811,46 @@ void Elastic_Pipeline::Free_RxLoc_Buffer(Elastic_Shot* shot)
 
 bool Elastic_Pipeline::Allocate_Device_Memory()
 {
-	bool success = false;
+	bool success = true;
 	Free_Device_Memory();
 	_Compile_Device_IDs();
+	// determine if enough device memory is available for all devices
+	if (_num_devices > 0)
+        {
+		for (int i = 0;  i < _num_devices;  ++i)
+		{
+			// calculate how much memory is needed for this device
+			int device_id = _device_IDs[i];
+			unsigned long reqd_mem = Compute_Device_Memory_Requirement(device_id);
+			int rxloc_size, rxres_size;
+			Compute_RX_Device_Memory_Requirement(device_id, rxloc_size, rxres_size);
+			unsigned long tot_reqd_mem = reqd_mem + (unsigned long)(rxloc_size + rxres_size);
+
+			// determine how much memory is available on device
+			cudaSetDevice(device_id);
+			size_t free,total;
+			cudaError_t err = cudaMemGetInfo(&free,&total);
+			if (err != cudaSuccess)
+			{
+				printf("Error! cudaMemGetInfo failed for device %d\n",device_id);
+				return false;
+			}
+			if (free < tot_reqd_mem)
+			{
+				double tot_reqd_mem_MB = (double)tot_reqd_mem / 1048576.0;
+				double dev_free_mem_MB = (double)free / 1048576.0;
+				printf("Device %d :: Need %.2fMB, but device only has %.2fMB free memory.\n",device_id,tot_reqd_mem_MB,dev_free_mem_MB);
+				success = false;
+			}
+		}
+	}
+	if (!success) return false;
+	for (int i = 0;  i < _num_buffers;  ++i)
+	{
+		_buffers[i]->Enable_Peer_Access();
+	}
 	if (_num_devices > 0)
 	{
-		success = true;
 		_d_Mem = new void*[_num_devices];
 		_d_RxLoc = new void*[_num_devices];
 		_d_RxRes = new void*[_num_devices];
@@ -863,11 +897,6 @@ bool Elastic_Pipeline::Allocate_Device_Memory()
 
 		if (success)
 		{
-			for (int i = 0;  i < _num_buffers;  ++i)
-			{
-				_buffers[i]->Enable_Peer_Access();
-			}
-
 			// determine optimal iteration sequences for the CUDA kernel launches and data transfers
 			// ..go wide before deep
 			int* idx_launch = new int[_num_devices];
