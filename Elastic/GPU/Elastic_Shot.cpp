@@ -336,8 +336,8 @@ void Elastic_Shot::_src(double dt, double fmax, int type, char* stfname, int* ts
                 }
                 fscanf(stffile,"%d %lf", &nfine, &dtfine);
                 double* stffine = (double*)malloc((nfine+1)*sizeof(double));
+		for(int i=0; i<nfine; i++) stffine[i] = 0.0;
                 for(int i=0; i<nfine; i++) fscanf(stffile,"%lf", &stffine[i]);
-                stffine[nfine] = 0.;
 	
 		if (_filter_order > 0)
 		{	
@@ -394,12 +394,14 @@ bool Elastic_Shot::_Receiver_Intersects(Elastic_Interpolation_t interpolation_me
 	{
 		int ix = (int)truncf(recx);
 		int iy = (int)truncf(recy);
-		return _Range_Intersects(x0,x1,ix,ix+1) && _Range_Intersects(y0,y1,iy,iy+1);
+		// TMJ, -1,+2 range is because Vx and Vy receivers are staggered horizontally. DON'T CHANGE TO 0,+1
+		return _Range_Intersects(x0,x1,ix-1,ix+2) && _Range_Intersects(y0,y1,iy-1,iy+2);
 	}
 	else if (interpolation_method == Sinc)
 	{
 		int ix = (int)lrintf(recx);
 		int iy = (int)lrintf(recy);
+		// TMJ, all receivers can use the same range, we adjust sinc coefficients to account for staggered grids
 		return _Range_Intersects(x0,x1,ix-3,ix+4) && _Range_Intersects(y0,y1,iy-3,iy+4);
 	}
 	else

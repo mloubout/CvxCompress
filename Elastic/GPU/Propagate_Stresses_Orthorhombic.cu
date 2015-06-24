@@ -718,19 +718,19 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 
 			float old_txx = m2C[offset];
 			float txx = c11 * dtexx + c12 * dteyy + c13 * dtezz;
-			txx = (dabc + 1.0f) * dti * txx + dabc * dabc * old_txx;
+			txx = dti * txx + dabc * old_txx;
 
 			float old_tyy = m2C[offset+one_wf_size_f];
 			float tyy = c12 * dtexx + c22 * dteyy + c23 * dtezz;
-			tyy = (dabc + 1.0f) * dti * tyy + dabc * dabc * old_tyy;
+			tyy = dti * tyy + dabc * old_tyy;
 
 			float old_tzz = m2C[offset+2*one_wf_size_f];
 			float tzz = c13 * dtexx + c23 * dteyy + c33 * dtezz;
-			tzz = (dabc + 1.0f) * dti * tzz + dabc * dabc * old_tzz;
+			tzz = dti * tzz + dabc * old_tzz;
 
 			float old_txy = m2C[offset+3*one_wf_size_f];
 			float txy = c66 * dtexy2;
-			txy = (dabc + 1.0f) * dti * txy + dabc * dabc * old_txy;
+			txy = dti * txy + dabc * old_txy;
 
 			if (z == 0)
 			{
@@ -754,12 +754,12 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 
 			float old_txz = m2C[offset+4*one_wf_size_f];
 			float txz = c55 * dtexz2;
-			txz = (dabc + 1.0f) * dti * txz + dabc * dabc * old_txz;
+			txz = dti * txz + dabc * old_txz;
 			cmp[offset+4*one_wf_size_f] = txz;
 
 			float old_tyz = m2C[offset+5*one_wf_size_f];
 			float tyz = c44 * dteyz2;
-			tyz = (dabc + 1.0f) * dti * tyz + dabc * dabc * old_tyz;
+			tyz = dti * tyz + dabc * old_tyz;
 			cmp[offset+5*one_wf_size_f] = tyz;
 
 			//if (txx != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXX (%d, %d, %d) = %e\n",x,y,z,txx);
@@ -901,7 +901,7 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 
 	cuPropagate_Stresses_Orthorhombic_Kernel<<<gridShape,blockShape,0,stream>>>(
 		timestep,
-		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti/2.0f,  // TMJ - divide dti by two for the abc
+		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti, 
 		em,cmp,m1L,m1C,m1R,m2C,
 		C0,C1,C2,C3,
 		inv_DX,inv_DY,inv_DZ,

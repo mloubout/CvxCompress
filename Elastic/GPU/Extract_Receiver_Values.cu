@@ -190,7 +190,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 					int idxg = idx - (iz - izg) * 4;
 					if (recflags & 2) res[outidx++] = cmp[idx] - cmp[idxg];
                                         if (recflags & 4) res[outidx++] = cmp[idx+one_wf_size_f] - cmp[idxg+one_wf_size_f];
-                                        if (recflags & 8) res[outidx++] = cmp[idx+2*one_wf_size_f] - cmp[idxg+2*one_wf_size_f];
+                                        if (recflags & 8) res[outidx++] = cmp[idx+2*one_wf_size_f] - cmp[idxg+2*one_wf_size_f - 4];  // TMJ, -4 is because Vz is off +0.5dz
 				}
 				else
 				{
@@ -234,7 +234,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						// Vz
 						int Vz_iz = (int)truncf(recz - 0.5f);
 						float Vz_zd = recz - (float)Vz_iz - 0.5f;
-						int Vz_izg = 2 * ghost_sea_surface_z - Vz_iz - 1;
+						int Vz_izg = 2 * ghost_sea_surface_z - Vz_iz - 2;  // TMJ, -2 is because Vz is off +0.5dz
 						float Vz_zdg = 1.0f - Vz_zd;
 						res[outidx++] = 
 							cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f)
@@ -345,7 +345,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 								{
 									int iz_ghost = 2 * ghost_sea_surface_z - iz;
                                                                         int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
-                                                                        acc_Vy -= fsinc * cmp[idx_ghost+idx+one_wf_size_f];
+                                                                        acc_Vy -= fsinc * cmp[idx_ghost+one_wf_size_f];
 								}
 							}
 						}
@@ -372,7 +372,7 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 									// -1 because Vz is +0.5dz off
 									int iz_ghost = 2 * ghost_sea_surface_z - iz - 1;
                                                                         int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
-                                                                        acc_Vz -= fsinc * cmp[idx_ghost+idx+2*one_wf_size_f];
+                                                                        acc_Vz -= fsinc * cmp[idx_ghost+2*one_wf_size_f];
 								}
 							}
 						}
