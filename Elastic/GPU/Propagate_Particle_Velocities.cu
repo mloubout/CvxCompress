@@ -260,7 +260,8 @@ void __cuApply_Source_Term_To_VxVyVz(
 				
 					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * (val * ampl1) / Density_ghost;
 					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * (val * ampl2) / Density_ghost;
-					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] - vz_fsinc * dti * (val * ampl3) / Density_ghost;
+					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] + vz_fsinc * dti * (val * ampl3) / Density_ghost;
+					// TMJ, Vz requires a POSITIVE ghost, hence + sign. Not a bug.
 				}
 			}
 			else
@@ -311,7 +312,8 @@ void __cuApply_Source_Term_To_VxVyVz(
 
 					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * scale_sou_ghost * val * ampl1;
 					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * scale_sou_ghost * val * ampl2;
-					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] - vz_fsinc * dti * scale_sou_ghost * val * ampl3;
+					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] + vz_fsinc * dti * scale_sou_ghost * val * ampl3;
+					// TMJ, Vz requires a POSITIVE ghost, hence + sign. Not a bug.
 				}
 			}
 		}
@@ -578,7 +580,8 @@ void cuApply_Point_Source_To_VxVyVz(
 	_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref);
 	if (source_ghost_enabled)
 	{
-		_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
+		// TMJ, Vz requies a POSITIVE ghost, which I make happen by flipping the sign of ampl3.
+		_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
 	}
 }
 
@@ -753,7 +756,8 @@ void cuApply_Trilinear_Source_To_VxVyVz(
 	_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref);
 	if (source_ghost_enabled)
 	{
-		_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
+		// TMJ, Vz requires a POSITIVE ghost, which I make happen by flipping the sign of ampl3 for this call.
+		_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
 	}
 }
 
