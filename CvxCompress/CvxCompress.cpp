@@ -1,5 +1,6 @@
 #include <time.h>
 #include <math.h>
+#include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -116,6 +117,16 @@ inline void memcpy_avx(void* dst, void* src, int len)
 	for (int i = n<<5;  i < len;  ++i) ((char*)dst_avx)[i] = ((char*)src_avx)[i];
 }
 
+#define GET_PRIVATE_POINTERS(work,thread_id) \
+float* priv_work = (float*)(work + thread_id * work_size_one_thread); \
+float* priv_tmp = priv_work + work_wave_transform_buffer_size; \
+int* priv_blkstore_idx = (int*)(priv_tmp + work_wave_transform_tmp_buffer_size); \
+int* priv_blkoff = (int*)(priv_blkstore_idx + 1); \
+int* priv_iBlk = (int*)(priv_blkstore_idx + work_blkoff_buffer_size); \
+unsigned int* priv_compress_buffer = (unsigned int*)(priv_iBlk + work_blkoff_buffer_size)
+
+#define ASSERT_ALIGNMENT(p) assert(((long)p & 31) == 0)
+
 float CvxCompress::Compress(
 	float scale,
 	float* vol,
@@ -130,7 +141,6 @@ float CvxCompress::Compress(
 	)
 {
 	float global_rms = Compute_Global_RMS(vol,nx,ny,nz);
-	float scalefac = 1.0f / (scale * global_rms);
 	
 	int num_threads;
 #pragma omp parallel
@@ -156,8 +166,11 @@ float CvxCompress::Compress(
 	for (int iThread = 0;  iThread < num_threads;  ++iThread)
 	{
 		int thread_id = omp_get_thread_num();
-		int* priv_work = (int*)(work + thread_id * work_size_one_thread);
-		for (int i = 0;  i < work_size_one_thread;  ++i) priv_work[i] = 0;
+		GET_PRIVATE_POINTERS(work,thread_id);
+		ASSERT_ALIGNMENT(priv_work);
+		ASSERT_ALIGNMENT(priv_tmp);
+		int* p = (int*)(work + thread_id * work_size_one_thread);
+		for (int i = 0;  i < work_size_one_thread;  ++i) p[i] = 0;
 	}
 
 	int nbx = (nx+bx-1)/bx;
@@ -172,7 +185,7 @@ float CvxCompress::Compress(
 	compressed[4] = by;
 	compressed[5] = bz;
 	
-	float mulfac = 1.0f / (global_rms * scale);
+	float mulfac = global_rms != 0.0f ? 1.0f / (global_rms * scale) : 1.0f;
 	compressed[6] = *((unsigned int*)&mulfac);
 
 	compressed[7] = 0;  // not used
@@ -197,12 +210,7 @@ float CvxCompress::Compress(
 		//printf("iBlk=%d, x0=%d, y0=%d, z0=%d\n",iBlk,x0,y0,z0);
 
 		int thread_id = omp_get_thread_num();
-		int* priv_blkstore_idx = (int*)(work + thread_id * work_size_one_thread);
-		int* priv_blkoff = (int*)(priv_blkstore_idx + 1);
-		int* priv_iBlk = (int*)(priv_blkstore_idx + work_blkoff_buffer_size);
-                unsigned int* priv_compress_buffer = (unsigned int*)(priv_iBlk + work_blkoff_buffer_size);
-                float* priv_work = (float*)(priv_compress_buffer + work_compress_buffer_size);
-                float* priv_tmp = priv_work + work_wave_transform_buffer_size;
+		GET_PRIVATE_POINTERS(work,thread_id);
 
 		priv_iBlk[*priv_blkstore_idx] = iBlk;
 		int blkoff = priv_blkoff[*priv_blkstore_idx];
@@ -213,6 +221,7 @@ float CvxCompress::Compress(
 		Wavelet_Transform_Fast_Forward((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
 		int bytepos = 0, error = 0;
 		Run_Length_Encode_Slow(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos,error);
+		//printf("Compressed block is %d bytes.\n",bytepos);
 		//Run_Length_Encode_Fast(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos,error);
 
 		++(*priv_blkstore_idx);
@@ -257,12 +266,7 @@ float CvxCompress::Compress(
 	for (int iThr = 0;  iThr < num_threads;  ++iThr)
 	{
 		int thread_id = omp_get_thread_num();
-		int* priv_blkstore_idx = (int*)(work + thread_id * work_size_one_thread);
-		int* priv_blkoff = (int*)(priv_blkstore_idx + 1);
-		int* priv_iBlk = (int*)(priv_blkstore_idx + work_blkoff_buffer_size);
-                unsigned int* priv_compress_buffer = (unsigned int*)(priv_iBlk + work_blkoff_buffer_size);
-                float* priv_work = (float*)(priv_compress_buffer + work_compress_buffer_size);
-                float* priv_tmp = priv_work + work_wave_transform_buffer_size;
+		GET_PRIVATE_POINTERS(work,thread_id);
 		if (*priv_blkstore_idx >= 1)
 		{
 			// copy compressed blocks from private area to global area.
@@ -487,7 +491,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 #endif
 	printf("*\n\n");
 
-	printf("0. Verify correctness of memcpy_avx...");  fflush(stdout);
+	printf("1. Verify correctness of memcpy_avx...");  fflush(stdout);
 	int *test_src = 0L, *test_dst = 0L, *test_dst2 = 0L;
 	posix_memalign((void**)&test_src, 64, sizeof(int)*128*1024);
 	posix_memalign((void**)&test_dst, 64, sizeof(int)*128*1024);
@@ -535,7 +539,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	free(test_src);
 
 	bool forward_passed = true;
-	printf("1. Verify correctness of forward wavelet transform...");  fflush(stdout);
+	printf("2. Verify correctness of forward wavelet transform...");  fflush(stdout);
 	if (verbose) printf("\n");
 #define MIN(a,b) (a<b?a:b)
 #define MAX(a,b) (a>b?a:b)
@@ -587,7 +591,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 			printf("[\x1B[31mFailed\x1B[0m]\n");
 	}
 
-	printf("2. Verify correctness of inverse wavelet transform...");
+	printf("3. Verify correctness of inverse wavelet transform...");
 	if (verbose) printf("\n");
 	bool inverse_passed = true;
 	for (int k = min_k;  k <= max_k;  ++k)
@@ -627,7 +631,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 			printf("[\x1B[31mFailed\x1B[0m]\n");
 	}
 
-	printf("3. Test throughput of wavelet transform (forward + inverse)...\n");
+	printf("4. Test throughput of wavelet transform (forward + inverse)...\n");
 	for (int k = min_k;  k <= max_k;  ++k)
 	{
 		int bz = 1 << k;
@@ -681,7 +685,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		}
 	}
 
-	printf("\n4. Verify correctness of Copy_To_Block method...");  fflush(stdout);
+	printf("\n5. Verify correctness of Copy_To_Block method...");  fflush(stdout);
 	bool copy_to_block_passed = true;
 	long nx = 1024;
 	long ny = 1024;
@@ -755,7 +759,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		else
 			printf("\x1B[0m[\x1B[31mFailed!\x1B[0m]\n");
 	
-	printf("5. Verify correctness of Copy_From_Block method...");  fflush(stdout);
+	printf("6. Verify correctness of Copy_From_Block method...");  fflush(stdout);
 	bool copy_from_block_passed = true;
 	if (vol == 0L || block == 0L)
 	{
@@ -821,7 +825,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		else
 			printf("\x1B[0m[\x1B[31mFailed!\x1B[0m]\n");
 
-	printf("6. Test throughput of block copy...");  fflush(stdout);
+	printf("7. Test throughput of block copy...");  fflush(stdout);
 	bool copy_round_trip_passed = true;
 	if (vol == 0L)
 	{
@@ -891,7 +895,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	}
 	printf("\n");
 
-	printf("7. Verify correctness of Global_RMS method...");  fflush(stdout);
+	printf("8. Verify correctness of Global_RMS method...");  fflush(stdout);
 	bool global_rms_passed = true;
 	if (vol == 0L || block == 0L)
 	{
@@ -925,10 +929,11 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 
 	float scale = 1e-1f;
 
-	printf("8. Test throughput of Compress() method...\n");
+	printf("9. Test throughput of Compress() method...\n");
 	int nx3,ny3,nz3;
 	float* vol3;
-	Read_Raw_Volume("pressure_at_t=7512.bin",nx3,ny3,nz3,vol3);
+	Read_Raw_Volume("/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/pressure_at_t=7512.bin",nx3,ny3,nz3,vol3);
+	//Read_Raw_Volume("/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/empty.bin",nx3,ny3,nz3,vol3);
 	unsigned long* compressed3;
 	posix_memalign((void**)&compressed3, 64, (long)sizeof(float)*(long)nx3*(long)ny3*(long)nz3);
 	for (int k = min_k;  k <= max_k;  ++k)
@@ -978,7 +983,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		}
 	}
 
-	printf("9. Test throughput of Decompress() method...\n");
+	printf("10. Test throughput of Decompress() method...\n");
 	for (int k = min_k;  k <= max_k;  ++k)
 	{
 		int bz = 1 << k;

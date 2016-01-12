@@ -28,5 +28,10 @@ void Read_Raw_Volume(const char* filename, int& nx, int& ny, int& nz, float*& vo
                 fread(vol,sizeof(float),nn,fp);
                 fclose(fp);
         }
+	else
+	{
+		printf("Error! Unable to open file %s for reading.\nAborting\n",filename);
+		exit(-1);
+	}
 }
 
