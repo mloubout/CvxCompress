@@ -14,7 +14,13 @@ public:
 	CvxCompress();
 	virtual ~CvxCompress();
 
-	/*!< Compress a 3D wavefield using a given block size */
+	/*!
+	 * Compress a 3D wavefield using a given block size
+	 * nx is fast, nz is slow
+	 * scale is a relative threshold for discarding wavelet coefficients.
+	 * recommendation for seismic wave-fields: scale=1e-2->1e-5
+	 * larger scale means higher compression (more lossy)
+	 */
 	float Compress(
 			float scale,
 			float* vol,
@@ -28,14 +34,22 @@ public:
 			long& compressed_length 
 		      );
 	/*!< Decompress a 3D wavefield that was compressed with Compress(...) method */
-	void Decompress(
-			float*& vol,
+	float* Decompress(
 			int& nx,
 			int& ny,
 			int& nz,
 			unsigned int* compressed,
 			long compressed_length 
 			);
+
+	void Decompress(
+			float* vol,
+			int nx,
+			int ny,
+			int nz,
+			unsigned int* compressed,
+			long compressed_length 
+		       );
 
 	static int Min_BX() {return  8;}  /*!< Get minimum X block size. Will always be a power of two.*/
 	static int Max_BX() {return 256;}  /*!< Get maximum X block size. Will always be a power of two.*/

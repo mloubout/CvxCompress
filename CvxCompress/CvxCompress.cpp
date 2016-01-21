@@ -300,8 +300,7 @@ float CvxCompress::Compress(
 	return (float)ratio;
 }
 
-void CvxCompress::Decompress(
-	float*& vol,
+float* CvxCompress::Decompress(
 	int& nx,
 	int& ny,
 	int& nz,
@@ -312,14 +311,34 @@ void CvxCompress::Decompress(
 	nx = ((int*)compressed)[0];
 	ny = ((int*)compressed)[1];
 	nz = ((int*)compressed)[2];
+	float* vol;
+	posix_memalign((void**)&vol, 64, (long)nx*(long)ny*(long)nz*(long)sizeof(float));
+	Decompress(vol, nx, ny, nz, compressed, compressed_length);
+	return vol;
+}
+
+void CvxCompress::Decompress(
+	float *vol,
+	int nx,
+	int ny,
+	int nz,
+	unsigned int* compressed,
+	long compressed_length 
+	)
+{
+	int nx_check = ((int*)compressed)[0];
+	int ny_check = ((int*)compressed)[1];
+	int nz_check = ((int*)compressed)[2];
+	assert(nx == nx_check);
+	assert(ny == ny_check);
+	assert(nz == nz_check);
+
 	int bx = ((int*)compressed)[3];
 	int by = ((int*)compressed)[4];
 	int bz = ((int*)compressed)[5];
 	float mulfac = ((float*)compressed)[6];
 	//printf("nx=%d, ny=%d, nz=%d, bx=%d, by=%d, bz=%d, mulfac=%e\n",nx,ny,nz,bx,by,bz,mulfac);
 
-	posix_memalign((void**)&vol, 64, (long)nx*(long)ny*(long)nz*(long)sizeof(float));
-	
 	int nbx = (nx+bx-1)/bx;
 	int nby = (ny+by-1)/by;
 	int nbz = (nz+bz-1)/bz;
@@ -1019,7 +1038,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					{
 						int nx4, ny4, nz4;
 						float* vol4;
-						Decompress(vol4,nx4,ny4,nz4,(unsigned int*)compressed3,compressed_length3);
+						vol4 = Decompress(nx4,ny4,nz4,(unsigned int*)compressed3,compressed_length3);
 						clock_gettime(CLOCK_REALTIME,&after);
 						++niter;
 						elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
@@ -1041,4 +1060,51 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	if (vol != 0L) free(vol);
 
 	return forward_passed && inverse_passed && copy_to_block_passed && copy_from_block_passed && copy_round_trip_passed && global_rms_passed;
+}
+
+extern "C"
+{
+//
+float
+cvx_compress(
+	float         scale,
+	float        *vol,
+	int           nx,
+	int           ny,
+	int           nz,
+	int           bx,
+	int           by,
+	int           bz,
+	unsigned int *compressed,
+	long         *compressed_length)
+{
+	CvxCompress c;
+	return c.Compress(scale, vol, nx, ny, nz, bx, by, bz, compressed, *compressed_length);
+}
+
+float* 
+cvx_decompress_outofplace(
+	int           *nx,
+	int           *ny,
+	int           *nz,
+	unsigned int  *compressed,
+	long           compressed_length)
+{
+	CvxCompress c;
+	return c.Decompress(*nx, *ny, *nz, compressed, compressed_length);
+}
+
+void 
+cvx_decompress_inplace(
+	float         *vol,
+	int            nx,
+	int            ny,
+	int            nz,
+	unsigned int  *compressed,
+	long           compressed_length)
+{
+	CvxCompress c;
+	c.Decompress(vol, nx, ny, nz, compressed, compressed_length);
+}
+//
 }

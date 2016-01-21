@@ -1,8 +1,8 @@
-CC=icc
-F77=ifort
-CFLAGS=-openmp -O3 -fPIC -mavx -inline-forceinline
+CC=gcc
+F77=gfortran
+CFLAGS=-fopenmp -O3 -fPIC -mavx
 FFLAGS=-O3 -fPIC -mavx
-LDFLAGS=-shared -openmp
+LDFLAGS=-shared -fopenmp
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
 
