@@ -96,27 +96,6 @@ static float Compute_Global_RMS(float* vol, int nx, int ny, int nz)
 	return (float)rms;
 }
 
-inline void memcpy_avx(void* dst, void* src, int len)
-{
-	// lead-in
-	int lead_in = (int)(32 - (((long)dst) & 31)) & 31;
-	//printf("dst = %p, lead_in = %d, len = %d\n",dst,lead_in,len);
-	for (int i = 0;  i < lead_in;  ++i) ((char*)dst)[i] = ((char*)src)[i];
-	__m256i* dst_avx = (__m256i*)(((char*)dst)+lead_in);  // aligned 32b
-	__m256i* src_avx = (__m256i*)(((char*)src)+lead_in);  // possibly misaligned
-	len -= lead_in;
-	//printf("dst_avx = %p, len = %d\n",dst_avx,len);
-	// aligned stream copy
-	int n = len>>5;
-	for (int i = 0;  i < n;  ++i)
-        {
-                __m256i v = _mm256_loadu_si256(src_avx+i);
-		_mm256_stream_si256(dst_avx+i,v);
-	}
-	// lead-out
-	for (int i = n<<5;  i < len;  ++i) ((char*)dst_avx)[i] = ((char*)src_avx)[i];
-}
-
 #define GET_PRIVATE_POINTERS(work,thread_id) \
 float* priv_work = (float*)(work + thread_id * work_size_one_thread); \
 float* priv_tmp = priv_work + work_wave_transform_buffer_size; \
@@ -236,7 +215,6 @@ float CvxCompress::Compress(
 
 		priv_iBlk[*priv_blkstore_idx] = iBlk;
 		int blkoff = priv_blkoff[*priv_blkstore_idx];
-		blkoff = blkoff < 0 ? -blkoff : blkoff;
 		unsigned long* priv_compressed = (unsigned long*)(((char*)priv_compress_buffer) + blkoff);
 
 		Copy_To_Block(vol,x0,y0,z0,nx,ny,nz,(__m128*)priv_work,bx,by,bz);
@@ -252,8 +230,6 @@ float CvxCompress::Compress(
 		{
 			priv_blkoff[(*priv_blkstore_idx)-1] |= -2147483648;
 			priv_blkoff[*priv_blkstore_idx] = blkoff+sizeof(float)*bx*by*bz;
-			// TMJ 12/14/2015 - Deliberate use of mempcy instead of memcpy_avx.
-			// We want the copy to end up in the cache, hence we don't use memcpy_avx, which does a straight-to-DRAM stream copy.
 			memcpy(priv_compressed,priv_work,sizeof(float)*bx*by*bz);
 		}
 		else
@@ -282,7 +258,7 @@ float CvxCompress::Compress(
 				glob_blkoffs[dst_iBlk] = new_glob_blkoff;
 				//printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
 			}
-			memcpy_avx(glob_dst,priv_compress_buffer,priv_blklen);
+			memcpy(glob_dst,priv_compress_buffer,priv_blklen);
 			*priv_blkstore_idx = 0;
 			priv_blkoff[0] = 0;
 		}
@@ -314,7 +290,7 @@ float CvxCompress::Compress(
                                 glob_blkoffs[dst_iBlk] = new_glob_blkoff;
                                 //printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
                         }
-                        memcpy_avx(glob_dst,priv_compress_buffer,priv_blklen);
+                        memcpy(glob_dst,priv_compress_buffer,priv_blklen);
                         *priv_blkstore_idx = 0;
                         priv_blkoff[0] = 0;
 		}
@@ -401,7 +377,7 @@ void CvxCompress::Decompress(
 		int y0 = iiy*by;
 		int z0 = iiz*bz;
 		
-		//printf("iBlk=%d, x0=%d, y0=%d, z0=%d\n",iBlk,x0,y0,z0);
+		//printf("  iBlk=%d, x0=%d, y0=%d, z0=%d\n",iBlk,x0,y0,z0);
 
 		int thread_id = omp_get_thread_num();
 		float* priv_work = work + thread_id * work_size_one_thread;
@@ -410,10 +386,11 @@ void CvxCompress::Decompress(
 		bool Is_Uncompressed = (priv_blkoff & -9223372036854775808l) ? true : false;
 		priv_blkoff = Is_Uncompressed ? (priv_blkoff & 9223372036854775807l) : priv_blkoff;
 		unsigned long* priv_compressed = (unsigned long*)(((char*)bytes) + priv_blkoff);
-		//printf("Is_Uncompressed=%s, priv_blkoff=%ld\n",Is_Uncompressed?"true":"false",priv_blkoff);
+		//printf("  Is_Uncompressed=%s, priv_blkoff=%ld\n",Is_Uncompressed?"true":"false",priv_blkoff);
 		
 		if (Is_Uncompressed)
 		{
+			//printf("  iBlk=%ld is uncompressed!\n",iBlk);
 			memcpy(priv_work,priv_compressed,sizeof(float)*bx*by*bz);
 			Wavelet_Transform_Fast_Inverse((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
 			Copy_From_Block((__m128*)priv_work,bx,by,bz,vol,x0,y0,z0,nx,ny,nz);
@@ -421,11 +398,11 @@ void CvxCompress::Decompress(
 		else
 		{
 			Run_Length_Decode_Slow(mulfac,priv_work,bx*by*bz,priv_compressed);
-			//printf("...Run_Length_Decode_Slow done\n");
+			//printf("...Run_Length_Decode_Slow done\n");  fflush(stdout);
 			Wavelet_Transform_Fast_Inverse((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
-			//printf("...Wavelet_Transform_Fast_Inverse done\n");
+			//printf("...Wavelet_Transform_Fast_Inverse done\n");  fflush(stdout);
 			Copy_From_Block((__m128*)priv_work,bx,by,bz,vol,x0,y0,z0,nx,ny,nz);
-			//printf("...Copy_From_Block done\n");
+			//printf("...Copy_From_Block done\n");  fflush(stdout);
 		}
 	}
 
@@ -537,53 +514,6 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	printf(" (AVX version).\n");
 #endif
 	printf("*\n\n");
-
-	printf("1. Verify correctness of memcpy_avx...");  fflush(stdout);
-	int *test_src = 0L, *test_dst = 0L, *test_dst2 = 0L;
-	posix_memalign((void**)&test_src, 64, sizeof(int)*128*1024);
-	posix_memalign((void**)&test_dst, 64, sizeof(int)*128*1024);
-	posix_memalign((void**)&test_dst2, 64, sizeof(int)*128*1024);
-	for (int i = 0;  i < 128*1024;  ++i) {test_src[i] = i; test_dst[i] = 0;}
-	
-	bool memcpy_avx_passed = true;
-	for (int src_start_off = 0;  memcpy_avx_passed && src_start_off < 32;  ++src_start_off)
-	{
-		for (int dst_start_off = 0;  memcpy_avx_passed && dst_start_off < 32;  ++dst_start_off)
-		{
-			for (int len_diff = 0;  len_diff < 32;  ++len_diff)
-			{
-				int len = sizeof(int)*96*1024 + len_diff;
-				memset(test_dst,0,sizeof(int)*128*1024);
-				memset(test_dst2,0,sizeof(int)*128*1024);
-				char* src = ((char*)test_src) + src_start_off;
-				char* dst = ((char*)test_dst) + dst_start_off;
-				char* ref = ((char*)test_dst2) + dst_start_off;
-				memcpy_avx(dst,src,len);
-				memcpy(ref,src,len);
-				for (int i = 0;  i < 128*1024;  ++i)
-				{
-					if (test_dst[i] != test_dst2[i])
-					{
-						memcpy_avx_passed = false;
-						printf("\n -> src_start_off=%d, dst_start_off=%d, len_diff=%d;  blocks differ at index %d!\n",src_start_off,dst_start_off,len_diff,i*4);
-						break;
-					}
-				}
-			}
-		}
-	}
-	if (memcpy_avx_passed)
-	{
-		printf("[\x1B[32mPassed!\x1B[0m]\n");
-	}
-	else
-	{
-		printf("[\x1B[31mFailed!\x1B[0m]\n");
-	}
-
-	free(test_dst2);
-	free(test_dst);
-	free(test_src);
 
 	bool forward_passed = true;
 	printf("2. Verify correctness of forward wavelet transform...");  fflush(stdout);

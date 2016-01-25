@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <math.h>
 #include <time.h>
 #include <stdio.h>
@@ -7,6 +8,7 @@
 
 // un-comment if you want debug printouts during encoding
 //#define DEBUG_ENCODE
+//#define DEBUG_DECODE
 
 // un-comment if you want individual byte mem read and writes
 //#define BYTEIO
@@ -131,6 +133,9 @@ void Run_Length_Encode_Slow(float scale, float* vals, int num, unsigned long* co
 
 int Run_Length_Decode_Slow(float scale, float* vals, int num_expected_vals, unsigned long* compressed)
 {
+#ifdef DEBUG_DECODE
+	printf("*** WTF! ***\n");
+#endif
 	int num = 0;
 	char* p = (char*)compressed;
 	float scalefac = 1.0f / scale;
@@ -140,7 +145,10 @@ int Run_Length_Decode_Slow(float scale, float* vals, int num_expected_vals, unsi
 		if (ival == RLESC1)
 		{
 			int rle = ((unsigned char*)p)[1];
-			//printf("RLESC1 rle=%d\n",rle);
+#ifdef DEBUG_DECODE
+			printf("  RLESC1 rle=%d, num=%d, num_expected_vals=%d\n",rle,num,num_expected_vals);
+			assert(num+rle <= num_expected_vals);
+#endif
 			for (int j = 0;  j < rle;  ++j) vals[num+j] = 0.0f;
 			num += rle;
 			p += 1;
@@ -148,7 +156,10 @@ int Run_Length_Decode_Slow(float scale, float* vals, int num_expected_vals, unsi
 		else if (ival == RLESC3)
 		{
 			int rle = (((unsigned char*)p)[3] << 16) | (((unsigned char*)p)[2] << 8) | ((unsigned char*)p)[1];
-			//printf("RLESC3 rle=%d\n",rle);
+#ifdef DEBUG_DECODE
+			printf("  RLESC3 rle=%d, num=%d, num_expected_vals=%d\n",rle,num,num_expected_vals);
+			assert(num+rle <= num_expected_vals);
+#endif
 			for (int j = 0;  j < rle;  ++j) vals[num+j] = 0.0f;
 			num += rle;
 			p += 3;
@@ -156,27 +167,39 @@ int Run_Length_Decode_Slow(float scale, float* vals, int num_expected_vals, unsi
 		else if (ival == VLESC2)
 		{
 			int quant = (p[2] << 8) | ((unsigned char*)p)[1];
-			//printf("VLESC2 quant=%d\n",quant);
+#ifdef DEBUG_DECODE
+			printf("  VLESC2 quant=%d, num=%d\n",quant,num);
+			assert(num < num_expected_vals);
+#endif
 			vals[num++] = (float)quant * scalefac;
 			p += 2;
 		}
 		else if (ival == VLESC3)
 		{
 			int quant = (p[3] << 16) | (((unsigned char*)p)[2] << 8) | ((unsigned char*)p)[1];
-			//printf("VLESC3 quant=%d\n",quant);
+#ifdef DEBUG_DECODE
+			printf("  VLESC3 quant=%d, num=%d\n",quant,num);
+			assert(num < num_expected_vals);
+#endif
 			vals[num++] = (float)quant * scalefac;
 			p += 3;
 		}
 		else if (ival == VLESC4)
 		{
 			unsigned int fval = (p[4] << 24) | (((unsigned char*)p)[3] << 16) | (((unsigned char*)p)[2] << 8) | ((unsigned char*)p)[1];
-			//printf("VLESC4 fval=%e\n",*((float*)&fval));
+#ifdef DEBUG_DECODE
+			printf("  VLESC4 fval=%e, num=%d\n",*((float*)&fval),num);
+			assert(num < num_expected_vals);
+#endif
 			vals[num++] = *((float*)&fval) * scalefac;
 			p += 4;
 		}
 		else
 		{
-			//printf("BYTE=%d\n",ival);
+#ifdef DEBUG_DECODE
+			printf("  BYTE=%d, num=%d\n",ival,num);
+			assert(num < num_expected_vals);
+#endif
 			vals[num++] = (float)ival * scalefac;
 		}
 	}
