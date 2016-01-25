@@ -21,8 +21,7 @@ Run_Length_Encode_Slow(
 	float* vals, 
 	int num, 
 	unsigned long* compressed, 
-	int& bytepos,
-	int& error
+	int& bytepos
 	);
 
 /*!

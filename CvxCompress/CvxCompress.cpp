@@ -127,6 +127,25 @@ unsigned int* priv_compress_buffer = (unsigned int*)(priv_iBlk + work_blkoff_buf
 
 #define ASSERT_ALIGNMENT(p) assert(((long)p & 31) == 0)
 
+int is_pow2(int val)
+{
+        if (val <= 1)
+        {
+                return 0;
+        }
+        else
+        {
+                int shift_val = val >> 1;
+                int num_shifts = 0;
+                while (shift_val != 0)
+                {
+                        ++num_shifts;
+                        shift_val = shift_val >> 1;
+                };
+                return (val == (1 << num_shifts)) ? -1 : 0;
+        }
+}
+
 float CvxCompress::Compress(
 	float scale,
 	float* vol,
@@ -140,6 +159,9 @@ float CvxCompress::Compress(
 	long& compressed_length 
 	)
 {
+	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
+	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
+	assert(bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz));
 	float global_rms = Compute_Global_RMS(vol,nx,ny,nz);
 	
 	int num_threads;
@@ -153,7 +175,7 @@ float CvxCompress::Compress(
 	int priv_blkoff_len = 262144 / (bx*by*bz);
 	priv_blkoff_len = priv_blkoff_len > 1 ? priv_blkoff_len : 1;
 	int work_blkoff_buffer_size = priv_blkoff_len + 2;
-	int work_compress_buffer_size = priv_blkoff_len*bx*by*bz;
+	int work_compress_buffer_size = priv_blkoff_len*bx*by*bz + ((bx*by*bz)>>2);
 	int work_wave_transform_buffer_size = bx*by*bz;
 	int work_wave_transform_tmp_buffer_size = max_bs*8;
 	int work_size_one_thread = 2*work_blkoff_buffer_size + work_compress_buffer_size + work_wave_transform_buffer_size + work_wave_transform_tmp_buffer_size;
@@ -220,14 +242,16 @@ float CvxCompress::Compress(
 		Copy_To_Block(vol,x0,y0,z0,nx,ny,nz,(__m128*)priv_work,bx,by,bz);
 		Wavelet_Transform_Fast_Forward((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
 		int bytepos = 0, error = 0;
-		Run_Length_Encode_Slow(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos,error);
-		//printf("Compressed block is %d bytes.\n",bytepos);
+		Run_Length_Encode_Slow(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos);
+		error = (bytepos > (4*bx*by*bz)) ? -1 : 0;
+		//printf("Compressed block is %d bytes (ratio=%.2f:1, error = %d)\n",bytepos,(double)(4*bx*by*bz)/(double)bytepos,error);
 		//Run_Length_Encode_Fast(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos,error);
 
 		++(*priv_blkstore_idx);
 		if (error)
 		{
-			priv_blkoff[*priv_blkstore_idx] = -(blkoff+bx*by*bz);
+			priv_blkoff[(*priv_blkstore_idx)-1] |= -2147483648;
+			priv_blkoff[*priv_blkstore_idx] = blkoff+sizeof(float)*bx*by*bz;
 			// TMJ 12/14/2015 - Deliberate use of mempcy instead of memcpy_avx.
 			// We want the copy to end up in the cache, hence we don't use memcpy_avx, which does a straight-to-DRAM stream copy.
 			memcpy(priv_compressed,priv_work,sizeof(float)*bx*by*bz);
@@ -240,22 +264,23 @@ float CvxCompress::Compress(
 		{
 			// copy compressed blocks from private area to global area.
 			int priv_blklen = priv_blkoff[*priv_blkstore_idx];
-			priv_blklen = priv_blklen < 0 ? -priv_blklen : priv_blklen;
-			//printf("MEMCPY :: iBlk=%d, priv_blkstore_idx=%d, priv_blklen=%d\n",iBlk,*priv_blkstore_idx,priv_blklen);
 			char* glob_dst = 0L;
 #pragma omp critical
 			{
 				glob_dst = ((char*)bytes) + byte_offset;
 				byte_offset += (long)priv_blklen;
 			}
+			//printf("MEMCPY :: GLOB byte_offset=%ld, priv_blkstore_idx=%d, priv_blklen=%d\n",byte_offset,*priv_blkstore_idx,priv_blklen);
 			for (int i = 0;  i < *priv_blkstore_idx;  ++i) 
 			{
 				int dst_iBlk = priv_iBlk[i];
 				int blkoff = priv_blkoff[i];
-				bool uncompressed = blkoff < 0 ? true : false;
-				blkoff = uncompressed ? -blkoff : blkoff;
+				bool uncompressed = (blkoff & -2147483648) ? true : false;
+				blkoff = blkoff & 2147483647;
 				long new_glob_blkoff = (glob_dst + blkoff) - (char*)bytes;
-				glob_blkoffs[dst_iBlk] = uncompressed ? -new_glob_blkoff : new_glob_blkoff;
+				new_glob_blkoff = uncompressed ? (new_glob_blkoff | -9223372036854775808l) : new_glob_blkoff;
+				glob_blkoffs[dst_iBlk] = new_glob_blkoff;
+				//printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
 			}
 			memcpy_avx(glob_dst,priv_compress_buffer,priv_blklen);
 			*priv_blkstore_idx = 0;
@@ -271,26 +296,27 @@ float CvxCompress::Compress(
 		{
 			// copy compressed blocks from private area to global area.
 			int priv_blklen = priv_blkoff[*priv_blkstore_idx];
-			priv_blklen = priv_blklen < 0 ? -priv_blklen : priv_blklen;
-			//printf("MEMCPY :: priv_blkstore_idx=%d, priv_blklen=%d\n",*priv_blkstore_idx,priv_blklen);
-			char* glob_dst = 0L;
+                        char* glob_dst = 0L;
 #pragma omp critical
-			{
-				glob_dst = ((char*)bytes) + byte_offset;
-				byte_offset += (long)priv_blklen;
-			}
-			for (int i = 0;  i < *priv_blkstore_idx;  ++i) 
-			{
-				int dst_iBlk = priv_iBlk[i];
-				int blkoff = priv_blkoff[i];
-				bool uncompressed = blkoff < 0 ? true : false;
-				blkoff = uncompressed ? -blkoff : blkoff;
-				long new_glob_blkoff = (glob_dst + blkoff) - (char*)bytes;
-				glob_blkoffs[dst_iBlk] = uncompressed ? -new_glob_blkoff : new_glob_blkoff;
-			}
-			memcpy_avx(glob_dst,priv_compress_buffer,priv_blklen);
-			*priv_blkstore_idx = 0;
-			priv_blkoff[0] = 0;
+                        {
+                                glob_dst = ((char*)bytes) + byte_offset;
+                                byte_offset += (long)priv_blklen;
+                        }
+                        //printf("MEMCPY :: GLOB byte_offset=%ld, priv_blkstore_idx=%d, priv_blklen=%d\n",byte_offset,*priv_blkstore_idx,priv_blklen);
+                        for (int i = 0;  i < *priv_blkstore_idx;  ++i)
+                        {
+                                int dst_iBlk = priv_iBlk[i];
+                                int blkoff = priv_blkoff[i];
+                                bool uncompressed = (blkoff & -2147483648) ? true : false;
+                                blkoff = blkoff & 2147483647;
+                                long new_glob_blkoff = (glob_dst + blkoff) - (char*)bytes;
+                                new_glob_blkoff = uncompressed ? (new_glob_blkoff | -9223372036854775808l) : new_glob_blkoff;
+                                glob_blkoffs[dst_iBlk] = new_glob_blkoff;
+                                //printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
+                        }
+                        memcpy_avx(glob_dst,priv_compress_buffer,priv_blklen);
+                        *priv_blkstore_idx = 0;
+                        priv_blkoff[0] = 0;
 		}
 	}
 	compressed_length = 28 + 8*nnn + byte_offset;
@@ -381,14 +407,16 @@ void CvxCompress::Decompress(
 		float* priv_work = work + thread_id * work_size_one_thread;
 		float* priv_tmp = priv_work + bx*by*bz;
 		long priv_blkoff = glob_blkoffs[iBlk];
-		bool Is_Uncompressed = priv_blkoff < 0 ? true : false;
-		priv_blkoff = Is_Uncompressed ? -priv_blkoff : priv_blkoff;
+		bool Is_Uncompressed = (priv_blkoff & -9223372036854775808l) ? true : false;
+		priv_blkoff = Is_Uncompressed ? (priv_blkoff & 9223372036854775807l) : priv_blkoff;
 		unsigned long* priv_compressed = (unsigned long*)(((char*)bytes) + priv_blkoff);
+		//printf("Is_Uncompressed=%s, priv_blkoff=%ld\n",Is_Uncompressed?"true":"false",priv_blkoff);
 		
 		if (Is_Uncompressed)
 		{
-			Wavelet_Transform_Fast_Inverse((__m256*)priv_compressed,(__m256*)priv_tmp,bx,by,bz);
-			Copy_From_Block((__m128*)priv_compressed,bx,by,bz,vol,x0,y0,z0,nx,ny,nz);
+			memcpy(priv_work,priv_compressed,sizeof(float)*bx*by*bz);
+			Wavelet_Transform_Fast_Inverse((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
+			Copy_From_Block((__m128*)priv_work,bx,by,bz,vol,x0,y0,z0,nx,ny,nz);
 		}
 		else
 		{

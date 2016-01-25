@@ -51,9 +51,13 @@ inline void EncodeRLE_Slow(int& rle, char* dst, int& bytepos)
 	}
 }
 
-void Run_Length_Encode_Slow(float scale, float* vals, int num, unsigned long* compressed, int& bytepos, int& error)
+/*
+ * Run length encode a quantized block. 
+ * The encoded block is usually smaller, but can be up to 25% larger after encoding.
+ * Please ensure that work block (compressed ptr) is at least 5*sizeof(float)*num/4 bytes.
+ */
+void Run_Length_Encode_Slow(float scale, float* vals, int num, unsigned long* compressed, int& bytepos)
 {
-	error = 0;
 	int rle = 0;
 	char* dst = (char*)compressed;
 	for (int i = 0;  i < num;  ++i)

@@ -54,7 +54,7 @@ int main(int argc, char* argv[])
 	Read_Raw_Volume(argv[1],nx,ny,nz,vol);
 
 	unsigned int* compressed = 0L;
-	posix_memalign((void**)&compressed, 64, (long)sizeof(float)*(long)nx*(long)ny*(long)nz);	
+	posix_memalign((void**)&compressed, 64, ((long)sizeof(float)*(long)nx*(long)ny*(long)nz*5l)>>2);
 
 	CvxCompress* compressor = new CvxCompress();
 
@@ -70,9 +70,8 @@ int main(int argc, char* argv[])
 
 	printf("Decompressing.\n");
 	int nx2,ny2,nz2;
-	float* vol2;
 	clock_gettime(CLOCK_REALTIME,&before);
-	compressor->Decompress(vol2,nx2,ny2,nz2,compressed,compressed_length);
+	float* vol2 = compressor->Decompress(nx2,ny2,nz2,compressed,compressed_length);
 	clock_gettime(CLOCK_REALTIME,&after);
 	elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 	mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed * 1e6);
