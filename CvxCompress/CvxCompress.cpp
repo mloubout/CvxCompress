@@ -196,7 +196,7 @@ float CvxCompress::Compress(
 	unsigned int* bytes = (unsigned int*)(glob_blkoffs+nnn);
 	long byte_offset = 0l;
 
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic)
 	for (long iBlk = 0;  iBlk < nnn;  ++iBlk)
 	{
 		long iiz = iBlk / (nbx*nby);
@@ -263,17 +263,14 @@ float CvxCompress::Compress(
 			priv_blkoff[0] = 0;
 		}
 	}
-#pragma omp parallel for schedule(static,1)
-	for (int iThr = 0;  iThr < num_threads;  ++iThr)
+	for (int thread_id = 0;  thread_id < num_threads;  ++thread_id)
 	{
-		int thread_id = omp_get_thread_num();
 		GET_PRIVATE_POINTERS(work,thread_id);
 		if (*priv_blkstore_idx >= 1)
 		{
 			// copy compressed blocks from private area to global area.
 			int priv_blklen = priv_blkoff[*priv_blkstore_idx];
                         char* glob_dst = 0L;
-#pragma omp critical
                         {
                                 glob_dst = ((char*)bytes) + byte_offset;
                                 byte_offset += (long)priv_blklen;
@@ -295,7 +292,7 @@ float CvxCompress::Compress(
                         priv_blkoff[0] = 0;
 		}
 	}
-	compressed_length = 28 + 8*nnn + byte_offset;
+	compressed_length = 32 + 8*nnn + byte_offset;
 
 	free(work);
 	double ratio = ((double)nx * (double)ny * (double)nz * (double)sizeof(float)) / (double)compressed_length;
@@ -365,7 +362,7 @@ void CvxCompress::Decompress(
 	float* work;
 	posix_memalign((void**)&work, 64, sizeof(float)*work_size);
 
-#pragma omp parallel for 
+#pragma omp parallel for
 	for (long iBlk = 0;  iBlk < nnn;  ++iBlk)
 	{
 		long iiz = iBlk / (nbx*nby);
