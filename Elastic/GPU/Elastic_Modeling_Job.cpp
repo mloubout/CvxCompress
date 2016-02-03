@@ -29,6 +29,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_log_level = log_level;
 	_propagator = 0L;
 
+	_spatial_order = 8;  // default is 8th order, optional 16
 	_ebcdic_header_filename = 0L;
 	
 	_num_em_props = 14;
@@ -174,6 +175,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_num_GPU_Devices = 0;
 	_GPU_Pipes = 0;
 	_Steps_Per_GPU = 0;
+	_web_allowed = true;
 	if (_log_level > 2) printf("Parameter file is %s.\n",parmfile_path);
 	FILE* fp = fopen(parmfile_path, "r");
 	if (fp != 0L)
@@ -584,6 +586,25 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
                                         }
                                 }
                         }
+			if (!error)
+			{
+				char web_allowed_str[4096];
+				int matched = sscanf(s, "WEB_ALLOWED = %s", web_allowed_str);
+				if (matched == 1)
+				{
+					_tolower(web_allowed_str);
+					if (strcmp(web_allowed_str, "enabled") == 0)
+					{
+						_web_allowed = true;
+						if (_log_level >= 3) printf("Cross pipeline data movement enabled.\n");
+					}
+					else if (strcmp(web_allowed_str, "disabled") == 0)
+					{
+						_web_allowed = false;
+						if (_log_level >= 3) printf("Cross pipeline data movement disabled.\n");
+					}
+				}
+			}
 			if (!error)
 			{
 				int souidx;
@@ -1171,6 +1192,25 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 			}
 			if (!error)
 			{
+				int spatial_order = 0;
+				int matched = sscanf(s, "SPATIAL_ORDER = %d", &spatial_order);
+				if (matched == 1)
+				{
+					if (spatial_order == 8 || spatial_order == 16)
+					{
+						_spatial_order = spatial_order;
+						if (_log_level >= 3) printf("Spatial order is %d\n",_spatial_order);
+					}
+					else
+					{
+						printf("%s (line %d): Error - SPATIAL_ORDER cannot be %d, it must be either 8 or 16.\n",parmfile_path,line_num,spatial_order);
+						error = true;
+						break;
+					}
+				}
+			}
+			if (!error)
+			{
 				float cf;
 				int matched = sscanf(s, "COURANT_FACTOR = %f", &cf);
 				if (matched == 1)
@@ -1426,7 +1466,10 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 		_prop_nx += 2 * _nabc_sdx;
 		_prop_x0 -= _nabc_sdx;
 	}
-	_prop_nx = ((_prop_nx + 3) >> 2) << 2;  // make prop_nx a multiple of 4.
+	if (_spatial_order == 8)
+		_prop_nx = ((_prop_nx + 3) >> 2) << 2;  // make prop_nx a multiple of 4.
+	else if (_spatial_order == 16)
+		_prop_nx = ((_prop_nx + 7) >> 3) << 3;  // make prop_nx a multiple of 8.
 	// expand sub-volume if extend is desired
 	_sub_ix0 = _prop_x0 > 0 ? _prop_x0 : 0;
 	int prop_x1 = _prop_x0 + _prop_nx - 1;
@@ -2445,7 +2488,7 @@ Elastic_Modeling_Job::~Elastic_Modeling_Job()
 		delete [] _shots;
 	}
 	if (_voxet != 0L) delete _voxet;
-	for (int i = 0;  i < 14;  ++i) if (_pck_moniker[i] != 0L) free(_pck_moniker[i]);
+	for (int i = 0;  i < _num_em_props;  ++i) if (_pck_moniker[i] != 0L) free(_pck_moniker[i]);
 	delete [] _pck_moniker;
 	delete [] _pck_mask;
 	delete [] _pck_shft;
@@ -2483,9 +2526,11 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	}
 	if (_log_level > 3) printf("Using %d thread(s).\n",nthreads);
 
-	float* vals = new float[nu*nthreads*100];
+	const int trcblk = 256;
+
+	float* vals = new float[nu*nthreads*trcblk];
 	unsigned int** words = new unsigned int*[4];
-	for (int k = 0;  k < 4;  ++k) words[k] = new unsigned int[nu*nthreads*100];
+	for (int k = 0;  k < 4;  ++k) words[k] = new unsigned int[nu*nthreads*trcblk];
 
 	long avgtop_cnt = 0, avgbot_cnt = 0;
 	double acctop = 0.0, accbot = 0.0;
@@ -2493,9 +2538,9 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	struct timeval start;
 	gettimeofday(&start, 0L);
 
-	for (long trace_group = 0;  trace_group < nn;  trace_group+=nthreads*100)
+	for (long trace_group = 0;  trace_group < nn;  trace_group+=nthreads*trcblk)
 	{
-		long max_trace = trace_group + nthreads*100;
+		long max_trace = trace_group + nthreads*trcblk;
 		if (max_trace > nn) max_trace = nn;
 
 		struct timeval end;
@@ -2508,96 +2553,158 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 			fflush(stdout);
 		}
 
-		for (int k = 0;  k < nu*nthreads*100;  ++k)
+#pragma omp parallel for
+		for (int ithr = 0;  ithr < nthreads;  ++ithr)
 		{
-			words[0][k] = 0;
-			words[1][k] = 0;
-			words[2][k] = 0;
-			words[3][k] = 0;
+			int idx = ithr*nu*trcblk;
+			for (int k = 0;  k < nu*trcblk;  ++k)
+			{
+				words[0][idx+k] = 0;
+				words[1][idx+k] = 0;
+				words[2][idx+k] = 0;
+				words[3][idx+k] = 0;
+			}
 		}
+		bool* done = new bool[_num_em_props];
+		for (int attr_idx = 0;  attr_idx < _num_em_props;  ++attr_idx) done[attr_idx] = false;
 		for (int attr_idx = 0;  attr_idx < _num_em_props;  ++attr_idx)
 		{
-			if (_props[attr_idx] != 0L)
+			if (!done[attr_idx])
 			{
-				// read traces into buffer.
-				// this is done by single thread to ensure sequential read.
-				FILE* fp = fopen(_props[attr_idx]->Get_Full_Path(), "rb");
-				if (fp != 0L)
+				if (_props[attr_idx] != 0L)
 				{
-					for (long trace = trace_group;  trace < max_trace;  ++trace)
+					// read traces into buffer.
+					// this is done by single thread to ensure sequential read.
+					FILE* fp = fopen(_props[attr_idx]->Get_Full_Path(), "rb");
+					if (fp != 0L)
 					{
-						long ilw = trace / nv;
-						long ilv = trace - ilw * nv;
-						ilw += (long)ilw0;
-						ilv += (long)ilv0;
-						long vals_off = (trace - trace_group) * nu;
-						long file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
-						//printf("_read :: file_off=%ld, vals_off=%ld, ilu=%ld, nu=%ld, ilv=%ld, ilw=%ld, trace-trace_group=%ld\n",file_off,vals_off,ilu,nu,ilv,ilw,trace-trace_group);
-						//if ((file_off % one_v_size_f) != 0) {printf("file_off = %ld\n",file_off); exit(0);}
-						fseek(fp, file_off*sizeof(float), SEEK_SET);
-						long nread = fread(vals+vals_off, sizeof(float), nu, fp);
-						if (nread != nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,nu,nread);
-					}
-					int fid = fileno(fp);
-					fdatasync(fid);
-					posix_fadvise(fid,0,0,POSIX_FADV_DONTNEED);
-					fclose(fp);
-				}
-				else
-				{
-					printf("ERROR! Failed to open %s for reading.\n",_props[attr_idx]->Get_Full_Path());
-					exit(-1);
-				}
-			}
-				
-			// compress and store
-#pragma omp parallel for reduction(+:acctop,accbot,avgtop_cnt,avgbot_cnt)
-			for (long trace = trace_group;  trace < max_trace;  ++trace)
-			{
-				long ilw = trace / nv;
-				long ilv = trace - ilw * nv;
-				ilw += (long)ilw0;
-				ilv += (long)ilv0;
-				long vals_off = (trace - trace_group) * nu;
-				for (int sample = 0;  sample < nu;  ++sample)
-				{
-					if (_props[attr_idx] != 0L)
-					{
-						swap4bytes((int*)&(vals[vals_off+sample]),1);
-						//if (attr_idx == Attr_Idx_Vp && sample < 2) printf("vals[%d+%d] = %f\n",vals_off,sample,vals[vals_off+sample]);
-					}
-					else
-					{
-						vals[vals_off+sample] = _const_vals[attr_idx];
-					}
-					if (attr_idx == Attr_Idx_Q) vals[vals_off+sample] = 1.0f / vals[vals_off+sample];
-					_Pack_Earth_Model_Attribute(words[_pck_widx[attr_idx]][vals_off+sample],attr_idx,vals[vals_off+sample]);
-				}
-				if (attr_idx == Attr_Idx_Vp)
-				{
-					if (gcs->U_Is_Z())
-					{
-						acctop += vals[vals_off];	++avgtop_cnt;
-						accbot += vals[vals_off+nu-1];	++avgbot_cnt;
-						//printf("acctop=%e, avgtop_cnt=%d\n, accbot=%e, avgbot_cnt=%d\n",acctop,avgtop_cnt,accbot,avgbot_cnt);
-						//printf("vals[vals_off]=%e, vals[vals_off+1]=%e, vals[vals_off+2]=%e\n",vals[vals_off],vals[vals_off+1],vals[vals_off+2]);
-					}
-					else
-					{
-						if ((gcs->V_Is_Z() && ilv == ilv0) || (gcs->W_Is_Z() && ilw == ilw0)) // zztop
+						long vals_off = -1, file_off = -1, file_nu = -1;
+						for (long trace = trace_group;  trace < max_trace;  ++trace)
 						{
-							for (int k = 0;  k < nu;  ++k) acctop += vals[vals_off+k];
-							avgtop_cnt += nu;
+							long ilw = trace / nv;
+							long ilv = trace - ilw * nv;
+							ilw += (long)ilw0;
+							ilv += (long)ilv0;
+							long curr_vals_off = (trace - trace_group) * nu;
+							long curr_file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
+							bool first_read = (trace == trace_group);
+							bool merge_reads = (first_read || (file_off + file_nu == curr_file_off));
+							bool last_read = (trace == max_trace - 1);
+							if (first_read)
+							{
+								vals_off = curr_vals_off;
+								file_off = curr_file_off;
+								file_nu = 0;
+							}
+							if (merge_reads)
+							{
+								file_nu += nu;
+								//printf("  MERGE :: file_off=%ld, file_nu=%ld\n",file_off,file_nu);
+							}
+							if (!merge_reads || last_read)
+							{
+								// perform read
+								//printf("  READ :: file_off=%ld, file_nu=%ld\n",file_off,file_nu);
+								fseek(fp, file_off*sizeof(float), SEEK_SET);
+								long nread = fread(vals+vals_off, sizeof(float), file_nu, fp);
+								if (nread != file_nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,file_nu,nread);
+								if (!last_read)
+								{
+									vals_off = curr_vals_off;
+									file_off = curr_file_off;
+									file_nu = nu;
+								}
+							}
 						}
-						else if ((gcs->V_Is_Z() && ilv == ilv1) || (gcs->W_Is_Z() && ilw == ilw1)) // zzbot
+						int fid = fileno(fp);
+						fdatasync(fid);
+						posix_fadvise(fid,0,0,POSIX_FADV_DONTNEED);
+						fclose(fp);
+					}
+					else
+					{
+						printf("ERROR! Failed to open %s for reading.\n",_props[attr_idx]->Get_Full_Path());
+						exit(-1);
+					}
+				}
+
+				// reverse endian-ness
+#pragma omp parallel for
+				for (long trace = trace_group;  trace < max_trace;  ++trace)
+				{
+					long ilw = trace / nv;
+					long ilv = trace - ilw * nv;
+					ilw += (long)ilw0;
+					ilv += (long)ilv0;
+					long vals_off = (trace - trace_group) * nu;
+					for (int sample = 0;  sample < nu;  ++sample)
+					{
+						if (_props[attr_idx] != 0L)
 						{
-							for (int k = 0;  k < nu;  ++k) accbot += vals[vals_off+k];
-							avgbot_cnt += nu;
+							swap4bytes((int*)&(vals[vals_off+sample]),1);
+						}
+						else
+						{
+							vals[vals_off+sample] = _const_vals[attr_idx];
+						}
+					}
+				}
+
+				// find all attributes that have this data as source.
+				// these are:
+				// attribute we just read or const'ed (same)
+				// other attributes that have the same full path
+				for (int comp_attr_idx = 0;  comp_attr_idx < _num_em_props;  ++comp_attr_idx)
+				{
+					bool Is_a_Match = (comp_attr_idx == attr_idx) || // self
+						(!done[comp_attr_idx] && _props[attr_idx] != 0L && _props[comp_attr_idx] != 0L && 
+						 strcmp(_props[attr_idx]->Get_Full_Path(), _props[comp_attr_idx]->Get_Full_Path()) == 0); // same path
+					if (Is_a_Match)
+					{
+						// found matching path, compress and store
+						done[comp_attr_idx] = true;
+#pragma omp parallel for reduction(+:acctop,accbot,avgtop_cnt,avgbot_cnt)
+						for (long trace = trace_group;  trace < max_trace;  ++trace)
+						{
+							long ilw = trace / nv;
+							long ilv = trace - ilw * nv;
+							ilw += (long)ilw0;
+							ilv += (long)ilv0;
+							long vals_off = (trace - trace_group) * nu;
+							for (int sample = 0;  sample < nu;  ++sample)
+							{
+								if (comp_attr_idx == Attr_Idx_Q) vals[vals_off+sample] = 1.0f / vals[vals_off+sample];
+								_Pack_Earth_Model_Attribute(words[_pck_widx[comp_attr_idx]][vals_off+sample],comp_attr_idx,vals[vals_off+sample]);
+							}
+							if (comp_attr_idx == Attr_Idx_Vp)
+							{
+								if (gcs->U_Is_Z())
+								{
+									acctop += vals[vals_off];	++avgtop_cnt;
+									accbot += vals[vals_off+nu-1];	++avgbot_cnt;
+									//printf("acctop=%e, avgtop_cnt=%d\n, accbot=%e, avgbot_cnt=%d\n",acctop,avgtop_cnt,accbot,avgbot_cnt);
+									//printf("vals[vals_off]=%e, vals[vals_off+1]=%e, vals[vals_off+2]=%e\n",vals[vals_off],vals[vals_off+1],vals[vals_off+2]);
+								}
+								else
+								{
+									if ((gcs->V_Is_Z() && ilv == ilv0) || (gcs->W_Is_Z() && ilw == ilw0)) // zztop
+									{
+										for (int k = 0;  k < nu;  ++k) acctop += vals[vals_off+k];
+										avgtop_cnt += nu;
+									}
+									else if ((gcs->V_Is_Z() && ilv == ilv1) || (gcs->W_Is_Z() && ilw == ilw1)) // zzbot
+									{
+										for (int k = 0;  k < nu;  ++k) accbot += vals[vals_off+k];
+										avgbot_cnt += nu;
+									}
+								}
+							}
 						}
 					}
 				}
 			}
 		}
+		delete [] done;
 
 #pragma omp parallel for
 		for (long trace = trace_group;  trace < max_trace;  ++trace)
@@ -2635,7 +2742,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	delete [] vals;
 	for (int k = 0;  k < 4;  ++k) delete [] words[k];
 	delete [] words;
-	
+
 	propagator->_NABC_TOP_Extend(_sub_iz0 - _prop_z0);
 	propagator->_NABC_BOT_Extend(_sub_iz1 - _prop_z0);
 	propagator->_NABC_SDX_Extend(_sub_ix0 - _prop_x0, _sub_ix1 - _prop_x0);

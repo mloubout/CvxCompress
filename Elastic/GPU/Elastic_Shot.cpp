@@ -18,7 +18,7 @@
 #include "gpuAssert.h"
 
 //#define RESAMPLE_DEBUG 0
-//#define DEBUG_TMJ
+#define DEBUG_TMJ
 
 Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx, double x, double y, double z)
 {
@@ -518,7 +518,7 @@ void Elastic_Shot::Extract_Receiver_Values_From_Device(
 								int ny = pipe->Get_Width();
 								int nz = buffer->Get_Z1() - buffer->Get_Z0() + 1;
 
-								int one_wf_size_f = 4 * nz;
+								int one_wf_size_f = nx * nz;
 								int one_y_size_f = one_wf_size_f * 6;
 								float* cmp_block = (float*)(buffer->Get_Block_By_Offset(rx_block_offset,0)) + (pipe->Get_Y0() - buffer->Get_Y0()) * one_y_size_f;
 
@@ -641,6 +641,7 @@ void Elastic_Shot::DEMUX_Receiver_Values(
 						int iTrc = trcidx[ii];
 						Elastic_Resampled_Trace* trace = _h_traces[iTrc];
 						trace->Add_To_Trace(curr_timestep, rxres[iBlk][jj]);
+						//printf("Add_To_Trace(iTrc=%d, timestep=%d, value=%e\n",iTrc,curr_timestep,rxres[iBlk][jj]);
 						++jj;
 					}
 				}

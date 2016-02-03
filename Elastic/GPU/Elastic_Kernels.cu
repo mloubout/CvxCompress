@@ -1,3 +1,4 @@
+#include <assert.h>
 #include "gpuAssert.h"
 #include "Compute_ABC.cu"
 #include "Earth_Model.cu"

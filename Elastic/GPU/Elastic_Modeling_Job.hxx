@@ -14,16 +14,20 @@ public:
 
 	static void Print_Version_Information()
 	{
-		printf("\nCVX 3D Elastic Orthorhombic Modeling - v1.41 - 06/25/15\n\n");
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v2.0 - 09/24/15\n\n");
 	}
 
 	bool Is_Valid() {return _Is_Valid;}
 	int Get_Log_Level() {return _log_level;}
 
+	int Get_Spatial_Order() {return _spatial_order;}
+
 	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
 
 	bool Subvolume_Is_Relative_To_Source() {return _sub_origin == 0 ? true : false;}
 	void Compute_Subvolume();
+
+	bool Web_Allowed() {return _web_allowed;}
 
 	//
 	// Get dimension and origin of propagation volume.
@@ -156,6 +160,8 @@ private:
 	bool _Is_Valid;
 	int _log_level;
 
+	int _spatial_order;
+
 	char* _ebcdic_header_filename;
 
 	int _prop_nx;
@@ -248,6 +254,8 @@ private:
 	int _num_GPU_Devices;
 	int _GPU_Pipes;
 	int _Steps_Per_GPU;
+
+	bool _web_allowed;
 
 	float _Courant_Factor;
 

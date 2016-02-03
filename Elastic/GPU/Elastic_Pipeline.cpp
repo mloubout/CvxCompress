@@ -809,7 +809,7 @@ void Elastic_Pipeline::Free_RxLoc_Buffer(Elastic_Shot* shot)
 	}
 }
 
-bool Elastic_Pipeline::Allocate_Device_Memory()
+bool Elastic_Pipeline::Allocate_Device_Memory(int log_level)
 {
 	bool success = true;
 	Free_Device_Memory();
@@ -837,9 +837,12 @@ bool Elastic_Pipeline::Allocate_Device_Memory()
 			}
 			if (free < tot_reqd_mem)
 			{
-				double tot_reqd_mem_MB = (double)tot_reqd_mem / 1048576.0;
-				double dev_free_mem_MB = (double)free / 1048576.0;
-				printf("Device %d :: Need %.2fMB, but device only has %.2fMB free memory.\n",device_id,tot_reqd_mem_MB,dev_free_mem_MB);
+				if (log_level >= 4)
+				{
+					double tot_reqd_mem_MB = (double)tot_reqd_mem / 1048576.0;
+					double dev_free_mem_MB = (double)free / 1048576.0;
+					printf("Device %d :: Need %.2fMB, but device only has %.2fMB free memory.\n",device_id,tot_reqd_mem_MB,dev_free_mem_MB);
+				}
 				success = false;
 			}
 		}
@@ -847,7 +850,7 @@ bool Elastic_Pipeline::Allocate_Device_Memory()
 	if (!success) return false;
 	for (int i = 0;  i < _num_buffers;  ++i)
 	{
-		_buffers[i]->Enable_Peer_Access();
+		_buffers[i]->Enable_Peer_Access(log_level);
 	}
 	if (_num_devices > 0)
 	{
@@ -869,7 +872,7 @@ bool Elastic_Pipeline::Allocate_Device_Memory()
 			if (err == cudaSuccess)
 			{
 				cudaMemset(_d_Mem[i], 0, tot_reqd_mem);  // zero block, always do this
-				if (_log_level >= 4) printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
+				if (log_level >= 4) printf("cudaMalloc (device %d) :: ALLOCATED %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 				unsigned long offset = 0;
 				for (int j = 0;  j < _num_buffers;  ++j)
 				{
@@ -891,7 +894,7 @@ bool Elastic_Pipeline::Allocate_Device_Memory()
 				_d_RxRes[i] = 0L;
 				_h_RxRes_curr[i] = 0L;
 				_h_RxRes_prev[i] = 0L;
-				if (_log_level >= 4) printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
+				printf("cudaMalloc (device %d) :: FAILED TO ALLOCATE %.2f MB device memory\n",device_id,tot_reqd_mem_MB);
 			}
 		}
 

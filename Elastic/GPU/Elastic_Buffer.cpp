@@ -68,7 +68,9 @@ Elastic_Buffer::Elastic_Buffer(
 	_num_blocks = num_blocks;
 	_block_offset = block_offset;
 	_cmp_block_id = 0;
+	_src_L = 0L;
 	_src = src;
+	_src_R = 0L;
 	_dst_block_id = dst_block_id;
 	_inp_m2 = 0L;
 	_inp_m1 = 0L;
@@ -115,7 +117,9 @@ Elastic_Buffer::Elastic_Buffer(
 	_num_blocks = num_blocks;
 	_block_offset = block_offset;
 	_cmp_block_id = 0;			
+	_src_L = 0L;
 	_src = src;
+	_src_R = 0L;
 	_dst_block_id = dst_block_id;
 	_inp_m2 = 0L;
 	_inp_m1 = 0L;
@@ -179,7 +183,9 @@ Elastic_Buffer::Elastic_Buffer(
 	_cmp_block_id = cmp_block_id;
 	_inp_m2 = inp_m2;
 	_inp_m1 = inp_m1;
+	_src_L = 0L;
 	_src = src;
+	_src_R = 0L;
 	_dst_block_id = dst_block_id;
 }
 
@@ -219,6 +225,26 @@ bool Elastic_Buffer::Is_Input()
 Elastic_Buffer* Elastic_Buffer::Get_Source_Buffer()
 {
 	return _src;
+}
+
+Elastic_Buffer* Elastic_Buffer::Get_Source_Buffer_Left()
+{
+	return _src_L;
+}
+
+void Elastic_Buffer::Set_Source_Buffer_Left(Elastic_Buffer* src_L)
+{
+	_src_L = src_L;
+}
+
+Elastic_Buffer* Elastic_Buffer::Get_Source_Buffer_Right()
+{
+	return _src_R;
+}
+
+void Elastic_Buffer::Set_Source_Buffer_Right(Elastic_Buffer* src_R)
+{
+	_src_R = src_R;
 }
 
 // get input buffer once removed
@@ -394,6 +420,11 @@ bool Elastic_Buffer::Is_Compute()
 	return _Is_Compute;
 }
 
+bool Elastic_Buffer::Is_Model()
+{
+	return _Is_Model;
+}
+
 bool Elastic_Buffer::Block_Is_Partial_Compute_By_Relative_Offset(int relative_block_offset)
 {
 	return _Is_Partial && Block_Is_Compute_By_Relative_Offset(relative_block_offset);
@@ -548,17 +579,81 @@ void Elastic_Buffer::Launch_Input_Transfers()
 		else
 		{
 			// device-2-device
-			size_t dst_off_y = (size_t)(_inp_y0 - _y0);
-			size_t dst_len_y = (size_t)(_inp_y1 - _inp_y0 + 1);
-			size_t src_off_y = (size_t)(_inp_y0 - _src->Get_Y0());
 			int block_offset = Get_Block_Offset(_dst_block_id,0);
-			//cudaSetDevice(_src->Get_Device_ID());
-			cudaMemcpyPeerAsync(
-				(char*)Get_Block_By_Offset(block_offset,0) + dst_off_y * one_y_size, _device_id, 
-				(char*)_src->Get_Block_By_Offset(block_offset,0) + src_off_y * one_y_size, _src->Get_Device_ID(),
-				dst_len_y * one_y_size,
-				_src->Get_Output_Stream()
-				);
+
+			if (_src_L != 0L)
+			{
+				int L_y0 = _inp_y0;
+				int L_y1 = _src->Get_Y0() - 1;
+				if (L_y1 >= L_y0)
+				{
+					size_t dst_off_y = (size_t)(L_y0 - _y0);
+					size_t dst_len_y = (size_t)(L_y1 - L_y0 + 1);
+					size_t src_off_y = (size_t)(L_y0 - _src_L->Get_Y0());
+					cudaMemcpyPeerAsync(
+							(char*)Get_Block_By_Offset(block_offset,0) + dst_off_y * one_y_size, _device_id,
+							(char*)_src_L->Get_Block_By_Offset(block_offset,0) + src_off_y * one_y_size, _src_L->Get_Device_ID(),
+							dst_len_y * one_y_size,
+							_src_L->Get_Output_Stream()
+							);
+				}
+				/*
+				char str[4096];
+				printf("cudaMemcpyPeerAsync( Pipe_%d:Dev_%d:%s -> Pipe_%d:Dev_%d:%s ; y=[%d,%d]\n",
+						_src_L->Get_Pipeline()->Get_ID(),_src_L->Get_Device_ID(),_src_L->Get_Name_String(str),
+						this->Get_Pipeline()->Get_ID(),this->Get_Device_ID(),this->Get_Name_String(str),
+						L_y0,L_y1);
+				*/
+			}
+
+			int M_y0 = _inp_y0 > _src->Get_Y0() ? _inp_y0 : _src->Get_Y0();
+			int M_y1 = _inp_y1 < _src->Get_Y1() ? _inp_y1 : _src->Get_Y1();
+			if (M_y1 >= M_y0)
+			{
+				size_t dst_off_y = (size_t)(M_y0 - _y0);
+				size_t dst_len_y = (size_t)(M_y1 - M_y0 + 1);
+				size_t src_off_y = (size_t)(M_y0 - _src->Get_Y0());
+				cudaMemcpyPeerAsync(
+						(char*)Get_Block_By_Offset(block_offset,0) + dst_off_y * one_y_size, _device_id, 
+						(char*)_src->Get_Block_By_Offset(block_offset,0) + src_off_y * one_y_size, _src->Get_Device_ID(),
+						dst_len_y * one_y_size,
+						_src->Get_Output_Stream()
+						);
+				/*
+				char str[4096];
+				printf("cudaMemcpyPeerAsync( Pipe_%d:Dev_%d:%s -> Pipe_%d:Dev_%d:%s ; y=[%d,%d]\n",
+						_src->Get_Pipeline()->Get_ID(),_src->Get_Device_ID(),_src->Get_Name_String(str),
+						this->Get_Pipeline()->Get_ID(),this->Get_Device_ID(),this->Get_Name_String(str),
+						M_y0,M_y1);
+				*/
+			}
+
+			if (_src_R != 0L)
+			{
+				int R_y0 = _src->Get_Y1() + 1;
+				int R_y1 = _inp_y1;
+				if (R_y1 >= R_y0)
+				{
+					size_t dst_off_y = (size_t)(R_y0 - _y0);
+					size_t dst_len_y = (size_t)(R_y1 - R_y0 + 1);
+					size_t src_off_y = (size_t)(R_y0 - _src_R->Get_Y0());
+					cudaMemcpyPeerAsync(
+							(char*)Get_Block_By_Offset(block_offset,0) + dst_off_y * one_y_size, _device_id,
+							(char*)_src_R->Get_Block_By_Offset(block_offset,0) + src_off_y * one_y_size, _src_R->Get_Device_ID(),
+							dst_len_y * one_y_size,
+							_src_R->Get_Output_Stream()
+							);
+					/*
+					char str[4096];
+					printf("cudaMemcpyPeerAsync( Pipe_%d:Dev_%d:%s -> Pipe_%d:Dev_%d:%s ; y=[%d,%d]\n",
+							_src_R->Get_Pipeline()->Get_ID(),_src_R->Get_Device_ID(),_src_R->Get_Name_String(str),
+							this->Get_Pipeline()->Get_ID(),this->Get_Device_ID(),this->Get_Name_String(str),
+							R_y0,R_y1);
+					*/
+				}
+			}
+			//printf("\n");
+			
 			//printf("Device %2d to Device %2d for block %d :: %ld bytes\n",_src->Get_Device_ID(),_device_id,block_offset,dst_len_y*one_y_size);
 		}
 	}
@@ -646,12 +741,11 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 		char buf1[256];
 		char buf2[256];
 		char buf3[256];
-		if (false)//if (strcmp(Get_Name_String(buf1), " 1-S") == 0)
+		if (true)//if (strcmp(Get_Name_String(buf1), " 1-S") == 0)
 		{
 			printf("_em = %s, _inp_m1 = %s, _inp_m2 = %s\n",_em->Get_Name_String(buf1),_inp_m1->Get_Name_String(buf2),_inp_m2->Get_Name_String(buf3));
-			printf("%4s Launch_Compute_Kernel (device=%d) :: cmp_block(offset=%d, timestep=%d), halos:lo:hi=%s:%s, em=%s, cmp=%s, m1=%s%s%s, m2=%s, iem_offset=%d, im2_offset=%d, im1_offset=%d, cmp_offset=%d\n",
+			printf("%4s Launch_Compute_Kernel (device=%d) :: cmp_block(offset=%d, timestep=%d), em=%s, cmp=%s, m1=%s%s%s, m2=%s, iem_offset=%d, im2_offset=%d, im1_offset=%d, cmp_offset=%d\n",
 					Get_Name_String(buf1), _device_id, cmp_block_offset, cmp_block_timestep,
-					has_low_YHalo ? "Y" : "N", has_high_YHalo ? "Y" : "N",
 					em_block == 0L ? "N" : "Y",
 					cmp_block == 0L ? "N" : "Y",
 					m1L_block == 0L ? "N" : "Y", m1C_block == 0L ? "N" : "Y", m1R_block == 0L ? "N" : "Y",
@@ -681,6 +775,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Particle_Velocities_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
+				job->Get_Spatial_Order(),
 				num_z,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
@@ -697,10 +792,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				(float*)((char*)m1C_block + im1_offset * one_y_size),
 				m1R_block != 0L ? (float*)((char*)m1R_block + im1_offset * one_y_size) : 0L,
 				(float*)((char*)m2C_block + im2_offset * one_y_size),
-				_C0,
-				_C1,
-				_C2,
-				_C3,
+				_C8_0, _C8_1, _C8_2, _C8_3,
+				_C16_0,_C16_1,_C16_2,_C16_3,_C16_4,_C16_5,_C16_6,_C16_7,
 				1.0 / job->Get_DX(),
 				1.0 / job->Get_DY(),
 				1.0 / job->Get_DZ(),
@@ -748,6 +841,7 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 			Host_Propagate_Stresses_Orthorhombic_Kernel(
 				cmp_block_timestep,
 				Get_Compute_Stream(),
+				job->Get_Spatial_Order(),
 				num_z,
 				cmp_block_offset * _prop->Get_Block_Size_X(),
 				_cmp_y0,
@@ -764,10 +858,8 @@ void Elastic_Buffer::Launch_Compute_Kernel(bool Simple_Copy, float dti, Elastic_
 				(float*)((char*)m1C_block + im1_offset * one_y_size),
 				m1R_block != 0L ? (float*)((char*)m1R_block + im1_offset * one_y_size) : 0L,
 				(float*)((char*)m2C_block + im2_offset * one_y_size),
-				_C0,
-				_C1,
-				_C2,
-				_C3,
+				_C8_0, _C8_1, _C8_2, _C8_3,
+				_C16_0,_C16_1,_C16_2,_C16_3,_C16_4,_C16_5,_C16_6,_C16_7,
 				1.0 / job->Get_DX(),
 				1.0 / job->Get_DY(),
 				1.0 / job->Get_DZ(),
@@ -919,8 +1011,10 @@ unsigned long Elastic_Buffer::Allocate_Device_Blocks(void* d_Mem, unsigned long 
 	return (unsigned long)my_offset;
 }
 
-void Elastic_Buffer::Enable_Peer_Access()
+void Elastic_Buffer::Enable_Peer_Access(int log_level)
 {
-	if (_src != 0L) _prop->Enable_Peer_Access(_src->Get_Device_ID(), _device_id);
+	if (_src_L != 0L) _prop->Enable_Peer_Access(log_level, _src_L->Get_Device_ID(), _device_id);
+	if (_src != 0L) _prop->Enable_Peer_Access(log_level, _src->Get_Device_ID(), _device_id);
+	if (_src_R != 0L) _prop->Enable_Peer_Access(log_level, _src_R->Get_Device_ID(), _device_id);
 }
 

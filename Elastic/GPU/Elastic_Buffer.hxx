@@ -69,6 +69,7 @@ public:
 	char* Get_Name_String(char* buf);
 
 	int Get_Device_ID();
+	Elastic_Pipeline* Get_Pipeline() {return _pipe;}
 
 	void Reset();
 
@@ -85,6 +86,7 @@ public:
 
 	bool Is_Input();
 	bool Is_Compute();
+	bool Is_Model();
 	bool Is_Partial_Compute();
 
 	bool Is_Particle_Velocity() {return _Is_PV;}
@@ -102,6 +104,11 @@ public:
 
 	Elastic_Buffer* Get_Source_Buffer();
 	int Get_Source_Block_Relative_Offset();
+
+	Elastic_Buffer* Get_Source_Buffer_Left();
+	void Set_Source_Buffer_Left(Elastic_Buffer* src_L);
+	Elastic_Buffer* Get_Source_Buffer_Right();
+	void Set_Source_Buffer_Right(Elastic_Buffer* src_R);
 
 	Elastic_Buffer* Get_M1_Buffer();
 	Elastic_Buffer* Get_M2_Buffer();
@@ -172,7 +179,7 @@ public:
 
 	void Free_Device_Blocks();
 	unsigned long Allocate_Device_Blocks(void* d_Mem, unsigned long offset);
-	void Enable_Peer_Access();
+	void Enable_Peer_Access(int log_level);
 
 	cudaStream_t Get_Compute_Stream();
 	cudaStream_t Get_Input_Stream();
@@ -181,17 +188,39 @@ public:
 	void Launch_Data_Transfers();
 	void Launch_Simple_Copy_Kernel();
 
-	/* Original coefficients 
-	static const float _C0 = 1225.0f/1024.0f;
-	static const float _C1 = -245.0f/3072.0f;
-	static const float _C2 = 49.0f/5120.0f;
-	static const float _C3 = -5.0f/7168.0f; */
-	
-	// Optimized (for lower dispersion) coefficients 
-	static const float _C0 = 1.1850912100109303f;
-	static const float _C1 = -0.0835270299926924f;
-	static const float _C2 = 0.016837760894350576f;
-	static const float _C3 = -0.0027386181103430177f;
+	/*
+	// Optimized (for lower dispersion) coefficients for 8th order kernel
+	static const float _C8_0 = 1.1850912100109303f;
+        static const float _C8_1 = -0.0835270299926924f;
+        static const float _C8_2 = 0.016837760894350576f;
+        static const float _C8_3 = -0.0027386181103430177f;
+	*/
+	// coefficients for 8th order kernel (Taylor series)
+	static const float _C8_0 =  1225./1024.;
+	static const float _C8_1 = -245./3072.;
+	static const float _C8_2 =  49./5120.;
+	static const float _C8_3 = -5./7168.;
+
+	/*
+	// Optimized (for lower dispersion) coefficients for 16th order kernel
+	static const float _C16_0 =  1.2160849472312443f;
+	static const float _C16_1 = -0.10878283421533703f;
+	static const float _C16_2 = +0.035524258110029565f;
+	static const float _C16_3 = -0.015817648241526625f;
+	static const float _C16_4 = +0.007908440617596829f;
+	static const float _C16_5 = -0.004072081162273338f;
+	static const float _C16_6 = +0.0020091002443429107f;
+	static const float _C16_7 = -0.0006332700387870147f;
+	*/
+	// coefficients for 16th order kernel (Taylor series)
+	static const float _C16_0 =  41409225./33554432.;
+	static const float _C16_1 = -3578575./33554432.;
+	static const float _C16_2 =  3864861./167772160.;
+	static const float _C16_3 = -1254825./234881024.;
+	static const float _C16_4 =  325325./301989888.;
+	static const float _C16_5 = -61425./369098752.;
+	static const float _C16_6 =  7425./436207616.;
+	static const float _C16_7 = -143./167772160.;
 
 private:
 	friend class Elastic_Propagator;
@@ -221,7 +250,9 @@ private:
 	Elastic_Buffer* _em;		// Earth model buffer
 	Elastic_Buffer* _inp_m2;	// input buffer, two steps removed - must be same device id as this
 	Elastic_Buffer* _inp_m1;	// input buffer, one step removed - must be same device id as this
+	Elastic_Buffer* _src_L;
 	Elastic_Buffer* _src;		// source buffer for copy operations - must be different device id
+	Elastic_Buffer* _src_R;
 	int _dst_block_id;		// copy to this buffer into the block with id equal to _dst_block_id
 
 	unsigned long _allocated_bytes;	// total number of allocated bytes on device

@@ -7,6 +7,7 @@ void
 Host_Propagate_Particle_Velocities_Kernel(
 	int timestep,
 	cudaStream_t stream,
+	int spatial_order,	// either 8 or 16
 	int num_z,
 	int x0,
 	int y0,
@@ -23,10 +24,18 @@ Host_Propagate_Particle_Velocities_Kernel(
 	void* m1C,		// strain rates, middle
 	void* m1R,		// strain rates, right halo
 	void* m2C,		// particle velocities from previous timestep, middle
-	float C0,
-        float C1,
-        float C2,
-        float C3,
+	float C8_0,
+	float C8_1,
+	float C8_2,
+	float C8_3,
+	float C16_0,
+	float C16_1,
+	float C16_2,
+	float C16_3,
+	float C16_4,
+	float C16_5,
+	float C16_6,
+	float C16_7,
         float inv_DX,           // 1 / DX
         float inv_DY,           // 1 / DY
         float inv_DZ,           // 1 / DZ

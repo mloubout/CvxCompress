@@ -51,14 +51,6 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
                 float dz_frac = zs - (float)kcell;
 
                 float fsinc = cuGen_Sinc_Weight(threadIdx.x,threadIdx.y,thr_z,dx_frac,dy_frac,dz_frac);
-		/*
-		if (timestep == 3) printf("TIMESTEP %d :: dx_frac ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,dx_frac);
-		if (timestep == 3) printf("TIMESTEP %d :: dy_frac ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,dy_frac);
-		if (timestep == 3) printf("TIMESTEP %d :: dz_frac ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,dz_frac);
-		if (timestep == 3) printf("TIMESTEP %d :: xs ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,xs);
-		if (timestep == 3) printf("TIMESTEP %d :: ys ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,ys);
-		if (timestep == 3) printf("TIMESTEP %d :: zs ( %d, %d, %d ) = %e\n",timestep,my_x+x0,my_y+y0,my_z,zs);
-		*/
                 if (fsinc != 0.0f)
                 {
 			// mirror source if necessary
@@ -74,30 +66,23 @@ void __cuApply_Source_Term_To_TxxTyyTzz(
 			int em_one_word_size_f = one_wf_size_f;
 			int em_one_y_size_f = em_one_word_size_f * 4;
 
-			int emIdx = my_x + my_y * em_one_y_size_f + my_z * 4;
+			int emIdx = my_x + my_y * em_one_y_size_f + my_z * nx;
 			unsigned int em_word0 = em[emIdx];
 			unsigned int em_word3 = em[emIdx + 3*em_one_word_size_f];
 			float rho, bmod;
 			cuUnpack_And_Compute_Bulk_Modulus(em_word0, em_word3, Vp_min, Vp_range, Vs_min, Vs_range, Density_min, Density_range, &rho, &bmod);
 			float scale_sou = bmod / bmod_ref;
 
-			//if (threadIdx.x == 3 && threadIdx.y == 3)
-			//{
-			//	printf("\n*****\nmy_z=%d :: rho = %e, bmod = %e, scale_sou = %e, fsinc = %e\n*****\n\n",my_z,rho,bmod,scale_sou,fsinc);
-			//}
-
-                        int idx = my_x + my_y * one_y_size_f + my_z * 4;
+                        int idx = my_x + my_y * one_y_size_f + my_z * nx;
 			cmp[idx                ] = cmp[idx                ] - fsinc * scale_sou * dti * val * ampl1;
 			cmp[idx+  one_wf_size_f] = cmp[idx+  one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
 			cmp[idx+2*one_wf_size_f] = cmp[idx+2*one_wf_size_f] - fsinc * scale_sou * dti * val * ampl1;
 
-			//if (timestep == 1) printf("TIMESTEP 1 :: FSINC ( %d, %d, %d ) = %e\n",my_x+x0,my_y+y0,my_z,fsinc);
-
 			if (source_ghost_enabled)
 			{
 				int my_z_ghost = 2 * ghost_sea_surface_z - my_z;
-				int emIdx_ghost = my_x + my_y * em_one_y_size_f + my_z_ghost * 4;
-				int idx_ghost = my_x + my_y * one_y_size_f + my_z_ghost * 4;
+				int emIdx_ghost = my_x + my_y * em_one_y_size_f + my_z_ghost * nx;
+				int idx_ghost = my_x + my_y * one_y_size_f + my_z_ghost * nx;
 
 				unsigned int em_word0_ghost = em[emIdx_ghost];
 				unsigned int em_word3_ghost = em[emIdx_ghost + 3*em_one_word_size_f];
@@ -207,11 +192,11 @@ void cuApply_Point_Source_To_Single_TxxTyyTzz(
 {
 	if (delta != 0.0f && ix >= 0 && ix < nx && iy >= 0 && iy < ny && iz >= 0 && iz < nz)
 	{
-		int idx = ix + iy * one_y_size_f + iz * 4;
+		int idx = ix + iy * one_y_size_f + iz * nx;
 
 		int em_one_word_size_f = one_wf_size_f;
 		int em_one_y_size = em_one_word_size_f * 4;
-		int emIdx = ix + iy * em_one_y_size + iz * 4;
+		int emIdx = ix + iy * em_one_y_size + iz * nx;
 		unsigned int em_word0 = em[emIdx];
 		unsigned int em_word3 = em[emIdx + 3*em_one_word_size_f];
 		float rho, bmod;
@@ -407,8 +392,77 @@ void cuApply_Trilinear_Source_To_TxxTyyTzz(
 	}
 }
 
-__device__ 
+__device__
 void cuCompute_DXDYDZ_LoBuf(
+        int xoff,
+        int yoff,
+        int zoff,
+        float* dx,
+        float* dy,
+        float* dz,
+        float tmp1,
+        float tmp2,
+        float tmp3,
+        float tmp4,
+        float C0,
+        float C1,
+        float C2,
+        float C3,
+        float inv_DX,           // 1 / DX
+        float inv_DY,           // 1 / DY
+        float inv_DZ,           // 1 / DZ
+        int one_y_size_f,
+        float* buf,
+        float* vx_prev,
+        int offset
+        )
+{
+        // compute dx
+        float Vx_p0 = cuTransposeXZY2XYZ(buf, vx_prev[threadIdx.x+threadIdx.y*32+128]);  // read middle section from persistent Vx buffer
+        buf[threadIdx.x+threadIdx.y*96] = tmp1;
+        buf[threadIdx.x+threadIdx.y*96+32] = Vx_p0;
+        float Vx_p4 = tmp2;
+        buf[threadIdx.x+threadIdx.y*96+64] = Vx_p4;
+        __syncthreads();
+        *dx = (         C0 * (buf[cuCompTXXIdx(1+xoff)] - buf[cuCompTXXIdx(   xoff)]) +
+                        C1 * (buf[cuCompTXXIdx(2+xoff)] - buf[cuCompTXXIdx(-1+xoff)]) +
+                        C2 * (buf[cuCompTXXIdx(3+xoff)] - buf[cuCompTXXIdx(-2+xoff)]) +
+                        C3 * (buf[cuCompTXXIdx(4+xoff)] - buf[cuCompTXXIdx(-3+xoff)]) ) * inv_DX;
+
+        // ..compute dyVx
+        float v4 = buf[threadIdx.x+threadIdx.y*96+32];  // read middle section for dyVx from shared memory
+        __syncthreads();
+        buf[threadIdx.x+threadIdx.y*32+128] = v4;  // deposit middle section
+        buf[threadIdx.x+threadIdx.y*32+64*(threadIdx.y&4)] = tmp4;
+        __syncthreads();
+        *dy = (         C0 * (buf[cuCompTYYIdx(1+yoff)] - buf[cuCompTYYIdx(   yoff)]) +
+                        C1 * (buf[cuCompTYYIdx(2+yoff)] - buf[cuCompTYYIdx(-1+yoff)]) +
+                        C2 * (buf[cuCompTYYIdx(3+yoff)] - buf[cuCompTYYIdx(-2+yoff)]) +
+                        C3 * (buf[cuCompTYYIdx(4+yoff)] - buf[cuCompTYYIdx(-3+yoff)]) ) * inv_DY;
+
+        // ..compute dzVx
+        float v5 = cuTransposeXZY2XYZ(buf, tmp3);  // read next 8 z from gmem
+        buf[threadIdx.x+threadIdx.y*32] = vx_prev[threadIdx.x+threadIdx.y*32];  // copy 8 deepest z from txz buf
+        if (threadIdx.y < 4)
+        {
+                float v6 = vx_prev[threadIdx.x+threadIdx.y*32+256];
+                buf[threadIdx.x+threadIdx.y*32+256] = v6;  // copy 4 shallowest z from txz buf
+                buf[threadIdx.x+threadIdx.y*32+384] = v5;  // copy 4 deepest z from next block of txz
+                vx_prev[threadIdx.x+threadIdx.y*32] = v6;  // shift txzbuf by 8 z
+        }
+        // ..store next 8 z in txzbuf
+        __syncthreads();
+        vx_prev[threadIdx.x+threadIdx.y*32+128] = v5;
+        // note that we can use cuCompTYYIdx in place of cuCompTZZIdx after the transpose
+        *dz = -(        C0 * (buf[cuCompTYYIdx(1+zoff)] - buf[cuCompTYYIdx(   zoff)]) +
+                        C1 * (buf[cuCompTYYIdx(2+zoff)] - buf[cuCompTYYIdx(-1+zoff)]) +
+                        C2 * (buf[cuCompTYYIdx(3+zoff)] - buf[cuCompTYYIdx(-2+zoff)]) +
+                        C3 * (buf[cuCompTYYIdx(4+zoff)] - buf[cuCompTYYIdx(-3+zoff)]) ) * inv_DZ;
+        *dz = cuTransposeXZY2XYZ(buf,*dz);  // this actually transposes back from XYZ to XZY.
+}
+
+__device__ 
+void cuCompute_DXDYDZ_LoBuf_16(
 	int xoff,
 	int yoff,
 	int zoff,
@@ -418,11 +472,16 @@ void cuCompute_DXDYDZ_LoBuf(
 	float tmp1,
 	float tmp2,
 	float tmp3,
-	float tmp4,
+	float tmp4a,
+	float tmp4b,
 	float C0,
 	float C1,
 	float C2,
 	float C3,
+	float C4,
+	float C5,
+	float C6,
+	float C7,
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
@@ -433,58 +492,341 @@ void cuCompute_DXDYDZ_LoBuf(
 	)
 {
 	// compute dx
-	float Vx_p0 = cuTransposeXZY2XYZ(buf, vx_prev[threadIdx.x+threadIdx.y*32+128]);  // read middle section from persistent Vx buffer
-	buf[threadIdx.x+threadIdx.y*96] = tmp1;
-	buf[threadIdx.x+threadIdx.y*96+32] = Vx_p0;
-	float Vx_p4 = tmp2;
-	buf[threadIdx.x+threadIdx.y*96+64] = Vx_p4;
+	float Vx_p0 = cuTransposeXZY2XYZ_16(buf, vx_prev[threadIdx.x+threadIdx.y*64+512]);  // read middle section from persistent Vx buffer
+	buf[threadIdx.x+threadIdx.y*192] = tmp1;
+	buf[threadIdx.x+threadIdx.y*192+64] = Vx_p0;
+	float Vx_p8 = tmp2;
+	buf[threadIdx.x+threadIdx.y*192+128] = Vx_p8;
 	__syncthreads();
-	*dx = (         C0 * (buf[cuCompTXXIdx(1+xoff)] - buf[cuCompTXXIdx(   xoff)]) +
-                        C1 * (buf[cuCompTXXIdx(2+xoff)] - buf[cuCompTXXIdx(-1+xoff)]) +
-                        C2 * (buf[cuCompTXXIdx(3+xoff)] - buf[cuCompTXXIdx(-2+xoff)]) +
-                        C3 * (buf[cuCompTXXIdx(4+xoff)] - buf[cuCompTXXIdx(-3+xoff)]) ) * inv_DX;
+	*dx = (         C0 * (buf[cuCompTXXIdx_16(1+xoff)] - buf[cuCompTXXIdx_16(   xoff)]) +
+                        C1 * (buf[cuCompTXXIdx_16(2+xoff)] - buf[cuCompTXXIdx_16(-1+xoff)]) +
+                        C2 * (buf[cuCompTXXIdx_16(3+xoff)] - buf[cuCompTXXIdx_16(-2+xoff)]) +
+                        C3 * (buf[cuCompTXXIdx_16(4+xoff)] - buf[cuCompTXXIdx_16(-3+xoff)]) +
+			C4 * (buf[cuCompTXXIdx_16(5+xoff)] - buf[cuCompTXXIdx_16(-4+xoff)]) +
+			C5 * (buf[cuCompTXXIdx_16(6+xoff)] - buf[cuCompTXXIdx_16(-5+xoff)]) +
+			C6 * (buf[cuCompTXXIdx_16(7+xoff)] - buf[cuCompTXXIdx_16(-6+xoff)]) +
+			C7 * (Vx_p8                        - buf[cuCompTXXIdx_16(-7+xoff)]) ) * inv_DX;
 
 	// ..compute dyVx
-	float v4 = buf[threadIdx.x+threadIdx.y*96+32];  // read middle section for dyVx from shared memory
+	float v4 = buf[threadIdx.x+threadIdx.y*192+64];  // read middle section for dyVx from shared memory
 	__syncthreads();
-	buf[threadIdx.x+threadIdx.y*32+128] = v4;  // deposit middle section
-	buf[threadIdx.x+threadIdx.y*32+64*(threadIdx.y&4)] = tmp4;
+	buf[threadIdx.x+threadIdx.y*64] = tmp4a;
+	buf[threadIdx.x+threadIdx.y*64+512] = v4;  // deposit middle section
+	buf[threadIdx.x+threadIdx.y*64+1024] = tmp4b;
 	__syncthreads();
-	*dy = (         C0 * (buf[cuCompTYYIdx(1+yoff)] - buf[cuCompTYYIdx(   yoff)]) +
-                        C1 * (buf[cuCompTYYIdx(2+yoff)] - buf[cuCompTYYIdx(-1+yoff)]) +
-                        C2 * (buf[cuCompTYYIdx(3+yoff)] - buf[cuCompTYYIdx(-2+yoff)]) +
-                        C3 * (buf[cuCompTYYIdx(4+yoff)] - buf[cuCompTYYIdx(-3+yoff)]) ) * inv_DY;
+	*dy = (         C0 * (buf[cuCompTYYIdx_16(1+yoff)] - buf[cuCompTYYIdx_16(   yoff)]) +
+                        C1 * (buf[cuCompTYYIdx_16(2+yoff)] - buf[cuCompTYYIdx_16(-1+yoff)]) +
+                        C2 * (buf[cuCompTYYIdx_16(3+yoff)] - buf[cuCompTYYIdx_16(-2+yoff)]) +
+                        C3 * (buf[cuCompTYYIdx_16(4+yoff)] - buf[cuCompTYYIdx_16(-3+yoff)]) +
+                        C4 * (buf[cuCompTYYIdx_16(5+yoff)] - buf[cuCompTYYIdx_16(-4+yoff)]) +
+                        C5 * (buf[cuCompTYYIdx_16(6+yoff)] - buf[cuCompTYYIdx_16(-5+yoff)]) +
+                        C6 * (buf[cuCompTYYIdx_16(7+yoff)] - buf[cuCompTYYIdx_16(-6+yoff)]) +
+                        C7 * (buf[cuCompTYYIdx_16(8+yoff)] - buf[cuCompTYYIdx_16(-7+yoff)]) ) * inv_DY;
 
 	// ..compute dzVx
-	float v5 = cuTransposeXZY2XYZ(buf, tmp3);  // read next 8 z from gmem
-	buf[threadIdx.x+threadIdx.y*32] = vx_prev[threadIdx.x+threadIdx.y*32];  // copy 8 deepest z from txz buf
-	if (threadIdx.y < 4)
-	{
-		float v6 = vx_prev[threadIdx.x+threadIdx.y*32+256];
-		buf[threadIdx.x+threadIdx.y*32+256] = v6;  // copy 4 shallowest z from txz buf
-		buf[threadIdx.x+threadIdx.y*32+384] = v5;  // copy 4 deepest z from next block of txz
-		vx_prev[threadIdx.x+threadIdx.y*32] = v6;  // shift txzbuf by 8 z
-	}
-	// ..store next 8 z in txzbuf
+	float v5 = cuTransposeXZY2XYZ_16(buf, tmp3);  // read next 8 z from gmem
+	buf[threadIdx.x+threadIdx.y*64] = vx_prev[threadIdx.x+threadIdx.y*64];  // copy 16 deepest z from txz buf
+	buf[threadIdx.x+threadIdx.y*64+512] = vx_prev[threadIdx.x+threadIdx.y*64+512];
+	buf[threadIdx.x+threadIdx.y*64+1024] = v5;
+	// ..shift vx_prev by 8*z
+	vx_prev[threadIdx.x+threadIdx.y*64] = vx_prev[threadIdx.x+threadIdx.y*64+512];
+	vx_prev[threadIdx.x+threadIdx.y*64+512] = v5;
 	__syncthreads();
-	vx_prev[threadIdx.x+threadIdx.y*32+128] = v5;
-	// note that we can use cuCompTYYIdx in place of cuCompTZZIdx after the transpose
-	*dz = -(        C0 * (buf[cuCompTYYIdx(1+zoff)] - buf[cuCompTYYIdx(   zoff)]) +
-                        C1 * (buf[cuCompTYYIdx(2+zoff)] - buf[cuCompTYYIdx(-1+zoff)]) +
-                        C2 * (buf[cuCompTYYIdx(3+zoff)] - buf[cuCompTYYIdx(-2+zoff)]) +
-                        C3 * (buf[cuCompTYYIdx(4+zoff)] - buf[cuCompTYYIdx(-3+zoff)]) ) * inv_DZ;
-	*dz = cuTransposeXZY2XYZ(buf,*dz);  // this actually transposes back from XYZ to XZY.
+	// note that we can use cuCompTYYIdx_16 in place of cuCompTZZIdx after the transpose
+	*dz = -(        C0 * (buf[cuCompTYYIdx_16(1+zoff)] - buf[cuCompTYYIdx_16(   zoff)]) +
+                        C1 * (buf[cuCompTYYIdx_16(2+zoff)] - buf[cuCompTYYIdx_16(-1+zoff)]) +
+                        C2 * (buf[cuCompTYYIdx_16(3+zoff)] - buf[cuCompTYYIdx_16(-2+zoff)]) +
+                        C3 * (buf[cuCompTYYIdx_16(4+zoff)] - buf[cuCompTYYIdx_16(-3+zoff)]) +
+                        C4 * (buf[cuCompTYYIdx_16(5+zoff)] - buf[cuCompTYYIdx_16(-4+zoff)]) +
+                        C5 * (buf[cuCompTYYIdx_16(6+zoff)] - buf[cuCompTYYIdx_16(-5+zoff)]) +
+                        C6 * (buf[cuCompTYYIdx_16(7+zoff)] - buf[cuCompTYYIdx_16(-6+zoff)]) +
+                        C7 * (buf[cuCompTYYIdx_16(8+zoff)] - buf[cuCompTYYIdx_16(-7+zoff)]) ) * inv_DZ;
+	*dz = cuTransposeXZY2XYZ_16(buf,*dz);  // this actually transposes back from XYZ to XZY.
 }
 
 __global__
 #if __CUDA_ARCH__ >= 370
 __launch_bounds__(256,8)
 #elif __CUDA_ARCH__ >= 300
-__launch_bounds__(1280)
+__launch_bounds__(256,5)
 #elif __CUDA_ARCH__ >= 200
-__launch_bounds__(768)
+__launch_bounds__(256,3)
 #endif
 void cuPropagate_Stresses_Orthorhombic_Kernel(
+        int timestep,
+        int x0,                 // x coordinate of westernmost coordinate in block
+        int y0,                 // y coordinate of southernmost coordinate in block
+        int y1,
+        int m1_y0,
+        int m1_y1,
+        int vol_nx,             // dimensions of global volume
+        int vol_ny,
+        int vol_nz,
+        float dti_half,
+        unsigned int* em,       // earth model, 4 interleaved integers. y(0)
+        float* cmp,             // txx, tyy, tzz, txy, txz and tyz, middle, t(1), y(0)
+        float* m1L,             // Vx, Vy, Vz, Sx, Sy, Sz in that order. left halo, t(0), y(0)
+        float* m1C,             // ..middle, t(0), y(0)
+        float* m1R,             // ..right halo, t(0), y(0)
+        float* m2C,             // txx, tyy, tzz, txy, txz and tyz. middle, t(0), y(0)
+        float C0,
+        float C1,
+        float C2,
+        float C3,
+        float inv_DX,           // 1 / DX
+        float inv_DY,           // 1 / DY
+        float inv_DZ,           // 1 / DZ
+        float vpvert_avtop,
+        float vpvert_avbot,
+        int nabc_sdx,
+        int nabc_sdy,
+        int nabc_top,
+        int nabc_bot,
+        float Vp_min,
+        float Vp_range,
+        float Vs_min,
+        float Vs_range,
+        float Density_min,
+        float Density_range,
+        float Dip_min,
+        float Dip_range,
+        float Azimuth_min,
+        float Azimuth_range,
+        float Rake_min,
+        float Rake_range,
+        float Delta1_min,
+        float Delta1_range,
+        float Delta2_min,
+        float Delta2_range,
+        float Delta3_min,
+        float Delta3_range,
+        float Epsilon1_min,
+        float Epsilon1_range,
+        float Epsilon2_min,
+        float Epsilon2_range,
+        float Gamma1_min,
+        float Gamma1_range,
+        float Gamma2_min,
+        float Gamma2_range,
+        int one_wf_size_f,
+        int one_y_size_f,
+        int em_one_word_size_f,
+        int em_one_y_size_f
+        )
+{
+        // work buffer
+        __shared__ float buf[768];
+
+        // two persistent buffers used to hold Vx, Vy or Vz values from previous loop iteration
+        __shared__ float vx_prev[384];
+        __shared__ float vy_prev[384];
+        __shared__ float vz_prev[384];
+
+        int z_per_block = (((vol_nz/8) + gridDim.z - 1) / gridDim.z) * 8;
+        int z0 = z_per_block * blockIdx.z;
+        int z1 = z0 + z_per_block - 1;
+        if (z1 >= vol_nz) z1 = vol_nz - 1;
+        int nz = z1 - z0 + 1;
+        if (nz <= 0) return;
+
+        int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * 4;
+
+        // populate persistent buffers
+        int y = y0 + (threadIdx.y + blockIdx.y * 8);
+        if (z0 == 0)
+        {
+                vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+                vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+                vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
+                if (threadIdx.y < 4)
+                {
+                        // mirror
+                        vx_prev[threadIdx.x+(3-threadIdx.y)*32] = vx_prev[threadIdx.x+(5+threadIdx.y)*32];
+                        vy_prev[threadIdx.x+(3-threadIdx.y)*32] = vy_prev[threadIdx.x+(5+threadIdx.y)*32];
+                        vz_prev[threadIdx.x+(3-threadIdx.y)*32] = vz_prev[threadIdx.x+(4+threadIdx.y)*32];
+                }
+        }
+        else
+        {
+                 vx_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16] : 0.0f);
+                vy_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+one_wf_size_f] : 0.0f);
+                vz_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+2*one_wf_size_f] : 0.0f);
+                vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+                vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+                vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
+        }
+        __syncthreads();
+
+        for (int iZ = 0;  iZ < nz/8;  ++iZ)
+        {
+                int x = x0 + (threadIdx.x & 3);
+                int z = z0 + iZ * 8 + (threadIdx.x / 4);
+
+                float tmp1, tmp5, tmp9;
+                if (m1L != 0L && y <= m1_y1)
+                {
+                        tmp1 = m1L[offset];
+                        tmp5 = m1L[offset+one_wf_size_f];
+                        tmp9 = m1L[offset+2*one_wf_size_f];
+                }
+                else
+                {
+                        tmp1 = tmp5 = tmp9 = 0.0f;
+                }
+
+                float tmp2, tmp6, tmpA;
+                if (m1R != 0L && y <= m1_y1)
+                {
+                        tmp2 = m1R[offset];
+                        tmp6 = m1R[offset+one_wf_size_f];
+                        tmpA = m1R[offset+2*one_wf_size_f];
+                }
+                else
+                {
+                        tmp2 = tmp6 = tmpA = 0.0f;
+                }
+
+                float tmp3, tmp7, tmpB;
+                if (z < vol_nz-8 && y <= m1_y1)
+                {
+                        tmp3 = m1C[offset+32];
+                        tmp7 = m1C[offset+one_wf_size_f+32];
+                        tmpB = m1C[offset+2*one_wf_size_f+32];
+                }
+                else
+                {
+                        tmp3 = tmp7 = tmpB = 0.0f;
+                }
+
+                float tmp4, tmp8, tmpC;
+                if (threadIdx.y < 4)
+                {
+                        if (y-4 >= m1_y0)
+                        {
+                                tmp4 = m1C[offset-4*one_y_size_f];
+                                tmp8 = m1C[offset+one_wf_size_f-4*one_y_size_f];
+                                tmpC = m1C[offset+2*one_wf_size_f-4*one_y_size_f];
+                        }
+                        else
+                        {
+                                tmp4 = tmp8 = tmpC = 0.0f;
+                        }
+                }
+                else
+                {
+                        if (y+4 <= m1_y1)
+                        {
+                                tmp4 = m1C[offset+4*one_y_size_f];
+                                tmp8 = m1C[offset+one_wf_size_f+4*one_y_size_f];
+                                tmpC = m1C[offset+2*one_wf_size_f+4*one_y_size_f];
+                        }
+                        else
+                        {
+                                tmp4 = tmp8 = tmpC = 0.0f;
+                        }
+                }
+
+                float dxVx, dyVx, dzVx;
+                cuCompute_DXDYDZ_LoBuf(0,0,0,&dxVx,&dyVx,&dzVx,tmp1,tmp2,tmp3,tmp4,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vx_prev,offset);
+
+                float dxVy, dyVy, dzVy;
+                cuCompute_DXDYDZ_LoBuf(-1,-1,0,&dxVy,&dyVy,&dzVy,tmp5,tmp6,tmp7,tmp8,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vy_prev,offset);
+
+                float dxVz, dyVz, dzVz;
+                cuCompute_DXDYDZ_LoBuf(-1,0,-1,&dxVz,&dyVz,&dzVz,tmp9,tmpA,tmpB,tmpC,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vz_prev,offset);
+
+                float dtexx = dxVx;
+                float dteyy = dyVy;
+                float dtezz = dzVz;
+                float dteyz2 = dzVy + dyVz;
+                float dtexz2 = dzVx + dxVz;
+                float dtexy2 = dyVx + dxVy;
+
+                if (y <= y1)
+                {
+                        int emIdx = (threadIdx.y + blockIdx.y * 8) * em_one_y_size_f + (iZ*32) + (z0*4) + threadIdx.x;
+                        float c11, c22, c33, c44, c55, c66, c12, c13, c23;
+                        float dip, azimuth, rake;
+                        cuUnpack_And_Compute_On_Kite_CIJs(
+                                        em[emIdx], em[emIdx+em_one_word_size_f], em[emIdx+2*em_one_word_size_f], em[emIdx+3*em_one_word_size_f],
+                                        Vp_min, Vp_range,
+                                        Vs_min, Vs_range,
+                                        Density_min, Density_range,
+                                        Dip_min, Dip_range,
+                                        Azimuth_min, Azimuth_range,
+                                        Rake_min, Rake_range,
+                                        Delta1_min, Delta1_range,
+                                        Delta2_min, Delta2_range,
+                                        Delta3_min, Delta3_range,
+                                        Epsilon1_min, Epsilon1_range,
+                                        Epsilon2_min, Epsilon2_range,
+                                        Gamma1_min, Gamma1_range,
+                                        Gamma2_min, Gamma2_range,
+                                        &dip, &azimuth, &rake,
+                                        &c11, &c22, &c33, &c44, &c55, &c66, &c12, &c13, &c23
+                                        );
+
+                        // Absorbing boundary decay funct (for Maxwell viscoelastic model):
+                        float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
+                        float dabc = (1.0f - 0.5f*deta*dti_half) / (1.0f + 0.5f*deta*dti_half);
+
+                        float old_txx = m2C[offset];
+                        float txx = c11 * dtexx + c12 * dteyy + c13 * dtezz;
+			txx = (1.0f + dabc) * dti_half * txx + dabc * dabc * old_txx;
+
+                        float old_tyy = m2C[offset+one_wf_size_f];
+                        float tyy = c12 * dtexx + c22 * dteyy + c23 * dtezz;
+			tyy = (1.0f + dabc) * dti_half * tyy + dabc * dabc * old_tyy;
+
+                        float old_tzz = m2C[offset+2*one_wf_size_f];
+                        float tzz = c13 * dtexx + c23 * dteyy + c33 * dtezz;
+			tzz = (1.0f + dabc) * dti_half * tzz + dabc * dabc * old_tzz;
+
+                        float old_txy = m2C[offset+3*one_wf_size_f];
+                        float txy = c66 * dtexy2;
+			txy = (1.0f + dabc) * dti_half * txy + dabc * dabc * old_txy;
+
+                        if (z == 0)
+                        {
+                                float c13_ = c33 - 2.0f * c55;
+                                float dum1 = (c13_ * c13_) / c33;
+                                float dum2 = c13_ - dum1;
+                                dum1 = c11 - dum1;
+                                txx = old_txx + 2.0f * dti_half * (dum1 * dxVx + dum2 * dyVy);
+                                tyy = old_tyy + 2.0f * dti_half * (dum2 * dxVx + dum1 * dyVy);
+                                // txy = 0.0f;  04/08/15 This was a bug, according to Kurt Nihei
+                                tzz = 0.0f;
+                        }
+
+                        cmp[offset] = txx;
+                        cmp[offset+one_wf_size_f] = tyy;
+                        cmp[offset+2*one_wf_size_f] = tzz;
+                        cmp[offset+3*one_wf_size_f] = txy;
+
+                        float old_txz = m2C[offset+4*one_wf_size_f];
+                        float txz = c55 * dtexz2;
+			txz = (1.0f + dabc) * dti_half * txz + dabc * dabc * old_txz;
+                        cmp[offset+4*one_wf_size_f] = txz;
+
+                        float old_tyz = m2C[offset+5*one_wf_size_f];
+                        float tyz = c44 * dteyz2;
+			tyz = (1.0f + dabc) * dti_half * tyz + dabc * dabc * old_tyz;
+                        cmp[offset+5*one_wf_size_f] = tyz;
+                }
+
+                offset += 32;
+        }
+}
+
+__global__
+#if __CUDA_ARCH__ >= 370
+__launch_bounds__(512,4)
+#elif __CUDA_ARCH__ >= 300
+__launch_bounds__(512,2)
+#elif __CUDA_ARCH__ >= 200
+__launch_bounds__(512,1)
+#endif
+void cuPropagate_Stresses_Orthorhombic_Kernel_16(
 	int timestep,
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
@@ -494,7 +836,7 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	int vol_nx,		// dimensions of global volume
 	int vol_ny,
 	int vol_nz,
-	float dti,
+	float dti_half,
 	unsigned int* em,	// earth model, 4 interleaved integers. y(0)
 	float* cmp,		// txx, tyy, tzz, txy, txz and tyz, middle, t(1), y(0)
 	float* m1L,		// Vx, Vy, Vz, Sx, Sy, Sz in that order. left halo, t(0), y(0)
@@ -505,6 +847,10 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	float C1,
 	float C2,
 	float C3,
+	float C4,
+	float C5,
+	float C6,
+	float C7,
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
@@ -547,52 +893,53 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 	)
 {
 	// work buffer
-	__shared__ float buf[768];
+	__shared__ float buf[1536];
 	
 	// two persistent buffers used to hold Vx, Vy or Vz values from previous loop iteration
-	__shared__ float vx_prev[384];
-	__shared__ float vy_prev[384];
-	__shared__ float vz_prev[384];
+	__shared__ float vx_prev[1024];
+	__shared__ float vy_prev[1024];
+	__shared__ float vz_prev[1024];
 
-	int z_per_block = (((vol_nz/8) + gridDim.z - 1) / gridDim.z) * 8;
+	const int bsX = 8;
+	const int bsX_Mask = 7;
+	//const int bsX_Shift = 3;
+	const int bsZ = 8;
+
+	int z_per_block = (((vol_nz/bsZ) + gridDim.z - 1) / gridDim.z) * bsZ;
 	int z0 = z_per_block * blockIdx.z;
 	int z1 = z0 + z_per_block - 1;
 	if (z1 >= vol_nz) z1 = vol_nz - 1;
 	int nz = z1 - z0 + 1;
 	if (nz <= 0) return;
 
-        int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * 4;
+        int offset = (threadIdx.y + blockIdx.y * 8) * one_y_size_f + threadIdx.x + z0 * bsX;
 
         // populate persistent buffers
 	int y = y0 + (threadIdx.y + blockIdx.y * 8);
 	if (z0 == 0)
 	{
-		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
-		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
-		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
-		if (threadIdx.y < 4)
-		{
-			// mirror
-			vx_prev[threadIdx.x+(3-threadIdx.y)*32] = vx_prev[threadIdx.x+(5+threadIdx.y)*32];
-			vy_prev[threadIdx.x+(3-threadIdx.y)*32] = vy_prev[threadIdx.x+(5+threadIdx.y)*32];
-			vz_prev[threadIdx.x+(3-threadIdx.y)*32] = vz_prev[threadIdx.x+(4+threadIdx.y)*32];
-		}
+		vx_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
+		vx_prev[threadIdx.x+(7-threadIdx.y)*64] = threadIdx.y == 7 ? 0.0f : vx_prev[threadIdx.x+(9+threadIdx.y)*64];  // vx_prev[z=-8] is never used.
+		vy_prev[threadIdx.x+(7-threadIdx.y)*64] = threadIdx.y == 7 ? 0.0f : vy_prev[threadIdx.x+(9+threadIdx.y)*64];  // vy_prev[z=-8] is never used.
+		vz_prev[threadIdx.x+(7-threadIdx.y)*64] = vz_prev[threadIdx.x+(8+threadIdx.y)*64];
 	}
 	else
 	{
-		vx_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16] : 0.0f);
-		vy_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+one_wf_size_f] : 0.0f);
-		vz_prev[threadIdx.x+threadIdx.y*32] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset-16+2*one_wf_size_f] : 0.0f);
-		vx_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
-		vy_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
-		vz_prev[threadIdx.x+threadIdx.y*32+128] = cuTransposeXZY2XYZ(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
+		vx_prev[threadIdx.x+threadIdx.y*64] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset-64] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*64] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset-64+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*64] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset-64+2*one_wf_size_f] : 0.0f);
+		vx_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset] : 0.0f);
+		vy_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset+one_wf_size_f] : 0.0f);
+		vz_prev[threadIdx.x+threadIdx.y*64+512] = cuTransposeXZY2XYZ_16(buf,y<=m1_y1 ? m1C[offset+2*one_wf_size_f] : 0.0f);
 	}
 	__syncthreads();
 
-	for (int iZ = 0;  iZ < nz/8;  ++iZ)
+	for (int iZ = 0;  iZ < nz/bsZ;  ++iZ)
 	{
-		int x = x0 + (threadIdx.x & 3);
-		int z = z0 + iZ * 8 + (threadIdx.x / 4);
+		int x = x0 + (threadIdx.x & bsX_Mask);
+		int z = z0 + iZ * bsZ + (threadIdx.x / bsX);
 
 		float tmp1, tmp5, tmp9;
 		if (m1L != 0L && y <= m1_y1)
@@ -619,62 +966,47 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		}
 
 		float tmp3, tmp7, tmpB;
-		if (z < vol_nz-8 && y <= m1_y1)
+		if (z < vol_nz-bsZ && y <= m1_y1)
 		{
-			tmp3 = m1C[offset+32];
-			tmp7 = m1C[offset+one_wf_size_f+32];
-			tmpB = m1C[offset+2*one_wf_size_f+32];
+			tmp3 = m1C[offset+64];
+			tmp7 = m1C[offset+one_wf_size_f+64];
+			tmpB = m1C[offset+2*one_wf_size_f+64];
 		}
 		else
 		{
 			tmp3 = tmp7 = tmpB = 0.0f;
 		}
 
-		float tmp4, tmp8, tmpC;
-		if (threadIdx.y < 4)
+		float tmp4a, tmp4b, tmp8a, tmp8b, tmpCa, tmpCb;
+		if (y-8 >= m1_y0)
 		{
-			if (y-4 >= m1_y0)
-			{
-				tmp4 = m1C[offset-4*one_y_size_f];
-				tmp8 = m1C[offset+one_wf_size_f-4*one_y_size_f];
-				tmpC = m1C[offset+2*one_wf_size_f-4*one_y_size_f];
-			}
-			else
-			{
-				tmp4 = tmp8 = tmpC = 0.0f;
-			}
+			tmp4a = m1C[offset-8*one_y_size_f];
+			tmp8a = m1C[offset+one_wf_size_f-8*one_y_size_f];
+			tmpCa = m1C[offset+2*one_wf_size_f-8*one_y_size_f];
 		}
 		else
 		{
-			if (y+4 <= m1_y1)
-			{
-				tmp4 = m1C[offset+4*one_y_size_f];
-				tmp8 = m1C[offset+one_wf_size_f+4*one_y_size_f];
-				tmpC = m1C[offset+2*one_wf_size_f+4*one_y_size_f];
-			}
-			else
-			{
-				tmp4 = tmp8 = tmpC = 0.0f;
-			}
+			tmp4a = tmp8a = tmpCa = 0.0f;
+		}
+		if (y+8 <= m1_y1)
+		{
+			tmp4b = m1C[offset+8*one_y_size_f];
+			tmp8b = m1C[offset+one_wf_size_f+8*one_y_size_f];
+			tmpCb = m1C[offset+2*one_wf_size_f+8*one_y_size_f];
+		}
+		else
+		{
+			tmp4b = tmp8b = tmpCb = 0.0f;
 		}
 
 		float dxVx, dyVx, dzVx;
-		cuCompute_DXDYDZ_LoBuf(0,0,0,&dxVx,&dyVx,&dzVx,tmp1,tmp2,tmp3,tmp4,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vx_prev,offset);
-		//if (dxVx != 0.0f) printf("x=%d,y=%d,z=%d - dxVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVx);
-		//if (dyVx != 0.0f) printf("x=%d,y=%d,z=%d - dyVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVx);
-		//if (dzVx != 0.0f) printf("x=%d,y=%d,z=%d - dzVx = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVx);
+		cuCompute_DXDYDZ_LoBuf_16(0,0,0,&dxVx,&dyVx,&dzVx,tmp1,tmp2,tmp3,tmp4a,tmp4b,C0,C1,C2,C3,C4,C5,C6,C7,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vx_prev,offset);
 
 		float dxVy, dyVy, dzVy;
-		cuCompute_DXDYDZ_LoBuf(-1,-1,0,&dxVy,&dyVy,&dzVy,tmp5,tmp6,tmp7,tmp8,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vy_prev,offset);
-		//if (dxVy != 0.0f) printf("x=%d,y=%d,z=%d - dxVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVy);
-		//if (dyVy != 0.0f) printf("x=%d,y=%d,z=%d - dyVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVy);
-		//if (dzVy != 0.0f) printf("x=%d,y=%d,z=%d - dzVy = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVy);
+		cuCompute_DXDYDZ_LoBuf_16(-1,-1,0,&dxVy,&dyVy,&dzVy,tmp5,tmp6,tmp7,tmp8a,tmp8b,C0,C1,C2,C3,C4,C5,C6,C7,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vy_prev,offset);
 
 		float dxVz, dyVz, dzVz;
-		cuCompute_DXDYDZ_LoBuf(-1,0,-1,&dxVz,&dyVz,&dzVz,tmp9,tmpA,tmpB,tmpC,C0,C1,C2,C3,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vz_prev,offset);
-		//if (dxVz != 0.0f) printf("x=%d,y=%d,z=%d - dxVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dxVz);
-		//if (dyVz != 0.0f) printf("x=%d,y=%d,z=%d - dyVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dyVz);
-		//if (dzVz != 0.0f) printf("x=%d,y=%d,z=%d - dzVz = %f\n",x0+(threadIdx.x&3),y0+threadIdx.y+blockIdx.y*8,iZ*8+(threadIdx.x>>2),dzVz);
+		cuCompute_DXDYDZ_LoBuf_16(-1,0,-1,&dxVz,&dyVz,&dzVz,tmp9,tmpA,tmpB,tmpCa,tmpCb,C0,C1,C2,C3,C4,C5,C6,C7,inv_DX,inv_DY,inv_DZ,one_y_size_f,buf,vz_prev,offset);
 
 		float dtexx = dxVx;
 		float dteyy = dyVy;
@@ -683,16 +1015,9 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 		float dtexz2 = dzVx + dxVz;
 		float dtexy2 = dyVx + dxVy;
 
-		//if (dtexx != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEXX (%d, %d, %d) = %e\n",x,y,z,dtexx);
-		//if (dteyy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEYY (%d, %d, %d) = %e\n",x,y,z,dteyy);
-		//if (dtezz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEZZ (%d, %d, %d) = %e\n",x,y,z,dtezz);
-		//if (dteyz2 != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEYZ2 (%d, %d, %d) = %e\n",x,y,z,dteyz2);
-		//if (dtexz2 != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEXZ2 (%d, %d, %d) = %e\n",x,y,z,dtexz2);
-		//if (dtexy2 != 0.0f && timestep == 1) printf("TIMESTEP 1 :: DTEXY2 (%d, %d, %d) = %e\n",x,y,z,dtexy2);
-
 		if (y <= y1)
 		{
-			int emIdx = (threadIdx.y + blockIdx.y * 8) * em_one_y_size_f + (iZ*32) + (z0*4) + threadIdx.x;
+			int emIdx = (threadIdx.y + blockIdx.y * 8) * em_one_y_size_f + (iZ*bsZ*bsX) + (z0*bsX) + threadIdx.x;
 			float c11, c22, c33, c44, c55, c66, c12, c13, c23;
 			float dip, azimuth, rake;
 			cuUnpack_And_Compute_On_Kite_CIJs(
@@ -716,23 +1041,23 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 
 			// Absorbing boundary decay funct (for Maxwell viscoelastic model):
 			float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
-			float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
+			float dabc = (1.0f - 0.5f*deta*dti_half) / (1.0f + 0.5f*deta*dti_half);
 
 			float old_txx = m2C[offset];
 			float txx = c11 * dtexx + c12 * dteyy + c13 * dtezz;
-			txx = dti * txx + dabc * old_txx;
+			txx = (1.0f + dabc) * dti_half * txx + dabc * dabc * old_txx;
 
 			float old_tyy = m2C[offset+one_wf_size_f];
 			float tyy = c12 * dtexx + c22 * dteyy + c23 * dtezz;
-			tyy = dti * tyy + dabc * old_tyy;
+			tyy = (1.0f + dabc) * dti_half * tyy + dabc * dabc * old_tyy;
 
 			float old_tzz = m2C[offset+2*one_wf_size_f];
 			float tzz = c13 * dtexx + c23 * dteyy + c33 * dtezz;
-			tzz = dti * tzz + dabc * old_tzz;
+			tzz = (1.0f + dabc) * dti_half * tzz + dabc * dabc * old_tzz;
 
 			float old_txy = m2C[offset+3*one_wf_size_f];
 			float txy = c66 * dtexy2;
-			txy = dti * txy + dabc * old_txy;
+			txy = (1.0f + dabc) * dti_half * txy + dabc * dabc * old_txy;
 
 			if (z == 0)
 			{
@@ -740,14 +1065,11 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 				float dum1 = (c13_ * c13_) / c33;
 				float dum2 = c13_ - dum1;
 				dum1 = c11 - dum1;
-				txx = old_txx + 2.0f * dti * (dum1 * dxVx + dum2 * dyVy);
-				tyy = old_tyy + 2.0f * dti * (dum2 * dxVx + dum1 * dyVy);
+				txx = old_txx + 2.0f * dti_half * (dum1 * dxVx + dum2 * dyVy);
+				tyy = old_tyy + 2.0f * dti_half * (dum2 * dxVx + dum1 * dyVy);
 				// txy = 0.0f;  04/08/15 This was a bug, according to Kurt Nihei
 				tzz = 0.0f;
 			}
-
-			//float FAKE = c12;
-			//FAKE = -FAKE / 3.0f;
 
 			cmp[offset] = txx;
 			cmp[offset+one_wf_size_f] = tyy;
@@ -756,63 +1078,23 @@ void cuPropagate_Stresses_Orthorhombic_Kernel(
 
 			float old_txz = m2C[offset+4*one_wf_size_f];
 			float txz = c55 * dtexz2;
-			txz = dti * txz + dabc * old_txz;
+			txz = (1.0f + dabc) * dti_half * txz + dabc * dabc * old_txz;
 			cmp[offset+4*one_wf_size_f] = txz;
 
 			float old_tyz = m2C[offset+5*one_wf_size_f];
 			float tyz = c44 * dteyz2;
-			tyz = dti * tyz + dabc * old_tyz;
+			tyz = (1.0f + dabc) * dti_half * tyz + dabc * dabc * old_tyz;
 			cmp[offset+5*one_wf_size_f] = tyz;
-
-			//if (txx != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXX (%d, %d, %d) = %e\n",x,y,z,txx);
-			//if (tyy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYY (%d, %d, %d) = %e\n",x,y,z,tyy);
-			//if (tzz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TZZ (%d, %d, %d) = %e\n",x,y,z,tzz);
-			//if (txy != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXY (%d, %d, %d) = %e\n",x,y,z,txy);
-			//if (txz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TXZ (%d, %d, %d) = %e\n",x,y,z,txz);
-			//if (tyz != 0.0f && timestep == 1) printf("TIMESTEP 1 :: TYZ (%d, %d, %d) = %e\n",x,y,z,tyz);
-
-			/*
-			   if (x == 501 && y == 401 && z == 401)
-			   {
-			   printf("\nPropagate_Stress_Isotropic\n");
-			   printf("--------------------------\n");
-			   printf("timestep = %d\n",timestep);
-			   printf("dti = %e\n",dti);
-			   printf("dtexx = %e\n",dtexx);
-			   printf("dteyy = %e\n",dteyy);
-			   printf("dtezz = %e\n",dtezz);
-			   printf("dteyz2 = %e\n",dteyz2);
-			   printf("dtexz2 = %e\n",dtexz2);
-			   printf("dtexy2 = %e\n",dtexy2);
-			   printf("c11 = %e\n",c11);
-			   printf("c22 = %e\n",c22);
-			   printf("c33 = %e\n",c33);
-			   printf("c44 = %e\n",c44);
-			   printf("c55 = %e\n",c55);
-			   printf("c66 = %e\n",c66);
-			   printf("c12 = %e\n",c12);
-			   printf("c13 = %e\n",c13);
-			   printf("c23 = %e\n",c23);
-			   printf("dabc = %e\n",dabc);
-			   printf("deta = %e\n",deta);
-			   printf("txx = %e\n",txx);
-			   printf("tyy = %e\n",tyy);
-			   printf("tzz = %e\n",tzz);
-			   printf("txy = %e\n",txy);
-			   printf("txz = %e\n",txz);
-			   printf("tyz = %e\n",tyz);
-			   printf("\n");
-			   }
-			 */
 		}
 
-		offset += 32;
+		offset += 64;
 	}
 }
 
 void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	int timestep,
 	cudaStream_t stream,
+	int spatial_order,	// either 8 or 16
 	int num_z,		// number of thread blocks along z axis. must be 1 or more.
 	int x0,			// x coordinate of westernmost coordinate in block
 	int y0,			// y coordinate of southernmost coordinate in block
@@ -829,10 +1111,18 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
         float* m1C,		// ..middle, t(0), y(0)
         float* m1R,		// ..right halo, t(0), y(0)
         float* m2C,		// txx, tyy, tzz, txy, txz and tyz. middle, t(0), y(0)
-	float C0,
-	float C1,
-	float C2,
-	float C3,
+	float C8_0,
+	float C8_1,
+	float C8_2,
+	float C8_3,
+	float C16_0,
+	float C16_1,
+	float C16_2,
+	float C16_3,
+	float C16_4,
+	float C16_5,
+	float C16_6,
+	float C16_7,
 	float inv_DX,		// 1 / DX
 	float inv_DY,		// 1 / DY
 	float inv_DZ,		// 1 / DZ
@@ -882,6 +1172,7 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	float bmod_ref
 	)
 {
+	assert(spatial_order == 8 || spatial_order == 16);
 	if (!source_ghost_enabled) ghost_sea_surface_z = 0;
 
 	//printf("inject_source=%s, is_pressure=%s, ampl1=%e, svaw_sample=%e, xsou=%f, ysou=%f, zsou=%f\n",inject_source?"Y":"N",is_pressure?"Y":"N",ampl1,svaw_sample,xsou,ysou,zsou);
@@ -894,37 +1185,68 @@ void Host_Propagate_Stresses_Orthorhombic_Kernel(
 	//printf("vpvert_avtop = %f, vpvert_avbot = %f\n",vpvert_avtop,vpvert_avbot);
 	//printf("has_low_YHalo = %s, has_high_YHalo = %s\n",has_low_YHalo?"Y":"N",has_high_YHalo?"Y":"N");
 
-	int nx = 4;
+	int nx = spatial_order / 2;
 	int ny = y1 - y0 + 1;
 	int nz = vol_nz;
 
-	dim3 blockShape(32,8,1);
-	dim3 gridShape(1,(ny+7)/8,num_z);
-
-	cuPropagate_Stresses_Orthorhombic_Kernel<<<gridShape,blockShape,0,stream>>>(
-		timestep,
-		x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti, 
-		em,cmp,m1L,m1C,m1R,m2C,
-		C0,C1,C2,C3,
-		inv_DX,inv_DY,inv_DZ,
-		vpvert_avtop,vpvert_avbot,
-		nabc_sdx,nabc_sdy,nabc_top,nabc_bot,
-		Vp_min,Vp_range/65535.0f,
-		Vs_min,Vs_range/65535.0f,
-		Density_min,Density_range/255.0f,
-		Dip_min,Dip_range/255.0f,
-		Azimuth_min,Azimuth_range/255.0f,
-		Rake_min,Rake_range/255.0f,
-		Delta1_min,Delta1_range/255.0f,
-		Delta2_min,Delta2_range/255.0f,
-		Delta3_min,Delta3_range/255.0f,
-		Epsilon1_min,Epsilon1_range/255.0f,
-		Epsilon2_min,Epsilon2_range/255.0f,
-		Gamma1_min,Gamma1_range/255.0f,
-		Gamma2_min,Gamma2_range/255.0f,
-		one_wf_size/4,one_y_size/4,
-		em_one_word_size/4,em_one_y_size/4
-		);
+	if (spatial_order == 8)
+	{
+		dim3 blockShape(32,8,1);
+		dim3 gridShape(1,(ny+7)/8,num_z);
+		cuPropagate_Stresses_Orthorhombic_Kernel<<<gridShape,blockShape,0,stream>>>(
+				timestep,
+				x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti/2.0f,
+				em,cmp,m1L,m1C,m1R,m2C,
+				C8_0,C8_1,C8_2,C8_3,
+				inv_DX,inv_DY,inv_DZ,
+				vpvert_avtop,vpvert_avbot,
+				nabc_sdx,nabc_sdy,nabc_top,nabc_bot,
+				Vp_min,Vp_range/65535.0f,
+				Vs_min,Vs_range/65535.0f,
+				Density_min,Density_range/255.0f,
+				Dip_min,Dip_range/255.0f,
+				Azimuth_min,Azimuth_range/255.0f,
+				Rake_min,Rake_range/255.0f,
+				Delta1_min,Delta1_range/255.0f,
+				Delta2_min,Delta2_range/255.0f,
+				Delta3_min,Delta3_range/255.0f,
+				Epsilon1_min,Epsilon1_range/255.0f,
+				Epsilon2_min,Epsilon2_range/255.0f,
+				Gamma1_min,Gamma1_range/255.0f,
+				Gamma2_min,Gamma2_range/255.0f,
+				one_wf_size/4,one_y_size/4,
+				em_one_word_size/4,em_one_y_size/4
+					);
+	}
+	else if (spatial_order == 16)
+	{
+		dim3 blockShape(64,8,1);
+		dim3 gridShape(1,(ny+7)/8,num_z);
+		cuPropagate_Stresses_Orthorhombic_Kernel_16<<<gridShape,blockShape,0,stream>>>(
+				timestep,
+				x0,y0,y1,m1_y0,m1_y1,vol_nx,vol_ny,vol_nz,dti/2.0f, 
+				em,cmp,m1L,m1C,m1R,m2C,
+				C16_0,C16_1,C16_2,C16_3,C16_4,C16_5,C16_6,C16_7,
+				inv_DX,inv_DY,inv_DZ,
+				vpvert_avtop,vpvert_avbot,
+				nabc_sdx,nabc_sdy,nabc_top,nabc_bot,
+				Vp_min,Vp_range/65535.0f,
+				Vs_min,Vs_range/65535.0f,
+				Density_min,Density_range/255.0f,
+				Dip_min,Dip_range/255.0f,
+				Azimuth_min,Azimuth_range/255.0f,
+				Rake_min,Rake_range/255.0f,
+				Delta1_min,Delta1_range/255.0f,
+				Delta2_min,Delta2_range/255.0f,
+				Delta3_min,Delta3_range/255.0f,
+				Epsilon1_min,Epsilon1_range/255.0f,
+				Epsilon2_min,Epsilon2_range/255.0f,
+				Gamma1_min,Gamma1_range/255.0f,
+				Gamma2_min,Gamma2_range/255.0f,
+				one_wf_size/4,one_y_size/4,
+				em_one_word_size/4,em_one_y_size/4
+					);
+	}
 #ifdef GPU_DEBUG
 	gpuErrchk( cudaPeekAtLastError() );
 	gpuErrchk( cudaDeviceSynchronize() );

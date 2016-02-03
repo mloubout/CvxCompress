@@ -76,7 +76,7 @@ public:
 	void Print_Graphical(int device_id);
 	void Print_Graphical();
 
-	bool Allocate_Device_Memory();
+	bool Allocate_Device_Memory(int log_level);
 	void Free_Device_Memory();
 
 	void Allocate_RxLoc_Buffer(Elastic_Shot* shot);

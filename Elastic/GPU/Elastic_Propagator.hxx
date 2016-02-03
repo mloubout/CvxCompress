@@ -51,7 +51,7 @@ public:
 	void Free_Host_Memory();
 	bool Check_Host_Memory();
 
-	bool Allocate_Device_Memory();
+	bool Allocate_Device_Memory(int log_level);
 	void Free_Device_Memory();
 
 	size_t Get_Minimum_Free_GPU_Memory();
@@ -90,7 +90,7 @@ public:
 	// or it is a pinned memory buffer.
 	void* Get_Host_Block(int bX, bool Is_Model, bool Is_PV, bool Is_Input);
 
-	bool Enable_Peer_Access(int device_id, int peer_device_id);
+	bool Enable_Peer_Access(int log_level, int device_id, int peer_device_id);
 
 	cudaStream_t Get_Compute_Stream(int device_id);
 	cudaStream_t Get_Input_Stream(int device_id);
@@ -131,11 +131,12 @@ private:
 			bool debug
 		  );
 	bool Build_Compute_Pipelines(
+			int log_level,
 			int num_pipes, 
 			int num_timesteps, 
 			const int* device_id, 
 			int num_devices,
-			bool partial_allowed
+			bool web_allowed
 			);
 	void Delete_Compute_Pipelines();
 	void Automatically_Build_Compute_Pipelines();
@@ -146,8 +147,8 @@ private:
 	// calculate a number representative of total computational cost of all pipelines.
 	double Calculate_Cost(int y0, int ylen, int ny, int num_timesteps, int GPUs_per_pipe, int half_stencil, double* rel_cost);
 	
-	bool Print_Device_Stats(int device_id, double& TFLOPS, double& GB_per_s);
-	bool Check_GPUs(int* device_id, int num_devices);
+	bool Print_Device_Stats(int log_level, int device_id, double& TFLOPS, double& GB_per_s);
+	bool Check_GPUs(int log_level, int* device_id, int num_devices);
 
 	int Get_Physical_Core_Count(int& Cache_Size_Per_Core_KB);
 
@@ -197,6 +198,8 @@ private:
 	void omp_memcpy(void* dst, void* src, size_t len);
 
 	int _bsX;		// X block size
+	int _bsX_Shift;		// X block size shift value
+	int _bsX_Mask;
 	int _NbX;		// number of blocks
 	int* _ts;		// current timestep for each block
 	bool _pinned;		// FLAG indicating if pinned memory was used

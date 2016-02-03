@@ -6,6 +6,7 @@ float cuTrilinear_Interpolation(
 	int ix,
 	int x0,
 	int x1,
+	int nx,
 	int iy,
 	int y0,
 	int y1,
@@ -25,14 +26,14 @@ float cuTrilinear_Interpolation(
 	bool zlo = true;
 	bool zhi = true;
 
-	float V000 = xlo && ylo && zlo ? cmp[(ix  -x0) + (iy  -y0) * one_y_size_f +  iz    * 4] : 0.0f;
-	float V100 = xhi && ylo && zlo ? cmp[(ix+1-x0) + (iy  -y0) * one_y_size_f +  iz    * 4] : 0.0f;
-	float V010 = xlo && yhi && zlo ? cmp[(ix  -x0) + (iy+1-y0) * one_y_size_f +  iz    * 4] : 0.0f;
-	float V110 = xhi && yhi && zlo ? cmp[(ix+1-x0) + (iy+1-y0) * one_y_size_f +  iz    * 4] : 0.0f;
-	float V001 = xlo && ylo && zhi ? cmp[(ix  -x0) + (iy  -y0) * one_y_size_f + (iz+1) * 4] : 0.0f;
-	float V101 = xhi && ylo && zhi ? cmp[(ix+1-x0) + (iy  -y0) * one_y_size_f + (iz+1) * 4] : 0.0f;
-	float V011 = xlo && yhi && zhi ? cmp[(ix  -x0) + (iy+1-y0) * one_y_size_f + (iz+1) * 4] : 0.0f;
-	float V111 = xhi && yhi && zhi ? cmp[(ix+1-x0) + (iy+1-y0) * one_y_size_f + (iz+1) * 4] : 0.0f;
+	float V000 = xlo && ylo && zlo ? cmp[(ix  -x0) + (iy  -y0) * one_y_size_f +  iz    * nx] : 0.0f;
+	float V100 = xhi && ylo && zlo ? cmp[(ix+1-x0) + (iy  -y0) * one_y_size_f +  iz    * nx] : 0.0f;
+	float V010 = xlo && yhi && zlo ? cmp[(ix  -x0) + (iy+1-y0) * one_y_size_f +  iz    * nx] : 0.0f;
+	float V110 = xhi && yhi && zlo ? cmp[(ix+1-x0) + (iy+1-y0) * one_y_size_f +  iz    * nx] : 0.0f;
+	float V001 = xlo && ylo && zhi ? cmp[(ix  -x0) + (iy  -y0) * one_y_size_f + (iz+1) * nx] : 0.0f;
+	float V101 = xhi && ylo && zhi ? cmp[(ix+1-x0) + (iy  -y0) * one_y_size_f + (iz+1) * nx] : 0.0f;
+	float V011 = xlo && yhi && zhi ? cmp[(ix  -x0) + (iy+1-y0) * one_y_size_f + (iz+1) * nx] : 0.0f;
+	float V111 = xhi && yhi && zhi ? cmp[(ix+1-x0) + (iy+1-y0) * one_y_size_f + (iz+1) * nx] : 0.0f;
 
 	float c00 = V000 * ( 1.0f - xd ) + V100 * xd;
 	float c10 = V010 * ( 1.0f - xd ) + V110 * xd;
@@ -54,12 +55,13 @@ float cuComp_Sum_Of_TXX_TYY_TZZ(
 	int iz,
 	int x0,
 	int y0,
+	int nx,
 	int one_y_size_f,
 	int one_wf_size_f,
 	float* cmp
 	)
 {
-	int idx = (ix - x0) + (iy -y0) * one_y_size_f +  iz * 4;
+	int idx = (ix - x0) + (iy -y0) * one_y_size_f +  iz * nx;
 	return cmp[idx] + cmp[idx+one_wf_size_f] + cmp[idx+2*one_wf_size_f];
 }
 
@@ -68,6 +70,7 @@ float cuTrilinear_Interpolation_TXX_TYY_TZZ(
 	int ix,
 	int x0,
 	int x1,
+	int nx,
 	int iy,
 	int y0,
 	int y1,
@@ -88,14 +91,14 @@ float cuTrilinear_Interpolation_TXX_TYY_TZZ(
 	bool zlo = true;
 	bool zhi = true;
 
-	float V000 = xlo && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy  ,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V100 = xhi && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy  ,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V010 = xlo && yhi && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy+1,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V110 = xhi && yhi && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy+1,iz  ,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V001 = xlo && ylo && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy  ,iz+1,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V101 = xhi && ylo && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy  ,iz+1,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V011 = xlo && yhi && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy+1,iz+1,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
-	float V111 = xhi && yhi && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy+1,iz+1,x0,y0,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V000 = xlo && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy  ,iz  ,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V100 = xhi && ylo && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy  ,iz  ,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V010 = xlo && yhi && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy+1,iz  ,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V110 = xhi && yhi && zlo ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy+1,iz  ,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V001 = xlo && ylo && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy  ,iz+1,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V101 = xhi && ylo && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy  ,iz+1,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V011 = xlo && yhi && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix  ,iy+1,iz+1,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
+	float V111 = xhi && yhi && zhi ? cuComp_Sum_Of_TXX_TYY_TZZ(ix+1,iy+1,iz+1,x0,y0,nx,one_y_size_f,one_wf_size_f,cmp) : 0.0f;
 
 	float c00 = V000 * ( 1.0f - xd ) + V100 * xd;
 	float c10 = V010 * ( 1.0f - xd ) + V110 * xd;
@@ -183,14 +186,14 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 				int ix = (int)lrintf(recx);
 				int iy = (int)lrintf(recy);
 				int iz = (int)lrintf(recz);
-				int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+				int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 				if (rcv_ghost)
 				{
 					int izg = 2 * ghost_sea_surface_z - iz;
-					int idxg = idx - (iz - izg) * 4;
+					int idxg = idx - (iz - izg) * nx;
 					if (recflags & 2) res[outidx++] = cmp[idx] - cmp[idxg];
                                         if (recflags & 4) res[outidx++] = cmp[idx+one_wf_size_f] - cmp[idxg+one_wf_size_f];
-                                        if (recflags & 8) res[outidx++] = cmp[idx+2*one_wf_size_f] + cmp[idxg+2*one_wf_size_f - 4];  // TMJ, -4 is because Vz is off +0.5dz
+                                        if (recflags & 8) res[outidx++] = cmp[idx+2*one_wf_size_f] + cmp[idxg+2*one_wf_size_f - nx];  // TMJ, -nx is because Vz is off +0.5dz
 					// TMJ, Vz requires a POSITIVE ghost, hence the + sign. This is not a bug.
 				}
 				else
@@ -218,8 +221,8 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						int Vx_ix = (int)truncf(recx + 0.5f);
 						float Vx_xd = recx - (float)Vx_ix + 0.5f;
 						res[outidx++] = 
-							cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp)
-							- cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,Vx_xd,yd,zdg,cmp);
+							cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp)
+							- cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,Vx_xd,yd,zdg,cmp);
 					}
 					if (recflags & 4)
 					{
@@ -227,8 +230,8 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						int Vy_iy = (int)truncf(recy - 0.5f);
 						float Vy_yd = recy - (float)Vy_iy - 0.5f;
 						res[outidx++] = 
-							cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f)
-							- cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,Vy_yd,zdg,cmp+one_wf_size_f);
+							cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f)
+							- cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,Vy_iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,xd,Vy_yd,zdg,cmp+one_wf_size_f);
 					}
 					if (recflags & 8)
 					{
@@ -239,8 +242,8 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						float Vz_zdg = 1.0f - Vz_zd;
 						// TMJ, Vz requires a POSITIVE ghost, hence the + sign. This is not a bug.
 						res[outidx++] = 
-							cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f)
-							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_izg,nz-1,one_y_size_f,xd,yd,Vz_zdg,cmp+2*one_wf_size_f);
+							cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f)
+							+ cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,Vz_izg,nz-1,one_y_size_f,xd,yd,Vz_zdg,cmp+2*one_wf_size_f);
 					}
 				}
 				else
@@ -250,21 +253,21 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						// Vx - no ghost
 						int Vx_ix = (int)truncf(recx + 0.5f);
 						float Vx_xd = recx - (float)Vx_ix + 0.5f;
-						res[outidx++] = cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp);
+						res[outidx++] = cuTrilinear_Interpolation(Vx_ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,Vx_xd,yd,zd,cmp);
 					}
 					if (recflags & 4)
 					{
 						// Vy - no ghost
 						int Vy_iy = (int)truncf(recy - 0.5f);
 						float Vy_yd = recy - (float)Vy_iy - 0.5f;
-						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f);
+						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,Vy_iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,xd,Vy_yd,zd,cmp+one_wf_size_f);
 					}
 					if (recflags & 8)
 					{
 						// Vz - no ghost
 						int Vz_iz = (int)truncf(recz - 0.5f);
 						float Vz_zd = recz - (float)Vz_iz - 0.5f;
-						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f);
+						res[outidx++] = cuTrilinear_Interpolation(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,Vz_iz,nz-1,one_y_size_f,xd,yd,Vz_zd,cmp+2*one_wf_size_f);
 					}
 				}
 			}
@@ -314,13 +317,13 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						{
 							for (int ix = ix_min;  ix <= ix_max;  ++ix)
 							{
-								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 								float fsinc = sinc_Vx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 								acc_Vx += fsinc * cmp[idx];
 								if (rcv_ghost)
 								{
 									int iz_ghost = 2 * ghost_sea_surface_z - iz;
-									int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+									int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * nx;
 									acc_Vx -= fsinc * cmp[idx_ghost];
 								}
 							}
@@ -340,13 +343,13 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						{
 							for (int ix = ix_min;  ix <= ix_max;  ++ix)
 							{
-								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 								float fsinc = sinc_Dx[ix-icell+3] * sinc_Vy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 								acc_Vy += fsinc * cmp[idx+one_wf_size_f];
 								if (rcv_ghost)
 								{
 									int iz_ghost = 2 * ghost_sea_surface_z - iz;
-                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * nx;
                                                                         acc_Vy -= fsinc * cmp[idx_ghost+one_wf_size_f];
 								}
 							}
@@ -366,14 +369,14 @@ void cuExtract_Receiver_Particle_Velocity_Values(
 						{
 							for (int ix = ix_min;  ix <= ix_max;  ++ix)
 							{
-								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+								int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 								float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Vz[iz-kcell+3];
 								acc_Vz += fsinc * cmp[idx+2*one_wf_size_f];
 								if (rcv_ghost)
 								{
 									// -1 because Vz is +0.5dz off
 									int iz_ghost = 2 * ghost_sea_surface_z - iz - 1;
-                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+                                                                        int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * nx;
 									// TMJ, Vz requires a POSITIVE ghost, hence the + sign. This is not a bug.
                                                                         acc_Vz += fsinc * cmp[idx_ghost+2*one_wf_size_f];
 								}
@@ -456,11 +459,11 @@ void cuExtract_Receiver_Pressure_Values(
 				int ix = (int)lrintf(recx);
 				int iy = (int)lrintf(recy);
 				int iz = (int)lrintf(recz);
-				int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+				int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 				if (rcv_ghost)
 				{
 					int izg = 2* ghost_sea_surface_z - iz;
-					int idxg = idx - (iz - izg) * 4;
+					int idxg = idx - (iz - izg) * nx;
 					res[outidx++] = -(cmp[idx] - cmp[idxg] + cmp[idx+one_wf_size_f] - cmp[idxg+one_wf_size_f] + cmp[idx+2*one_wf_size_f] - cmp[idxg+2*one_wf_size_f]) / 3.0f;
 				}
 				else
@@ -481,12 +484,12 @@ void cuExtract_Receiver_Pressure_Values(
 					int izg = 2 * ghost_sea_surface_z - iz - 1;
 					float zdg = 1.0f - zd;
 					res[outidx++] = 
-						-(cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zd,cmp)
-								- cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zdg,cmp)) / 3.0f;
+						-(cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zd,cmp)
+								- cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,izg,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zdg,cmp)) / 3.0f;
 				}
 				else
 				{
-					res[outidx++] = -(cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zd,cmp)) / 3.0f;
+					res[outidx++] = -(cuTrilinear_Interpolation_TXX_TYY_TZZ(ix,x0,x0+nx-1,nx,iy,y0,y0+ny-1,iz,nz-1,one_y_size_f,one_wf_size_f,xd,yd,zd,cmp)) / 3.0f;
 				}
 			}
 			else if (interpolation_method == Sinc)
@@ -531,14 +534,14 @@ void cuExtract_Receiver_Pressure_Values(
 					{
 						for (int ix = ix_min;  ix <= ix_max;  ++ix)
 						{
-							int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * 4;
+							int idx = (ix-x0) + (iy-y0) * one_y_size_f + iz * nx;
 							float fsinc = sinc_Dx[ix-icell+3] * sinc_Dy[iy-jcell+3] * sinc_Dz[iz-kcell+3];
 							acc += fsinc * (cmp[idx] + cmp[idx+one_wf_size_f] + cmp[idx+2*one_wf_size_f]);
 							//printf("rec=[%f,%f,%f] = %f, x0=%d, y0=%d, ix=%d, iy=%d, iz=%d, fsinc_x=%f, fsinc_y=%f, fsinc_z=%f, txx=%f, tyy=%f, tzz=%f\n",recx,recy,recz,acc,x0,y0,ix,iy,iz,sinc_Dx[ix-icell+3],sinc_Dy[iy-jcell+3],sinc_Dz[iz-kcell+3],cmp[idx],cmp[idx+one_wf_size_f],cmp[idx+2*one_wf_size_f]);
 							if (rcv_ghost)
 							{
 								int iz_ghost = 2 * ghost_sea_surface_z - iz;
-								int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * 4;
+								int idx_ghost = (ix-x0) + (iy-y0) * one_y_size_f + iz_ghost * nx;
 								acc -= fsinc * (cmp[idx_ghost] + cmp[idx_ghost+one_wf_size_f] + cmp[idx_ghost+2*one_wf_size_f]);
 							}
 						}

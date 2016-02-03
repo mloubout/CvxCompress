@@ -34,7 +34,7 @@ Elastic_Propagator::Elastic_Propagator(Elastic_Modeling_Job* job)
 			job->Get_DX(),
 			job->Get_DY(),
 			job->Get_DZ(),
-			8,
+			job->Get_Spatial_Order(),
 			false
 	     );
 }
@@ -154,6 +154,9 @@ void Elastic_Propagator::_init(
 	_nz = nz;
 
 	_bsX = Stencil_Order / 2;
+	_bsX_Mask = _bsX - 1;
+	_bsX_Shift = 0;
+	for (int tmp = _bsX >> 1;  tmp != 0;  tmp = tmp >> 1) ++_bsX_Shift;
 	_NbX = (_nx + _bsX - 1) / _bsX;
 
 	_ts = 0L;
@@ -189,11 +192,12 @@ Elastic_Propagator::~Elastic_Propagator()
 }
 
 bool Elastic_Propagator::Build_Compute_Pipelines(
+	int log_level,
 	int num_pipes, 
 	int num_timesteps, 
 	const int* device_id, 
 	int num_devices,
-	bool partial_allowed
+	bool web_allowed
 	)
 {
 	bool load_balance_possible = true;
@@ -222,7 +226,7 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 		}
 	}
 
-	if (Check_GPUs(_device_id, num_devices))
+	if (Check_GPUs(log_level, _device_id, num_devices))
 	{
 		_num_pipes = num_pipes;
 		_GPUs_per_pipe = num_devices / num_pipes;
@@ -241,11 +245,11 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 			{
 				for (int iStep = num_timesteps*2-1;  iStep >= 0;  --iStep, ++i)
 				{
-					if (partial_allowed || iGPU == 0) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
+					if ((web_allowed && iGPU == (_GPUs_per_pipe-1)) || (!web_allowed && iGPU == 0)) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
 				}
 			}
 			//for (int i = 1;  i < _GPUs_per_pipe*num_timesteps*2;  ++i) half_halo_cost += (double)(i * half_stencil * _rel_cost[i&1]);
-			double extra_work = half_halo_cost / ((double)((partial_allowed ? _GPUs_per_pipe : 1) * num_timesteps * num_pipes) * 8.0);
+			double extra_work = half_halo_cost / ((double)(num_timesteps * num_pipes) * 8.0);
 			extra_work = 2.0 * extra_work / (_rel_cost[0] + _rel_cost[1]);
 			double y0 = 0.0;
 			for (int iPipe = 0;  iPipe < num_pipes;  ++iPipe)
@@ -257,7 +261,7 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 			}
 			if (!load_balance_possible)
 			{
-				printf("Warning! Volume is too narrow for proper load balancing.\n");
+				if (log_level >= 3) printf("Warning! Volume is too narrow for proper load balancing.\n");
 				y0 = 0.0;
 				for (int iPipe = 0;  iPipe < num_pipes;  ++iPipe)
 				{
@@ -274,10 +278,13 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 				cost[iPipe] = Calculate_Cost(y0,pipe_width[iPipe],_ny,num_timesteps,_GPUs_per_pipe,half_stencil,_rel_cost);
 				total_cost += cost[iPipe];
 			}
-			printf("Load balancing between pipes ::\n");
-			for (int iPipe = 0, y0=0;  iPipe < num_pipes;  y0+=pipe_width[iPipe++])
+			if (log_level >= 4)
 			{
-				printf("  Pipe %d :: y=[%d,%d], width=%d, cost=%.2f%%\n",iPipe+1,y0,y0+pipe_width[iPipe]-1,pipe_width[iPipe],100.0*cost[iPipe]/total_cost);
+				printf("Load balancing between pipes ::\n");
+				for (int iPipe = 0, y0=0;  iPipe < num_pipes;  y0+=pipe_width[iPipe++])
+				{
+					printf("  Pipe %d :: y=[%d,%d], width=%d, cost=%.2f%%\n",iPipe+1,y0,y0+pipe_width[iPipe]-1,pipe_width[iPipe],100.0*cost[iPipe]/total_cost);
+				}
 			}
 			delete [] cost;
 		}
@@ -306,8 +313,17 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 				steps[i][1] = y1;
 
 				// next iteration
-				y0 -= half_stencil;
-				y1 += half_stencil;
+				bool shift_GPU = ((i % (num_timesteps*2)) == 0) ? true : false;
+				if (web_allowed && shift_GPU)
+				{
+					y0 = pipe_y0;
+					y1 = pipe_y0 + pipe_width[iPipe] - 1;
+				}
+				else
+				{
+					y0 -= half_stencil;
+					y1 += half_stencil;
+				}
 				if (y0 < 0) y0 = 0;
 				if (y1 >= _ny) y1 = _ny-1;
 			}
@@ -342,97 +358,46 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 				}
 				double local_cost = (double)ylen * _rel_cost[i&1];
 				bool steps_per_gpu_exceeded = ((i+1)%(num_timesteps*2)) == 0 ? true : false;
-				if ((partial_allowed && cost + local_cost >= max_cost_per_GPU) || (!partial_allowed && steps_per_gpu_exceeded))
+				if (steps_per_gpu_exceeded)
 				{
-					if (partial_allowed && cost + local_cost > max_cost_per_GPU)
-					{
-						vals[2] = (int)round((double)ylen * (max_cost_per_GPU - cost) / local_cost);
+					vals[2] = 0;
 
-						// partial step - sending end
-						double split_cost = local_cost * (double)vals[2] / (double)ylen;
-						cost = cost + split_cost;
-						Elastic_Buffer* tmp = new Elastic_Buffer(
-								this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,vals[0],vals[0]+vals[2]-1,vals[0],vals[0]+vals[2]-1,z0,z1,2,cbo,0,
-								_pipes[iPipe]->Get_Buffer(-2),_pipes[iPipe]->Get_Buffer(-1),0L,0
-								);
-						--cbo;
-						++curr_steps;
-						tmp->Add_To_YRange(min_y,max_y);
-						_pipes[iPipe]->Append_Buffer(tmp);
+					// full step - sending end
+					Elastic_Buffer* tmp = new Elastic_Buffer(
+							this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,vals[0],vals[1],vals[0],vals[1],z0,z1,2,cbo,0,
+							_pipes[iPipe]->Get_Buffer(-2),_pipes[iPipe]->Get_Buffer(-1),0L,0
+							);
+					--cbo;
+					tmp->Add_To_YRange(min_y,max_y);
+					++curr_steps;
+					_pipes[iPipe]->Append_Buffer(tmp);
 
-						prev_EM = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,min_y,max_y,z0,z1,curr_steps+2,emcbo,prev_EM,0);
-						_pipes[iPipe]->Add_EM_Buffer(prev_EM);
-						curr_steps = 0;
-						min_y = 1000000000;
-						max_y = -1000000000;
+					prev_EM = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,min_y,max_y,z0,z1,curr_steps+3,emcbo,prev_EM,0);
+					_pipes[iPipe]->Add_EM_Buffer(prev_EM);
+					emcbo = cbo;
+					curr_steps = 0;
+					min_y = 1000000000;
+					max_y = -1000000000;
 
-						++iGPU;
-						if (iGPU >= _GPUs_per_pipe) break;
-						cost = local_cost - split_cost;
-						//printf("..GPU %d\n",iGPU+1);
-						curr_device_id = device_id[iPipe*_GPUs_per_pipe+iGPU];
+					++iGPU;
+					if (iGPU >= _GPUs_per_pipe) break;
+					
+					vals = steps[i+1];
+					cost = 0; //cost + local_cost - max_cost_per_GPU;
+					//printf("..GPU %d\n",iGPU+1);
+					curr_device_id = device_id[iPipe*_GPUs_per_pipe+iGPU];
 
-						// partial step - receiving end
-						tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,iStep/2,(iStep&1)==1,vals[0]+vals[2],vals[1],z0,z1,3,cbo+1,_pipes[iPipe]->Get_Buffer(-4),0);
-						_pipes[iPipe]->Append_Buffer(tmp);
+					// full step - receiving end
+					tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,(iStep+1)/2,((iStep+1)&1)==1,vals[0],vals[1],z0,z1,3,cbo,_pipes[iPipe]->Get_Buffer(-3),0);
+					_pipes[iPipe]->Append_Buffer(tmp);
 
-						int inp_b_y0 = vals[0] - half_stencil;
-						int inp_b_y1 = vals[1] + half_stencil;
-						if (inp_b_y0 < 0) inp_b_y0 = 0;
-						if (inp_b_y1 >= _ny) inp_b_y1 = _ny-1;
-						tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,(iStep+1)/2,((iStep+1)&1)==1,inp_b_y0,inp_b_y1,z0,z1,4,cbo+1,_pipes[iPipe]->Get_Buffer(-4),0);
-						_pipes[iPipe]->Append_Buffer(tmp);
-
-						tmp = new Elastic_Buffer(
-								this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,vals[0],vals[1],vals[0]+vals[2],vals[1],z0,z1,4,cbo,1,
-								_pipes[iPipe]->Get_Buffer(-2),_pipes[iPipe]->Get_Buffer(-1),_pipes[iPipe]->Get_Buffer(-4),0
-								);
-						emcbo = cbo + 1;
-						cbo -= 2;
-						++curr_steps;
-						tmp->Add_To_YRange(min_y,max_y);
-						_pipes[iPipe]->Append_Buffer(tmp);
-					}
-					else
-					{
-						vals[2] = 0;
-
-						// full step - sending end
-						Elastic_Buffer* tmp = new Elastic_Buffer(
-								this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,vals[0],vals[1],vals[0],vals[1],z0,z1,2,cbo,0,
-								_pipes[iPipe]->Get_Buffer(-2),_pipes[iPipe]->Get_Buffer(-1),0L,0
-								);
-						--cbo;
-						tmp->Add_To_YRange(min_y,max_y);
-						++curr_steps;
-						_pipes[iPipe]->Append_Buffer(tmp);
-
-						prev_EM = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,min_y,max_y,z0,z1,curr_steps+3,emcbo,prev_EM,0);
-						_pipes[iPipe]->Add_EM_Buffer(prev_EM);
-						emcbo = cbo;
-						curr_steps = 0;
-						min_y = 1000000000;
-						max_y = -1000000000;
-
-						++iGPU;
-						if (iGPU >= _GPUs_per_pipe) break;
-
-						cost = 0; //cost + local_cost - max_cost_per_GPU;
-						//printf("..GPU %d\n",iGPU+1);
-						curr_device_id = device_id[iPipe*_GPUs_per_pipe+iGPU];
-
-						// full step - receiving end
-						tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,(iStep+1)/2,((iStep+1)&1)==1,vals[0],vals[1],z0,z1,3,cbo,_pipes[iPipe]->Get_Buffer(-3),0);
-						_pipes[iPipe]->Append_Buffer(tmp);
-
-						int inp_b_y0 = vals[0] - half_stencil;
-						int inp_b_y1 = vals[1] + half_stencil;
-						if (inp_b_y0 < 0) inp_b_y0 = 0;
-						if (inp_b_y1 >= _ny) inp_b_y1 = _ny-1;
-						tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,inp_b_y0,inp_b_y1,z0,z1,4,cbo,_pipes[iPipe]->Get_Buffer(-3),0);
-						_pipes[iPipe]->Append_Buffer(tmp);
-						cbo -= 2;
-					}
+					int inp_b_y0 = vals[0] - half_stencil;
+					int inp_b_y1 = vals[1] + half_stencil;
+					if (inp_b_y0 < 0) inp_b_y0 = 0;
+					if (inp_b_y1 >= _ny) inp_b_y1 = _ny-1;
+					tmp = new Elastic_Buffer(this,_pipes[iPipe],curr_device_id,(iStep+2)/2,((iStep+2)&1)==1,inp_b_y0,inp_b_y1,z0,z1,4,cbo,_pipes[iPipe]->Get_Buffer(-3),0);
+					_pipes[iPipe]->Append_Buffer(tmp);
+					cbo -= 2;
 				}
 				else
 				{
@@ -452,6 +417,50 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 			_pipes[iPipe]->Get_Buffer(-3)->Set_Is_Device2Host(true);
 			_pipes[iPipe]->Get_Buffer(-2)->Set_Is_Device2Host(true);
 			_pipes[iPipe]->Get_Buffer(-1)->Set_Is_Device2Host(_debug);
+		}
+
+		if (web_allowed && num_pipes > 1)
+		{
+			// add cross pipes
+			for (int iPipe = 0, pipe_y0 = 0;  iPipe < num_pipes;  pipe_y0+=pipe_width[iPipe++])
+			{
+				int y0 = pipe_y0;
+				int y1 = y0 + pipe_width[iPipe] - 1;
+				for (int iBuf = 0;  iBuf < _pipes[iPipe]->Get_Number_Of_Buffers();  ++iBuf)
+				{
+					Elastic_Buffer* buf = _pipes[iPipe]->Get_Buffer(iBuf);
+					if (buf->Is_Input() && buf->Get_Source_Buffer() != 0L && !buf->Is_Model())
+					{
+						char name[256];
+						Elastic_Buffer* src_buf = buf->Get_Source_Buffer();
+						int ibuf_src = 0;
+						for (; ibuf_src < _pipes[iPipe]->Get_Number_Of_Buffers() && _pipes[iPipe]->Get_Buffer(ibuf_src) != src_buf;  ++ibuf_src);
+						if (ibuf_src < _pipes[iPipe]->Get_Number_Of_Buffers())
+						{
+							printf("Found source buffer Pipe_%d::%s with index %d\n",iPipe,src_buf->Get_Name_String(name),ibuf_src);
+						}
+						else
+						{
+							printf("Error! Unable to find index for source buffer Pipe_%d::%s!\n",iPipe,src_buf->Get_Name_String(name));
+							exit(-1);
+						}
+						if (iPipe > 0)
+						{
+							// set left source buffer
+							Elastic_Buffer* src_buf_L = _pipes[iPipe-1]->Get_Buffer(ibuf_src);
+							printf("src_buf_L is Pipe_%d::%s\n",iPipe-1,src_buf_L->Get_Name_String(name));
+							buf->Set_Source_Buffer_Left(src_buf_L);
+						}
+						if (iPipe < (num_pipes-1))
+						{
+							// set right source buffer
+							Elastic_Buffer* src_buf_R = _pipes[iPipe+1]->Get_Buffer(ibuf_src);
+							printf("src_buf_R is Pipe_%d::%s\n",iPipe+1,src_buf_R->Get_Name_String(name));
+							buf->Set_Source_Buffer_Right(src_buf_R);
+						}
+					}
+				}
+			}
 		}
 	
 		delete [] pipe_width;
@@ -549,10 +558,10 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
         if (num_devices <= 0)
         {
 		// determine best fit for available hardware.
-                printf("Automatic determination of best GPU configuration...\n");
+                printf("\n***\nAutomatic determination of best GPU configuration...\n***\n\n");
 		int done = false, done_steps = false;
-		const int max_pipes = cu_device_count > 8 ? 8 : cu_device_count;
-		const int max_steps = 6;
+		const int max_pipes = cu_device_count > 4 ? 4 : cu_device_count;
+		const int max_steps = 9;
 		int num_configs = max_pipes * (max_steps - 2);
 		float* performance = new float[num_configs];
 		int* perf_num_z = new int[num_configs];
@@ -573,7 +582,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			cudaSetDevice(iDev);
 			cudaMalloc((void**)(misc_buffer+iDev),misc_buffer_size);
 		}
-		printf("MAXIMUM PIPES = %d\n",max_pipes);
+		printf("MAXIMUM PIPES = %d\n\n",max_pipes);
 		for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  num_pipes=num_pipes*2)
 		{
 			done_steps = false;
@@ -609,7 +618,8 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 					cudaMalloc((void**)(page_tables_buffer+iDev),page_tables_buffer_size);
 				}
 			}
-			for (int num_steps = max_steps;  num_steps >= 3;  --num_steps)
+			double max_mcells_per_second_this_pipe = 0.0, max_mcells_per_second = 0.0;
+			for (int num_steps = max_steps, num_tested = 0;  num_steps >= 3;  --num_steps)
 			{
 				int perf_idx = (num_pipes - 1) * (max_steps - 2) + (num_steps - 3);
 
@@ -654,7 +664,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 
 				// clear CUDA errors
 				cudaGetLastError();
-				bool load_balance_possible = Build_Compute_Pipelines(num_pipes,num_steps,device_ids[perf_idx],num_devices[perf_idx],false);
+				bool load_balance_possible = Build_Compute_Pipelines(3,num_pipes,num_steps,device_ids[perf_idx],num_devices[perf_idx],_job->Web_Allowed());
 				Elastic_Shot* shot = _job->Get_Shot_By_Index(0);
 				if (!load_balance_possible)
 				{
@@ -662,7 +672,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 					shot->Free_Trace_Resample_Buffers();
 					Delete_Compute_Pipelines();
 				}
-				else if (!Allocate_Device_Memory())
+				else if (!Allocate_Device_Memory(3))
 				{
 					//done_steps = true;
 					printf("Not enough device memory for this configuration!\n");
@@ -682,7 +692,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 					while (ts_out < 0) Propagate_One_Block(_num_timesteps, shot, false, false, false, false, false, ts_out);
 
 					perf_num_z[perf_idx] = -1;
-					double max_mcells_per_second = 0.0;
+					max_mcells_per_second = 0.0;
 					for (_curr_num_z = 0;  _curr_num_z < _num_num_z;  _curr_num_z+=1)
 					{
 						struct timespec ts0;
@@ -697,7 +707,7 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 						clock_gettime(CLOCK_REALTIME, &ts1);
 						double elapsed_time = (double)ts1.tv_sec + (double)ts1.tv_nsec * 1e-9 - (double)ts0.tv_sec - (double)ts0.tv_nsec * 1e-9;
 
-						double mcells = (double)(4 * _job->Get_Propagation_NY() * _job->Get_Propagation_NZ()) * (double)num_iter * 1e-6 * (double)(num_devices_per_pipe * num_steps);
+						double mcells = (double)(Get_Block_Size_X() * _job->Get_Propagation_NY() * _job->Get_Propagation_NZ()) * (double)num_iter * 1e-6 * (double)(num_devices_per_pipe * num_steps);
 						double mcells_per_second = mcells / elapsed_time;
 						if (mcells_per_second > max_mcells_per_second)
 						{
@@ -714,6 +724,17 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 
 					performance[perf_idx] = max_mcells_per_second;
 					printf("Max throughput was %.0f MCells/s (#z=%d)\n",max_mcells_per_second,perf_num_z[perf_idx]);
+
+					++num_tested;
+				}
+				printf("\n");
+				if (max_mcells_per_second < max_mcells_per_second_this_pipe)
+				{
+					if (num_tested >=2 ) break;  // have at least 2 data points and performance is dropping. Skip configs with fewer steps.
+				}
+				else
+				{
+					max_mcells_per_second_this_pipe = max_mcells_per_second;
 				}
 			}
 			// release page table buffer
@@ -776,13 +797,14 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 			printf("Best configuration was determined to be %d pipes with %d timesteps per device (#=%d).\nManaged to use %d/%d devices.\n",best_num_pipes,best_num_steps,_best_num_z,best_num_devices,cu_device_count);
 			cudaGetLastError();
 			Build_Compute_Pipelines(
+					_log_level,
 					best_num_pipes,
 					best_num_steps,
 					best_device_ids,
 					best_num_devices,
-					false
+					_job->Web_Allowed()
 					);
-			Allocate_Device_Memory();
+			Allocate_Device_Memory(_log_level);
 			for (int num_pipes = 1;  num_pipes <= max_pipes && !done;  ++num_pipes)
 			{
 				for (int num_steps = 3;  num_steps <= max_steps;  ++num_steps)
@@ -801,13 +823,14 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 	{
 		// user defined configuration
 		Build_Compute_Pipelines(
+				_log_level,
 				_job->Get_Number_Of_GPU_Pipes(),
 				_job->Get_Steps_Per_GPU(),
 				_job->Get_GPU_Devices(),
 				_job->Get_Number_Of_GPU_Devices(),
-				false
+				_job->Web_Allowed()
 				);
-		Allocate_Device_Memory();
+		Allocate_Device_Memory(_log_level);
 	}
 }
 
@@ -1078,8 +1101,8 @@ void Elastic_Propagator::Set_EM_Cell(
 	unsigned int word3
 	)
 {
-	int xblk = x >> 2;
-	int xidx = x & 3;
+	int xblk = x >> _bsX_Shift;
+	int xidx = x & _bsX_Mask;
 
 	if (xblk < 0 || xblk >= _NbX || y < 0 || y >= _ny || z < 0 || z >= _nz)
 	{
@@ -1087,10 +1110,10 @@ void Elastic_Propagator::Set_EM_Cell(
 		exit(0);
 	}
 	
-	int one_wf_size_f = 4 * _nz;
+	int one_wf_size_f = _bsX * _nz;
         int one_y_size_f = one_wf_size_f * 4;
 
-	int idx = one_y_size_f * (size_t)y + (size_t)z * 4 + xidx;
+	int idx = one_y_size_f * (size_t)y + (size_t)z * _bsX + xidx;
 
 	//if (y==720) printf("x-y-z=%d-%d-%d :: xblk=%ld, xidx=%ld, one_wf_size_f=%ld, one_y_size_f=%ld, idx=%ld, words=%d,%d,%d,%d\n",x,y,z,xblk,xidx,one_wf_size_f,one_y_size_f,idx,word0,word1,word2,word3);
 	
@@ -1112,8 +1135,8 @@ void Elastic_Propagator::Get_EM_Cell(
 	bool& error
         )
 {
-        int xblk = x >> 2;
-        int xidx = x & 3;
+        int xblk = x >> _bsX_Shift;
+        int xidx = x & _bsX_Mask;
 
 	error = false;
 	if (xblk < 0 || xblk >= _NbX || y < 0 || y >= _ny || z < 0 || z >= _nz)
@@ -1130,10 +1153,10 @@ void Elastic_Propagator::Get_EM_Cell(
 	}
 	if (!error)
 	{
-		int one_wf_size_f = 4 * _nz;
+		int one_wf_size_f = _bsX * _nz;
 		int one_y_size_f = one_wf_size_f * 4;
 
-		int idx = one_y_size_f * (int)y + (int)z * 4 + xidx;
+		int idx = one_y_size_f * (int)y + (int)z * _bsX + xidx;
 
 		word0 = ((unsigned int*)_EM[xblk])[idx                ];
 		word1 = ((unsigned int*)_EM[xblk])[idx+  one_wf_size_f];
@@ -1156,8 +1179,8 @@ void Elastic_Propagator::Get_EM_Cell(
 //
 float Elastic_Propagator::Get_Receiver_Value(int wf_type, int x, int y, int z)
 {
-	int xblk = x >> 2;
-        int xidx = x & 3;
+	int xblk = x >> _bsX_Shift;
+        int xidx = x & _bsX_Mask;
 
         if (xblk < 0 || xblk >= _NbX || y < 0 || y >= _ny || z < 0 || z >= _nz)
         {
@@ -1165,10 +1188,10 @@ float Elastic_Propagator::Get_Receiver_Value(int wf_type, int x, int y, int z)
                 exit(0);
         }
 
-        int one_wf_size_f = 4 * _nz;
+        int one_wf_size_f = _bsX * _nz;
         int one_y_size_f = one_wf_size_f * 6;
 
-        int idx = one_y_size_f * (int)y + (int)z * 4 + xidx;
+        int idx = one_y_size_f * (int)y + (int)z * _bsX + xidx;
 
 	switch (wf_type)
 	{
@@ -1204,8 +1227,8 @@ float Elastic_Propagator::Get_Receiver_Value(int wf_type, int x, int y, int z)
 
 void Elastic_Propagator::Set_WF_Value(int wf_type, int x, int y, int z, float val)
 {
-	int xblk = x >> 2;
-        int xidx = x & 3;
+	int xblk = x >> _bsX_Shift;
+        int xidx = x & _bsX_Mask;
 
         if (xblk < 0 || xblk >= _NbX || y < 0 || y >= _ny || z < 0 || z >= _nz)
         {
@@ -1213,10 +1236,10 @@ void Elastic_Propagator::Set_WF_Value(int wf_type, int x, int y, int z, float va
                 exit(0);
         }
 
-        int one_wf_size_f = 4 * _nz;
+        int one_wf_size_f = _bsX * _nz;
         int one_y_size_f = one_wf_size_f * 6;
 
-        int idx = one_y_size_f * (int)y + (int)z * 4 + xidx;
+        int idx = one_y_size_f * (int)y + (int)z * _bsX + xidx;
 
         switch (wf_type)
         {
@@ -1737,7 +1760,11 @@ void Elastic_Propagator::Prepare_For_Propagation(Elastic_Shot* shot, bool debug_
 
 	// determine internal timestepping
 	// ..Courant# for O(2) time leap frog SG FD
-	double courant = 1.0 / (sqrt(3.0) * (Elastic_Buffer::_C0 - Elastic_Buffer::_C1 + Elastic_Buffer::_C2 - Elastic_Buffer::_C3));
+	double courant = 0.0;
+	if (Get_Stencil_Order() == 8)
+		courant = 1.0 / (sqrt(3.0) * (Elastic_Buffer::_C8_0 - Elastic_Buffer::_C8_1 + Elastic_Buffer::_C8_2 - Elastic_Buffer::_C8_3));
+	else if (Get_Stencil_Order() == 16)
+		courant = 1.0 / (sqrt(3.0) * (Elastic_Buffer::_C16_0 - Elastic_Buffer::_C16_1 + Elastic_Buffer::_C16_2 - Elastic_Buffer::_C16_3 + Elastic_Buffer::_C16_4 - Elastic_Buffer::_C16_5 + Elastic_Buffer::_C16_6 - Elastic_Buffer::_C16_7));
 	courant = courant_safe * courant;  // drop Courant# by this safety factor
 	if (!is_profiling_run) printf("Courant# = %f\n",courant);
 	if (shot->Get_Ordertime() == 4) 
@@ -2039,6 +2066,7 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 #endif
 
 	// demux receiver values from previous block
+	/*
 #pragma omp parallel for
 	for (int iDev = 0;  iDev < _num_devices;  ++iDev)
 	{
@@ -2060,7 +2088,8 @@ bool Elastic_Propagator::Propagate_One_Block(int Number_Of_Timesteps, Elastic_Sh
 		}
 	}
 	//printf("\n");
-	//for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->DEMUX_Receiver_Values(shot);
+	*/
+	for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->DEMUX_Receiver_Values(shot);
 
 #ifdef DETAILED_TIMING
 	struct timespec ts3;
@@ -2594,7 +2623,7 @@ void Elastic_Propagator::Free_Device_Memory()
 	}
 }
 
-bool Elastic_Propagator::Allocate_Device_Memory()
+bool Elastic_Propagator::Allocate_Device_Memory(int log_level)
 {
 	// no need to explicitly free device memory, each call to this function on the buffer objects frees its memory.
 	/*
@@ -2609,7 +2638,7 @@ bool Elastic_Propagator::Allocate_Device_Memory()
 	bool success = true;
 	for (int i = 0;  i < _num_pipes && success;  ++i)
         {
-                success = _pipes[i]->Allocate_Device_Memory();
+                success = _pipes[i]->Allocate_Device_Memory(log_level);
         }
 	return success;
 }
@@ -2624,21 +2653,20 @@ int Elastic_Propagator::Get_Number_Of_Blocks()
 	return _NbX;
 }
 
-bool Elastic_Propagator::Enable_Peer_Access(int device_id, int peer_device_id)
+bool Elastic_Propagator::Enable_Peer_Access(int log_level, int device_id, int peer_device_id)
 {
 	int device_index = Get_Device_Index(device_id);
 	int peer_device_index = Get_Device_Index(peer_device_id);
 	if (!_tried_p2p[device_index][peer_device_index])
 	{
 		_tried_p2p[device_index][peer_device_index] = true;
-		
 		int yes_sir;
 		gpuErrchk( cudaDeviceCanAccessPeer(&yes_sir,device_id,peer_device_id) );
 		if (yes_sir)
 		{
 			cudaSetDevice(device_id);
 			gpuErrchk( cudaDeviceEnablePeerAccess(peer_device_id,0) );
-			if (_log_level >= 4) printf("Enabled peer access for device %d to device %d\n",device_id,peer_device_id);
+			if (log_level >= 4) printf("Enabled peer access for device %d to device %d\n",device_id,peer_device_id);
 			return true;
 		}
 	}
@@ -2702,51 +2730,51 @@ bool Elastic_Propagator::Verify_All_Devices_Have_Enough_Memory()
 	return true;
 }
 
-bool Elastic_Propagator::Print_Device_Stats(int device_id, double& TFLOPS, double& GB_per_s)
+bool Elastic_Propagator::Print_Device_Stats(int log_level, int device_id, double& TFLOPS, double& GB_per_s)
 {
-		TFLOPS = GB_per_s = 0.0;
-		cudaDeviceProp devProps;
-		cudaError_t err = cudaGetDeviceProperties(&devProps, device_id);
+	TFLOPS = GB_per_s = 0.0;
+	cudaDeviceProp devProps;
+	cudaError_t err = cudaGetDeviceProperties(&devProps, device_id);
+	if (err == cudaSuccess)
+	{
+		cudaSetDevice(device_id);
+		size_t free,total;
+		err = cudaMemGetInfo(&free,&total);
 		if (err == cudaSuccess)
 		{
-			cudaSetDevice(device_id);
-			size_t free,total;
-			err = cudaMemGetInfo(&free,&total);
-			if (err == cudaSuccess)
+			double dFree_MB = (double)free / 1048576.0;
+			GB_per_s = (double)devProps.memoryBusWidth * (double)devProps.memoryClockRate / 4e6;
+			int Cores_per_SM = 0;
+			if (devProps.major == 1)
 			{
-				double dFree_MB = (double)free / 1048576.0;
-				GB_per_s = (double)devProps.memoryBusWidth * (double)devProps.memoryClockRate / 4e6;
-				int Cores_per_SM = 0;
-				if (devProps.major == 1)
-				{
-					Cores_per_SM = 8;
-				}
-				else if (devProps.major == 2)
-				{
-					if (devProps.minor == 1)
-					{
-						Cores_per_SM = 48;
-					}
-					else
-					{
-						Cores_per_SM = 32;
-					}
-				}
-				else if (devProps.major == 3)
-				{
-					Cores_per_SM = 192;
-				}
-				TFLOPS = (double)devProps.clockRate * (double)devProps.multiProcessorCount * (double)Cores_per_SM / 5e8;
-				if (_log_level >= 4) printf("device_id %d :: %s, CC=%d.%d, Free Mem=%.2f MB, %.3f TFLOPS, %.0f GB/s\n",device_id,devProps.name,devProps.major,devProps.minor,dFree_MB,TFLOPS,GB_per_s);
-				return true;
+				Cores_per_SM = 8;
 			}
+			else if (devProps.major == 2)
+			{
+				if (devProps.minor == 1)
+				{
+					Cores_per_SM = 48;
+				}
+				else
+				{
+					Cores_per_SM = 32;
+				}
+			}
+			else if (devProps.major == 3)
+			{
+				Cores_per_SM = 192;
+			}
+			TFLOPS = (double)devProps.clockRate * (double)devProps.multiProcessorCount * (double)Cores_per_SM / 5e8;
+			if (log_level >= 4) printf("device_id %d :: %s, CC=%d.%d, Free Mem=%.2f MB, %.3f TFLOPS, %.0f GB/s\n",device_id,devProps.name,devProps.major,devProps.minor,dFree_MB,TFLOPS,GB_per_s);
+			return true;
 		}
-		return false;
+	}
+	return false;
 }
 
-bool Elastic_Propagator::Check_GPUs(int* device_id, int num_devices)
+bool Elastic_Propagator::Check_GPUs(int log_level, int* device_id, int num_devices)
 {
-	if (_log_level >= 4) printf("\n");
+	if (log_level >= 4) printf("\n");
 	int device_count = 0;
 	cudaGetDeviceCount(&device_count);
 	if (device_count < 1)
@@ -2758,7 +2786,7 @@ bool Elastic_Propagator::Check_GPUs(int* device_id, int num_devices)
 	for (int i = 0;  i < num_devices;  ++i)
 	{
 		double GB_per_s, TFLOPS;
-		if (!Print_Device_Stats(device_id[i],TFLOPS,GB_per_s))
+		if (!Print_Device_Stats(log_level,device_id[i],TFLOPS,GB_per_s))
 		{
 			printf("device_id %d not found\n\n",device_id[i]);
 			return false;
@@ -2766,7 +2794,7 @@ bool Elastic_Propagator::Check_GPUs(int* device_id, int num_devices)
 		Total_GB_per_s += GB_per_s;
 		Total_TFLOPS += TFLOPS;
 	}
-	if (_log_level >= 4) printf("Aggregate %.3f TFLOPS, %.0f GB/s\n\n",Total_TFLOPS,Total_GB_per_s);
+	if (log_level >= 4) printf("Aggregate %.3f TFLOPS, %.0f GB/s\n\n",Total_TFLOPS,Total_GB_per_s);
 	return true;
 }
 
