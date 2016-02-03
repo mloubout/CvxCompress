@@ -1,6 +1,6 @@
 CC=icc
 F77=ifort
-CFLAGS=-openmp -O3 -fPIC -march=core-avx2 -inline-forceinline -qopt-report=5
+CFLAGS=-openmp -O3 -fPIC -mavx -inline-forceinline -qopt-report=5
 FFLAGS=-O3 -fPIC -mavx
 LDFLAGS=-shared -openmp
 
