@@ -64,6 +64,7 @@ public:
 	bool Get_NABC_BOT_Extend();
 
 	bool Lower_Q_Seafloor_Enabled() {return _lower_Q_seafloor_enabled;}
+	bool Scholte_Only() {return _scholte_only;}
 	bool Extend_Model_If_Necessary() {return _extend_model_if_necessary;}
 
 	float Get_Courant_Factor() {return _Courant_Factor;}
@@ -112,7 +113,7 @@ public:
 
 	// a hack to test what happens if we manipulate Qp to mute Scholte waves
 	// traveling along the sea floor.
-	void Lower_Q_Seafloor();
+	void Lower_Q_Seafloor(bool scholte_only);
 
 	//
 	// wf_type : 0->Vx, 1->Vy, 2->Vz, 3->P
@@ -238,6 +239,7 @@ private:
 	
 	bool _lower_Q_seafloor_enabled;
 	bool _extend_model_if_necessary;
+	bool _scholte_only;
 
 	Elastic_Shot** _shots;
 	int _num_shots;

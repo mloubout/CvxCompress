@@ -168,6 +168,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_source_ghost_enabled = true;
 	_receiver_ghost_enabled = true;
 	_lower_Q_seafloor_enabled = false;
+	_scholte_only = false;
 	_extend_model_if_necessary = false;
 	_GPU_Devices = 0L;
 	_num_GPU_Devices = 0;
@@ -569,6 +570,20 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					}
 				}
 			}
+			if (!error)
+                        {
+                                char scholte_only_str[4096];
+                                int matched = sscanf(s, "SCHOLTE_ONLY %s", scholte_only_str);
+                                if (matched == 1)
+                                {
+                                        _tolower(scholte_only_str);
+                                        if (strcmp(scholte_only_str, "enabled") == 0)
+                                        {
+                                                _scholte_only = true;
+                                                if (_log_level >= 3) printf("Model will be altered to model only Scholte waves.\n");
+                                        }
+                                }
+                        }
 			if (!error)
 			{
 				int souidx;
@@ -1798,6 +1813,7 @@ void Elastic_Modeling_Job::_Pack_Earth_Model_Attribute(unsigned int& word, int a
 		int ival = (int)round( (float)_pck_mask[attr_idx] * (val - _pck_min[attr_idx]) / _pck_range[attr_idx] );
 		if (ival < 0) ival = 0;
 		if (ival > _pck_mask[attr_idx]) ival = _pck_mask[attr_idx];
+		word &= ~(_pck_mask[attr_idx] << _pck_shft[attr_idx]);  // zero out bits that will be overwritten
 		word |= (((unsigned int)ival & _pck_mask[attr_idx]) << _pck_shft[attr_idx]);
 		//printf("%s : val=%f, ival=%d (_pck_min=%f, _pck_range=%f, _pck_mask=%d)\n",Get_Earth_Model_Attribute_Moniker(attr_idx),val,ival,_pck_min[attr_idx],_pck_range[attr_idx],_pck_mask[attr_idx]);
 	}
@@ -1934,9 +1950,10 @@ void Elastic_Modeling_Job::Set_Earth_Model_Attribute(int attr_idx, int ix, int i
 	}	
 }
 
-void Elastic_Modeling_Job::Lower_Q_Seafloor()
+void Elastic_Modeling_Job::Lower_Q_Seafloor(bool scholte_only)
 {
 	float Q_min_val = 10.0f;
+#pragma omp parallel for
 	for (int ix = 0;  ix < _prop_nx;  ++ix)
 	{
 		for (int iy = 0;  iy < _prop_ny;  ++iy)
@@ -1947,6 +1964,46 @@ void Elastic_Modeling_Job::Lower_Q_Seafloor()
 			for (; iz < (_prop_nz-1) && Get_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,iz+1,error) < 1.1f && !error;  ++iz);
 			if (iz < (_prop_nz-3))
 			{
+				if (scholte_only)
+				{
+					int ref_iz = iz+97;
+					float Vp = Get_Earth_Model_Attribute(Attr_Idx_Vp,ix,iy,ref_iz);
+					float Vs = Get_Earth_Model_Attribute(Attr_Idx_Vs,ix,iy,ref_iz);
+					float Density = Get_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,ref_iz);
+					/*
+					float Q = Get_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,ref_iz);
+					float Dip = Get_Earth_Model_Attribute(Attr_Idx_Dip,ix,iy,ref_iz);
+					float Azimuth = Get_Earth_Model_Attribute(Attr_Idx_Azimuth,ix,iy,ref_iz);
+					float Rake = Get_Earth_Model_Attribute(Attr_Idx_Rake,ix,iy,ref_iz);
+					float Delta1 = Get_Earth_Model_Attribute(Attr_Idx_Delta1,ix,iy,ref_iz);
+					float Delta2 = Get_Earth_Model_Attribute(Attr_Idx_Delta2,ix,iy,ref_iz);
+					float Delta3 = Get_Earth_Model_Attribute(Attr_Idx_Delta3,ix,iy,ref_iz);
+					float Epsilon1 = Get_Earth_Model_Attribute(Attr_Idx_Epsilon1,ix,iy,ref_iz);
+					float Epsilon2 = Get_Earth_Model_Attribute(Attr_Idx_Epsilon2,ix,iy,ref_iz);
+					float Gamma1 = Get_Earth_Model_Attribute(Attr_Idx_Gamma1,ix,iy,ref_iz);
+					float Gamma2 = Get_Earth_Model_Attribute(Attr_Idx_Gamma2,ix,iy,ref_iz);
+					*/
+					for (int my_iz = ref_iz+1;  my_iz < _prop_nz;  ++my_iz)
+					{
+						bool error;
+						Set_Earth_Model_Attribute(Attr_Idx_Vp,ix,iy,my_iz,Vp,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Vs,ix,iy,my_iz,Vs,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Density,ix,iy,my_iz,Density,error);
+						/*
+						Set_Earth_Model_Attribute(Attr_Idx_Q,ix,iy,my_iz,Q,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Dip,ix,iy,my_iz,Dip,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Azimuth,ix,iy,my_iz,Azimuth,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Rake,ix,iy,my_iz,Rake,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Delta1,ix,iy,my_iz,Delta1,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Delta2,ix,iy,my_iz,Delta2,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Delta3,ix,iy,my_iz,Delta3,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Epsilon1,ix,iy,my_iz,Epsilon1,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Epsilon2,ix,iy,my_iz,Epsilon2,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Gamma1,ix,iy,my_iz,Gamma1,error);
+						Set_Earth_Model_Attribute(Attr_Idx_Gamma2,ix,iy,my_iz,Gamma2,error);
+						*/
+					}
+				}
 				// set Q at sea floor plus two cells (vertically) to 10.
 				// note that earth model is compressed at this point, so there is additional code that ensures min(Q) <= 10 in parser
 				// if Q attenuation along sea floor is enabled.

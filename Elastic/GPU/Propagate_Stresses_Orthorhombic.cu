@@ -477,7 +477,9 @@ void cuCompute_DXDYDZ_LoBuf(
 }
 
 __global__
-#if __CUDA_ARCH__ >= 300
+#if __CUDA_ARCH__ >= 370
+__launch_bounds__(256,8)
+#elif __CUDA_ARCH__ >= 300
 __launch_bounds__(1280)
 #elif __CUDA_ARCH__ >= 200
 __launch_bounds__(768)

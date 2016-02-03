@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
 			prop->Configure();
 
 			prop->Read_Earth_Model();
-			if (job->Lower_Q_Seafloor_Enabled()) job->Lower_Q_Seafloor();
+			if (job->Lower_Q_Seafloor_Enabled()) job->Lower_Q_Seafloor(job->Scholte_Only());
 			if (xz_model && job->Get_Number_Of_Shots() > 0)
 			{
 				Elastic_Shot* shot = job->Get_Shot_By_Index(0);

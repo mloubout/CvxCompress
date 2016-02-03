@@ -258,10 +258,10 @@ void __cuApply_Source_Term_To_VxVyVz(
 					float Density_ghost;
 					cuUnpack_Density(em_word3_ghost,Density_min,Density_range,&Density_ghost);
 				
-					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] + vx_fsinc * dti * (val * ampl1) / Density_ghost;
-					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] + vy_fsinc * dti * (val * ampl2) / Density_ghost;
+					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * (val * ampl1) / Density_ghost;
+					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * (val * ampl2) / Density_ghost;
 					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] + vz_fsinc * dti * (val * ampl3) / Density_ghost;
-					// TMJ, Vx, Vy & Vz require a POSITIVE ghost, hence + sign. Not a bug.
+					// TMJ, Vz requires a POSITIVE ghost, hence + sign. Not a bug.
 				}
 			}
 			else
@@ -310,10 +310,10 @@ void __cuApply_Source_Term_To_VxVyVz(
 					//      printf("\n*****\nmy_z= %d, thr_z=%d :: rho = %e, bmod_ref = %e, scale_sou = %e, vz_fsinc = %e\n*****\n\n",my_z,thr_z,rho,bmod_ref,scale_sou,vz_fsinc);
 					//}
 
-					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] + vx_fsinc * dti * scale_sou_ghost * val * ampl1;
-					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] + vy_fsinc * dti * scale_sou_ghost * val * ampl2;
+					cmp[idx_ghost                   ] = cmp[idx_ghost                   ] - vx_fsinc * dti * scale_sou_ghost * val * ampl1;
+					cmp[idx_ghost   +  one_wf_size_f] = cmp[idx_ghost   +  one_wf_size_f] - vy_fsinc * dti * scale_sou_ghost * val * ampl2;
 					cmp[idx_vz_ghost+2*one_wf_size_f] = cmp[idx_vz_ghost+2*one_wf_size_f] + vz_fsinc * dti * scale_sou_ghost * val * ampl3;
-					// TMJ, Vx, Vy & Vz require a POSITIVE ghost, hence + sign. Not a bug.
+					// TMJ, Vz requires a POSITIVE ghost, hence + sign. Not a bug.
 				}
 			}
 		}
@@ -580,8 +580,8 @@ void cuApply_Point_Source_To_VxVyVz(
 	_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref);
 	if (source_ghost_enabled)
 	{
-		// TMJ, Vx, Vy & Vz require a POSITIVE ghost, which I make happen by flipping the sign of ampl3.
-		_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,-ampl1,-ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
+		// TMJ,Vz requires a POSITIVE ghost, which I make happen by flipping the sign of ampl3.
+		_cuApply_Point_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
 	}
 }
 
@@ -756,13 +756,15 @@ void cuApply_Trilinear_Source_To_VxVyVz(
 	_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,ampl3,xs,ys,zs,val,is_p_reciprocity,bmod_ref,rho_ref);
 	if (source_ghost_enabled)
 	{
-		// TMJ, Vx, Vy & Vz require a POSITIVE ghost, which I make happen by flipping the sign of ampl3 for this call.
-		_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,-ampl1,-ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
+		// TMJ, Vz requires a POSITIVE ghost, which I make happen by flipping the sign of ampl3 for this call.
+		_cuApply_Trilinear_Source_To_VxVyVz(em,Density_min,Density_range,cmp,x0,y0,nx,ny,nz,dti,is_force,ampl1,ampl2,-ampl3,xs,ys,2.0f*ghost_sea_surface-zs,-val,is_p_reciprocity,bmod_ref,rho_ref);
 	}
 }
 
 __global__ 
-#if __CUDA_ARCH__ >= 300
+#if __CUDA_ARCH__ >= 370
+__launch_bounds__(256,8)
+#elif __CUDA_ARCH__ >= 300
 __launch_bounds__(1280)
 #elif __CUDA_ARCH__ >= 200
 __launch_bounds__(768)
@@ -1102,6 +1104,9 @@ cuPropagate_Particle_Velocities_Kernel(
 			cuUnpack_Q_Density(em_word3,Q_min,Q_range,&Q,Density_min,Density_range,&Density);
 			Q = 1.0f / Q;  // compressed model actually stores inverse of Q.
 
+			float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
+			float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
+
 			// ..compute itausig and difitau
 			float wq = 6.2831853072f * fq;
 			float te = (1.0f + sqrtf(1.0f + Q*Q)) / (Q*wq);
@@ -1142,8 +1147,6 @@ cuPropagate_Particle_Velocities_Kernel(
 			//int x = x0 + (threadIdx.x & 3);
 			//int y = y0 + (threadIdx.y + blockIdx.y * 8);
 			//int z = iZ * 8 + (threadIdx.x / 4);
-			float deta = Compute_ABC(x,y,z,vol_nx,vol_ny,vol_nz,nabc_top,nabc_bot,nabc_sdx,nabc_sdy,vpvert_avtop,vpvert_avbot,inv_DX,inv_DY,inv_DZ);
-			float dabc = (1.0f - 0.5f*deta*dti) / (1.0f + 0.5f*deta*dti);
 
 			//if (x == 400 && y == 400 && z == 400)
 			//{
