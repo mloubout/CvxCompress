@@ -6,8 +6,10 @@
  */
 
 #define RLESC1  127
-#define RLESC3  126
-#define VLESC2 -126
+#define VLESC3_8x 126
+#define RLESC3  125
+#define VLESC2 -125
+#define VLESC2_8x -126
 #define VLESC3 -127
 #define VLESC4 -128
 

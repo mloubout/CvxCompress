@@ -83,7 +83,8 @@ int main(int argc, char* argv[])
 		printf("Generating error volume.\n");
 		float *vol3;
 		posix_memalign((void**)&vol3,64,(long)sizeof(float)*(long)nx*(long)ny*(long)nz);
-#pragma omp parallel for
+		double acc = 0.0, acc2 = 0.0;
+#pragma omp parallel for reduction(+:acc,acc2)
 		for (int iz = 0;  iz < nz;  ++iz)
 		{
 			float* p1 = vol + (long)iz * (long)nx * (long)ny;
@@ -92,23 +93,28 @@ int main(int argc, char* argv[])
 			for (int i = 0;  i < nx*ny;  ++i)
 			{
 				p3[i] = p2[i] - p1[i];
+				acc += p1[i] * p1[i];
+				acc2 += p3[i] * p3[i];
 			}
 		}
-		float rms_orig = Compute_RMS(vol,nx,ny,nz);
-		float rms_diff = Compute_RMS(vol3,nx,ny,nz);
+		float rms_orig = sqrt(acc/((double)nx*(double)ny*(double)nz));
+		float rms_diff = sqrt(acc2/((double)nx*(double)ny*(double)nz));
 		printf("Error is %.3e\n",rms_diff/rms_orig);
 
-		printf("Write XZ slice original.\n");
-		XZ_Slice("original.txt",nx,ny,nz,vol,ny-1);
-		XZ_Slice("compressed.txt",nx,ny,nz,vol2,ny-1);
-		XZ_Slice("difference.txt",nx,ny,nz,vol3,ny-1);
-
-		FILE* fp = fopen(argv[6],"w");
-		if (fp != 0L)
+		if (iLoop == (num_loops-1))
 		{
-			printf("Writing compressed volume to %s...\n",argv[6]);
-			fwrite(compressed,1,compressed_length,fp);
-			fclose(fp);
+			printf("Write XZ slice original.\n");
+			XZ_Slice("original.txt",nx,ny,nz,vol,ny-1);
+			XZ_Slice("compressed.txt",nx,ny,nz,vol2,ny-1);
+			XZ_Slice("difference.txt",nx,ny,nz,vol3,ny-1);
+
+			FILE* fp = fopen(argv[6],"w");
+			if (fp != 0L)
+			{
+				printf("Writing compressed volume to %s...\n",argv[6]);
+				fwrite(compressed,1,compressed_length,fp);
+				fclose(fp);
+			}
 		}
 
 		delete compressor;

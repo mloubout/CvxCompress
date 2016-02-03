@@ -196,7 +196,7 @@ float CvxCompress::Compress(
 	unsigned int* bytes = (unsigned int*)(glob_blkoffs+nnn);
 	long byte_offset = 0l;
 
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(guided)
 	for (long iBlk = 0;  iBlk < nnn;  ++iBlk)
 	{
 		long iiz = iBlk / (nbx*nby);
