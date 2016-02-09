@@ -1,9 +1,20 @@
 #include <math.h>
 #include <time.h>
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <omp.h>
 #include "CvxCompress.hxx"
 #include "Read_Raw_Volume.hxx"
+
+#define PAPI
+#ifndef __INTEL_COMPILER
+#undef PAPI  // PAPI only works with intel compiler (for now).
+#endif
+
+#ifdef PAPI
+#include "papi.h"
+#endif
 
 void XZ_Slice(const char* filename, int nx, int ny, int nz, float* vol, int iy)
 {
@@ -42,6 +53,28 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
+	int num_threads = 0;
+#pragma omp parallel 
+	{
+		num_threads = omp_get_num_threads();
+	}
+
+#ifdef PAPI
+        int retval = PAPI_library_init( PAPI_VER_CURRENT );
+        assert(retval == PAPI_VER_CURRENT);
+	int sp_ops_events[1]{PAPI_SP_OPS};
+	bool sp_ops_counter_is_available = (PAPI_query_event(sp_ops_events[0]) == PAPI_OK);
+	if (sp_ops_counter_is_available)
+	{
+		assert(PAPI_thread_init((unsigned long (*)(void))(omp_get_num_threads)) == PAPI_OK);
+	}
+	else
+	{
+		printf("PAPI does not support PAPI_VEC_SP counter on this machine.\n");
+		PAPI_shutdown();
+	}
+#endif
+
 	printf("Reading raw volume from file %s...\n",argv[1]);
 	float scale = atof(argv[2]);
 	printf("Scale is %.3e\n",scale);
@@ -54,6 +87,10 @@ int main(int argc, char* argv[])
 	float* vol = 0L;
 	Read_Raw_Volume(argv[1],nx,ny,nz,vol);
 
+#ifdef PAPI
+	long long sp_ops1 = 0, sp_ops2 = 0;
+	double total_elapsed_time1 = 0.0, total_elapsed_time2 = 0.0;
+#endif
 	for (int iLoop = 0;  iLoop < num_loops;  ++iLoop)
 	{
 		unsigned int* compressed = 0L;
@@ -61,7 +98,17 @@ int main(int argc, char* argv[])
 
 		CvxCompress* compressor = new CvxCompress();
 
-		printf("Compressing.\n");	
+		printf("Compressing.\n");
+#ifdef PAPI
+		if (sp_ops_counter_is_available)
+		{
+#pragma omp parallel for schedule(static,1)
+			for (int iThr = 0;  iThr < num_threads;  ++iThr)
+			{
+				PAPI_start_counters(sp_ops_events,1);
+			}
+		}
+#endif
 		long compressed_length = 0;
 		struct timespec before, after;
 		clock_gettime(CLOCK_REALTIME,&before);
@@ -69,15 +116,51 @@ int main(int argc, char* argv[])
 		clock_gettime(CLOCK_REALTIME,&after);
 		double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);
+#ifdef PAPI
+		if (sp_ops_counter_is_available)
+		{
+#pragma omp parallel for schedule(static,1) reduction(+:sp_ops1)
+			for (int iThr = 0;  iThr < num_threads;  ++iThr)
+			{
+				long long curr_sp_ops = 0L;
+				PAPI_stop_counters(&curr_sp_ops,1);
+				sp_ops1 += curr_sp_ops;
+			}
+			total_elapsed_time1 += elapsed;
+		}
+#endif
 		printf("Compression throughput was %.0f MC/s - Compression ratio is %.2f:1\n",mcells_per_sec,ratio);
 
 		printf("Decompressing.\n");
 		int nx2,ny2,nz2;
+#ifdef PAPI
+		if (sp_ops_counter_is_available)
+		{
+#pragma omp parallel for schedule(static,1)
+			for (int iThr = 0;  iThr < num_threads;  ++iThr)
+			{
+				PAPI_start_counters(sp_ops_events,1);
+			}
+		}
+#endif
 		clock_gettime(CLOCK_REALTIME,&before);
 		float* vol2 = compressor->Decompress(nx2,ny2,nz2,compressed,compressed_length);
 		clock_gettime(CLOCK_REALTIME,&after);
 		elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed * 1e6);
+#ifdef PAPI
+		if (sp_ops_counter_is_available)
+		{
+#pragma omp parallel for schedule(static,1) reduction(+:sp_ops2)
+			for (int iThr = 0;  iThr < num_threads;  ++iThr)
+			{
+				long long curr_sp_ops = 0L;
+				PAPI_stop_counters(&curr_sp_ops,1);
+				sp_ops2 += curr_sp_ops;
+			}
+			total_elapsed_time2 += elapsed;
+		}
+#endif
 		printf("Decompression throughput was %.0f MC/s\n",mcells_per_sec);
 
 		printf("Generating error volume.\n");
@@ -122,6 +205,19 @@ int main(int argc, char* argv[])
 		free(vol2);
 		free(compressed);
 	}
+#ifdef PAPI
+	if (sp_ops_counter_is_available)
+	{
+		// PAPI only counted FLOPS for master thread.
+		// For simplicity, we assume all threads did the same amount of work,
+		// thus we just multiply by number of threads to estimate GFLOPS for the whole machine.
+		double GFLOPS_compress = (double)sp_ops1 / (total_elapsed_time1 * 1e9);
+		double GFLOPS_decompress = (double)sp_ops2 / (total_elapsed_time2 * 1e9);
+		printf("PAPI says we averaged %.2f GFLOPS during compression, which took a total of %.2f seconds.\n",GFLOPS_compress,total_elapsed_time1);
+		printf("PAPI says we averaged %.2f GFLOPS during decompression, which took a total of %.2f seconds.\n",GFLOPS_decompress,total_elapsed_time2);
+	}
+#endif
+
 	free(vol);
 	return 0;
 }

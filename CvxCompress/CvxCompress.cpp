@@ -196,7 +196,7 @@ float CvxCompress::Compress(
 	unsigned int* bytes = (unsigned int*)(glob_blkoffs+nnn);
 	long byte_offset = 0l;
 
-#pragma omp parallel for schedule(guided)
+#pragma omp parallel for schedule(dynamic)
 	for (long iBlk = 0;  iBlk < nnn;  ++iBlk)
 	{
 		long iiz = iBlk / (nbx*nby);
@@ -251,10 +251,10 @@ float CvxCompress::Compress(
 			{
 				int dst_iBlk = priv_iBlk[i];
 				int blkoff = priv_blkoff[i];
-				bool uncompressed = (blkoff & -2147483648) ? true : false;
-				blkoff = blkoff & 2147483647;
+				bool uncompressed = (blkoff & 0x80000000) ? true : false;
+				blkoff = blkoff & 0x7FFFFFFF;
 				long new_glob_blkoff = (glob_dst + blkoff) - (char*)bytes;
-				new_glob_blkoff = uncompressed ? (new_glob_blkoff | -9223372036854775808l) : new_glob_blkoff;
+				new_glob_blkoff = uncompressed ? (new_glob_blkoff | 0x8000000000000000) : new_glob_blkoff;
 				glob_blkoffs[dst_iBlk] = new_glob_blkoff;
 				//printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
 			}
@@ -280,10 +280,10 @@ float CvxCompress::Compress(
                         {
                                 int dst_iBlk = priv_iBlk[i];
                                 int blkoff = priv_blkoff[i];
-                                bool uncompressed = (blkoff & -2147483648) ? true : false;
-                                blkoff = blkoff & 2147483647;
+                                bool uncompressed = (blkoff & 0x80000000) ? true : false;
+                                blkoff = blkoff & 0x7FFFFFFF;
                                 long new_glob_blkoff = (glob_dst + blkoff) - (char*)bytes;
-                                new_glob_blkoff = uncompressed ? (new_glob_blkoff | -9223372036854775808l) : new_glob_blkoff;
+                                new_glob_blkoff = uncompressed ? (new_glob_blkoff | 0x8000000000000000) : new_glob_blkoff;
                                 glob_blkoffs[dst_iBlk] = new_glob_blkoff;
                                 //printf("  uncompressed=%s, blkoff=%ld, glob_blkoffs[%d]=%ld\n",uncompressed?"true":"false",blkoff,dst_iBlk,glob_blkoffs[dst_iBlk]);
                         }
@@ -292,7 +292,7 @@ float CvxCompress::Compress(
                         priv_blkoff[0] = 0;
 		}
 	}
-	compressed_length = 32 + 8*nnn + byte_offset;
+	compressed_length = 32 + 8*nnn + byte_offset + 7;
 
 	free(work);
 	double ratio = ((double)nx * (double)ny * (double)nz * (double)sizeof(float)) / (double)compressed_length;
@@ -380,8 +380,8 @@ void CvxCompress::Decompress(
 		float* priv_work = work + thread_id * work_size_one_thread;
 		float* priv_tmp = priv_work + bx*by*bz;
 		long priv_blkoff = glob_blkoffs[iBlk];
-		bool Is_Uncompressed = (priv_blkoff & -9223372036854775808l) ? true : false;
-		priv_blkoff = Is_Uncompressed ? (priv_blkoff & 9223372036854775807l) : priv_blkoff;
+		bool Is_Uncompressed = (priv_blkoff & 0x8000000000000000) ? true : false;
+		priv_blkoff = Is_Uncompressed ? (priv_blkoff & 0x7FFFFFFFFFFFFFFF) : priv_blkoff;
 		unsigned long* priv_compressed = (unsigned long*)(((char*)bytes) + priv_blkoff);
 		//printf("  Is_Uncompressed=%s, priv_blkoff=%ld\n",Is_Uncompressed?"true":"false",priv_blkoff);
 		
@@ -504,11 +504,16 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		num_threads = omp_get_num_threads();
 	}
 
-	printf("\n*\n* CvxCompress module tests ");
-#ifdef __AVX2__
-	printf(" (AVX 2.0 version).\n");
+	printf("\n*\n* CvxCompress module tests (");
+#ifdef __INTEL_COMPILER
+	printf("ICC%d",__INTEL_COMPILER);
 #else
-	printf(" (AVX version).\n");
+	printf("GCC%d.%d",__GNUC__,__GNUC_MINOR__);
+#endif
+#ifdef __AVX2__
+	printf(", AVX 2.0).\n");
+#else
+	printf(", AVX).\n");
 #endif
 	printf("*\n\n");
 
@@ -617,7 +622,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 				int bx = 1 << i;
 				if (exhaustive_throughput_tests || (bx == by && by == bz))
 				{
-					char* memtype = 0L;
+					const char* memtype = 0L;
 					long block_size = (long)bx * (long)by * (long)bz;
 					if (block_size <= 4096)
 						memtype = " L1 ";
@@ -921,7 +926,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 				int bx = 1 << i;
 				if (exhaustive_throughput_tests || (bx == by && by == bz))
 				{
-					char* memtype = 0L;
+					const char* memtype = 0L;
 					long block_size = (long)bx * (long)by * (long)bz;
 					if (block_size <= 4096)
 						memtype = " L1 ";
@@ -972,7 +977,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					long compressed_length3 = 0l;
 					float ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,(unsigned int*)compressed3,compressed_length3);
 
-					char* memtype = 0L;
+					const char* memtype = 0L;
 					long block_size = (long)bx * (long)by * (long)bz;
 					if (block_size <= 4096)
 						memtype = " L1 ";

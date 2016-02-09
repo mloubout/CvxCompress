@@ -389,9 +389,15 @@ int Run_Length_Decode_Slow(float scale, float* vals, int num_expected_vals, unsi
 	float scalefac = 1.0f / scale;
 	for (;  num < num_expected_vals;  ++p)
 	{
+#ifndef __INTEL_COMPILER
+		int val0 = ((int*)p)[0];
+		int val1 = ((int*)p)[1];
+		__m128i eight_bytes = _mm_setr_epi32(val0,val1,0,0);
+#else
 		__m128i eight_bytes = _mm_loadu_si64(p);
+#endif
 		__m128i is_bytes = _mm_and_si128(_mm_cmpgt_epi8(eight_bytes,_mm_set1_epi32(VLESC2)),_mm_cmplt_epi8(eight_bytes,_mm_set1_epi32(RLESC3)));
-		if (_mm_movemask_epi8(is_bytes) == 65535)
+		if (num < (num_expected_vals-8) && _mm_movemask_epi8(is_bytes) == 65535)
 		{
 			// 8 byte values
 			__m128i first_4_bytes = _mm_cvtepi8_epi32(eight_bytes);

@@ -5,9 +5,20 @@
 #include <string>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
 #include "CvxCompress.hxx"
 
+#define PAPI
+#ifndef __INTEL_COMPILER
+#undef PAPI
+#endif
+
 //#define VERBOSE
+
+#ifdef PAPI
+#include "papi.h"
+#endif
+
 using namespace std;
 
 int main(int argc, char* argv[])
@@ -16,13 +27,19 @@ int main(int argc, char* argv[])
 	const int ny = 349;
 	const int nz = 228;
 	const int nn = 512;
-	const string filepath = "/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/field.bin";
-	const string outpath = "/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/compressed_field.bin";
+	const string filepath = "field.bin";
+	const string outpath = "compressed_field.bin";
 
 	const int bx = 32;
 	const int by = 32;
 	const int bz = 32;
 	const float scale = 1e-2f;
+
+	int num_threads = 0;
+#pragma omp parallel
+	{
+		num_threads = omp_get_num_threads();
+	}
 
 	long volsize = (long)nz * (long)ny * (long)nx;
 	long totsize = (long)nn * volsize;
@@ -64,6 +81,22 @@ int main(int argc, char* argv[])
 	FILE* fp3 = fopen(outpath.c_str(),"wb");
 	assert(fp3 != 0L);
 #endif
+
+#ifdef PAPI
+	long long fpops;
+	int retval = PAPI_library_init( PAPI_VER_CURRENT );
+	assert(retval == PAPI_VER_CURRENT);
+
+	int fip = 0;
+	assert ( PAPI_query_event( PAPI_VEC_SP ) == PAPI_OK );
+
+	PAPI_shutdown(  );
+
+	int vec_sp_events[1]{PAPI_VEC_SP};
+	long long vec_sp_ops = 0;
+#endif
+	double tot_elapsed_time = 0.0;
+
 	FILE* fp2 = fopen("results.txt","w");
 	assert(fp2 != 0L);
 	printf("Starting compression test\n");
@@ -76,14 +109,17 @@ int main(int argc, char* argv[])
 
 		// check if wavefield has NaN's in it
 		/*
-		bool has_NaN = false;
-		for (long j = 0;  j < volsize && !has_NaN;  ++j)
-		{
-			if (isnan(p1[j])) has_NaN = true;
-		}
-		assert(!has_NaN);
-		*/
+		   bool has_NaN = false;
+		   for (long j = 0;  j < volsize && !has_NaN;  ++j)
+		   {
+		   if (isnan(p1[j])) has_NaN = true;
+		   }
+		   assert(!has_NaN);
+		   */
 
+#ifdef PAPI
+		assert( PAPI_start_counters(vec_sp_events,1) == PAPI_OK );
+#endif
 		struct timespec before, after;
 		clock_gettime(CLOCK_REALTIME,&before);
 
@@ -92,7 +128,8 @@ int main(int argc, char* argv[])
 		clock_gettime(CLOCK_REALTIME,&after);
 		double elapsed1 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		double mcells_per_sec1 = (double)nx * (double)ny * (double)nz / (elapsed1 * 1e6);
-		
+		tot_elapsed_time += elapsed1;
+	
 		//fwrite(compressed,1,length,fp3);
 
 		clock_gettime(CLOCK_REALTIME,&before);
@@ -101,6 +138,12 @@ int main(int argc, char* argv[])
 		clock_gettime(CLOCK_REALTIME,&after);
 		double elapsed2 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		double mcells_per_sec2 = (double)nx * (double)ny * (double)nz / (elapsed2 * 1e6);
+		tot_elapsed_time += elapsed2;
+#ifdef PAPI
+		long long curr_vec_sp_ops = 0L;
+		assert( PAPI_stop_counters(&curr_vec_sp_ops,1) == PAPI_OK );
+		vec_sp_ops += curr_vec_sp_ops;
+#endif
 
 #ifdef VERBOSE
 		for (long j = 0;  j < volsize;  ++j)
@@ -155,7 +198,14 @@ int main(int argc, char* argv[])
 		printf("vol %d, compression ratio = %.2f:1, compression throughput = %.0f MC/s, decompression throughput = %.0f MC/s, error = %.6e\n",i+1,ratio,mcells_per_sec1,mcells_per_sec2,error);
 		fprintf(fp2,"%d, %.2f, %.6e, %.5f, %.5f\n",i+1,ratio,error,elapsed1,elapsed2);
 	}
-	
+
+#ifdef PAPI
+	double papi_gflops = (double)num_threads * (double)vec_sp_ops / ((double)tot_elapsed_time * 1e9);
+	printf("PAPI says we averaged %.2f GLOPS.\nTotal compression and decompression times were %.2f seconds\n",papi_gflops,tot_elapsed_time);
+#else
+	printf("Total compression and decompression times were %.2f seconds\n",tot_elapsed_time);
+#endif
+
 #ifdef VERBOSE
 	fclose(fp3);
 #endif
