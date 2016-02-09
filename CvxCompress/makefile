@@ -1,9 +1,6 @@
 CC=icc
 CFLAGS=-openmp -O3 -fPIC -mavx -inline-forceinline
 LDFLAGS=-shared -openmp
-#CC=gcc
-#CFLAGS=-fopenmp -O3 -fPIC -mavx
-#LDFLAGS=-shared -fopenmp
 PAPI=-I/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src -I/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/testlib -L/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src /cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/testlib/libtestlib.a /cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/libpapi.a
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
