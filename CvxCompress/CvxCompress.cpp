@@ -140,7 +140,7 @@ float CvxCompress::Compress(
 {
 	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
 	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
-	assert(bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz));
+	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
 	float global_rms = Compute_Global_RMS(vol,nx,ny,nz);
 	
 	int num_threads;

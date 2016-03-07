@@ -97,46 +97,49 @@ void Wavelet_Transform_Fast_Forward(
 	}
 	
 	// z
-	int _mm256_stride_z = by * _mm256_bx;
-	for (int iy = 0;  iy < by;  ++iy)
+	if (bz > 1)
 	{
-		__m256* data = work + iy*_mm256_bx;
-		if ((bx*by) >= 1024 && ((bx*by)&1023) == 0)
+		int _mm256_stride_z = by * _mm256_bx;
+		for (int iy = 0;  iy < by;  ++iy)
 		{
-			// z stride is a multiple of 4096 bytes.
-			// this is bad because all values along the Z axis maps to the same cache page.
-			// this reduces effective L1 cache size from 32KB to 0.5KB and has negative effects
-			// on L2 cache as well. We prevent this by copying the inputs to a temporary buffer.
-			for (int ix = 0;  ix < _mm256_bx;  ++ix)
+			__m256* data = work + iy*_mm256_bx;
+			if ((bx*by) >= 1024 && ((bx*by)&1023) == 0)
 			{
-				for (int iz = 0;  iz < bz;  ++iz) tmp[iz] = data[iz*_mm256_stride_z+ix];
+				// z stride is a multiple of 4096 bytes.
+				// this is bad because all values along the Z axis maps to the same cache page.
+				// this reduces effective L1 cache size from 32KB to 0.5KB and has negative effects
+				// on L2 cache as well. We prevent this by copying the inputs to a temporary buffer.
+				for (int ix = 0;  ix < _mm256_bx;  ++ix)
+				{
+					for (int iz = 0;  iz < bz;  ++iz) tmp[iz] = data[iz*_mm256_stride_z+ix];
 
-				if (bz >= 256) _Ds79_AVX_256(tmp, 1);
-				if (bz >= 128) _Ds79_AVX_128(tmp, 1);
-				if (bz >= 64) _Ds79_AVX_64(tmp, 1);
-				if (bz >= 32) _Ds79_AVX_32(tmp, 1);
-				if (bz >= 16) _Ds79_AVX_16(tmp, 1);
-				// smallest block size is 8, so no need to test for anything less than that.
-				_Ds79_AVX_8(tmp, 1);
-				_Ds79_AVX_4(tmp, 1);
-				_Ds79_AVX_2(tmp, 1);
+					if (bz >= 256) _Ds79_AVX_256(tmp, 1);
+					if (bz >= 128) _Ds79_AVX_128(tmp, 1);
+					if (bz >= 64) _Ds79_AVX_64(tmp, 1);
+					if (bz >= 32) _Ds79_AVX_32(tmp, 1);
+					if (bz >= 16) _Ds79_AVX_16(tmp, 1);
+					// smallest block size is 8, so no need to test for anything less than that.
+					_Ds79_AVX_8(tmp, 1);
+					_Ds79_AVX_4(tmp, 1);
+					_Ds79_AVX_2(tmp, 1);
 
-				for (int iz = 0;  iz < bz;  ++iz) data[iz*_mm256_stride_z+ix] = tmp[iz];
+					for (int iz = 0;  iz < bz;  ++iz) data[iz*_mm256_stride_z+ix] = tmp[iz];
+				}
 			}
-		}
-		else
-		{
-			for (int ix = 0;  ix < _mm256_bx;  ++ix)
+			else
 			{
-				if (bz >= 256) _Ds79_AVX_256(data+ix, _mm256_stride_z);
-				if (bz >= 128) _Ds79_AVX_128(data+ix, _mm256_stride_z);
-				if (bz >= 64) _Ds79_AVX_64(data+ix, _mm256_stride_z);
-				if (bz >= 32) _Ds79_AVX_32(data+ix, _mm256_stride_z);
-				if (bz >= 16) _Ds79_AVX_16(data+ix, _mm256_stride_z);
-				// smallest block size is 8, so no need to test for anything less than that.
-				_Ds79_AVX_8(data+ix, _mm256_stride_z);
-				_Ds79_AVX_4(data+ix, _mm256_stride_z);
-				_Ds79_AVX_2(data+ix, _mm256_stride_z);
+				for (int ix = 0;  ix < _mm256_bx;  ++ix)
+				{
+					if (bz >= 256) _Ds79_AVX_256(data+ix, _mm256_stride_z);
+					if (bz >= 128) _Ds79_AVX_128(data+ix, _mm256_stride_z);
+					if (bz >= 64) _Ds79_AVX_64(data+ix, _mm256_stride_z);
+					if (bz >= 32) _Ds79_AVX_32(data+ix, _mm256_stride_z);
+					if (bz >= 16) _Ds79_AVX_16(data+ix, _mm256_stride_z);
+					// smallest block size is 8, so no need to test for anything less than that.
+					_Ds79_AVX_8(data+ix, _mm256_stride_z);
+					_Ds79_AVX_4(data+ix, _mm256_stride_z);
+					_Ds79_AVX_2(data+ix, _mm256_stride_z);
+				}
 			}
 		}
 	}
@@ -229,44 +232,47 @@ void Wavelet_Transform_Fast_Inverse(
 	}
 	
 	// z
-	int _mm256_stride_z = by * _mm256_bx;
-	for (int iy = 0;  iy < by;  ++iy)
+	if (bz > 1)
 	{
-		__m256* data = work + iy*_mm256_bx;
-		if ((bx*by) >= 1024 && ((bx*by)&1023) == 0)
+		int _mm256_stride_z = by * _mm256_bx;
+		for (int iy = 0;  iy < by;  ++iy)
 		{
-			// z stride is a multiple of 4096 bytes.
-			// this is bad because all values along the Z axis maps to the same cache page.
-			// this reduces effective L1 cache size from 32KB to 0.5KB and has negative effects
-			// on L2 cache as well. We prevent this by copying the inputs to a temporary buffer.
-			for (int ix = 0;  ix < _mm256_bx;  ++ix)
+			__m256* data = work + iy*_mm256_bx;
+			if ((bx*by) >= 1024 && ((bx*by)&1023) == 0)
 			{
-				for (int iz = 0;  iz < bz;  ++iz) tmp[iz] = data[iz*_mm256_stride_z+ix];
+				// z stride is a multiple of 4096 bytes.
+				// this is bad because all values along the Z axis maps to the same cache page.
+				// this reduces effective L1 cache size from 32KB to 0.5KB and has negative effects
+				// on L2 cache as well. We prevent this by copying the inputs to a temporary buffer.
+				for (int ix = 0;  ix < _mm256_bx;  ++ix)
+				{
+					for (int iz = 0;  iz < bz;  ++iz) tmp[iz] = data[iz*_mm256_stride_z+ix];
 
-				_Us79_AVX_2(tmp, 1);
-				_Us79_AVX_4(tmp, 1);
-				_Us79_AVX_8(tmp, 1);
-				if (bz >= 16) _Us79_AVX_16(tmp, 1);
-				if (bz >= 32) _Us79_AVX_32(tmp, 1);
-				if (bz >= 64) _Us79_AVX_64(tmp, 1);
-				if (bz >= 128) _Us79_AVX_128(tmp, 1);
-				if (bz >= 256) _Us79_AVX_256(tmp, 1);
+					_Us79_AVX_2(tmp, 1);
+					_Us79_AVX_4(tmp, 1);
+					_Us79_AVX_8(tmp, 1);
+					if (bz >= 16) _Us79_AVX_16(tmp, 1);
+					if (bz >= 32) _Us79_AVX_32(tmp, 1);
+					if (bz >= 64) _Us79_AVX_64(tmp, 1);
+					if (bz >= 128) _Us79_AVX_128(tmp, 1);
+					if (bz >= 256) _Us79_AVX_256(tmp, 1);
 
-				for (int iz = 0;  iz < bz;  ++iz) data[iz*_mm256_stride_z+ix] = tmp[iz];
+					for (int iz = 0;  iz < bz;  ++iz) data[iz*_mm256_stride_z+ix] = tmp[iz];
+				}
 			}
-		}
-		else
-		{
-			for (int ix = 0;  ix < _mm256_bx;  ++ix)
+			else
 			{
-				_Us79_AVX_2(data+ix, _mm256_stride_z);
-				_Us79_AVX_4(data+ix, _mm256_stride_z);
-				_Us79_AVX_8(data+ix, _mm256_stride_z);
-				if (bz >= 16) _Us79_AVX_16(data+ix, _mm256_stride_z);
-				if (bz >= 32) _Us79_AVX_32(data+ix, _mm256_stride_z);
-				if (bz >= 64) _Us79_AVX_64(data+ix, _mm256_stride_z);
-				if (bz >= 128) _Us79_AVX_128(data+ix, _mm256_stride_z);
-				if (bz >= 256) _Us79_AVX_256(data+ix, _mm256_stride_z);
+				for (int ix = 0;  ix < _mm256_bx;  ++ix)
+				{
+					_Us79_AVX_2(data+ix, _mm256_stride_z);
+					_Us79_AVX_4(data+ix, _mm256_stride_z);
+					_Us79_AVX_8(data+ix, _mm256_stride_z);
+					if (bz >= 16) _Us79_AVX_16(data+ix, _mm256_stride_z);
+					if (bz >= 32) _Us79_AVX_32(data+ix, _mm256_stride_z);
+					if (bz >= 64) _Us79_AVX_64(data+ix, _mm256_stride_z);
+					if (bz >= 128) _Us79_AVX_128(data+ix, _mm256_stride_z);
+					if (bz >= 256) _Us79_AVX_256(data+ix, _mm256_stride_z);
+				}
 			}
 		}
 	}
