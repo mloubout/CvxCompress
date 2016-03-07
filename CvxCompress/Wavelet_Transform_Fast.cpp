@@ -2,8 +2,8 @@
 // This code implements a fast 3D wavelet transform based on Antonini's 7-9 tap filter.
 // This code performs the same functions as the subroutine ChvDs79 in Ergas et.al. ChvCompress code.
 // In order to get maximum performance out of the code, only block sizes that are powers of two
-// between 8 and 64 are supported.
-// This means the smallest supported block is 8x8x8 and the largest is 64x64x64.
+// between 8 and 256 are supported.
+// This means the smallest supported block is 8x8x8 and the largest is 256x256x256.
 //
 
 // Base functions for wavelet transform. These were auto-generated.
