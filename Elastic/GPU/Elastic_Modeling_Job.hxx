@@ -1,6 +1,9 @@
 #ifndef CVX_ESDRD_MI_TMJ_ELASTIC_MODELING_JOB_HXX
 #define CVX_ESDRD_MI_TMJ_ELASTIC_MODELING_JOB_HXX
 
+#include <cstdio>
+#include <istream>
+
 class Voxet;
 class Voxet_Property;
 class Elastic_Propagator;
@@ -10,6 +13,7 @@ class Elastic_Modeling_Job
 {
 public:
 	Elastic_Modeling_Job(int log_level, const char* parmfile_path);
+	Elastic_Modeling_Job(int log_level, const char* parmfile_path, std::istream& fs);
 	~Elastic_Modeling_Job();
 
 	static void Print_Version_Information()
@@ -24,7 +28,10 @@ public:
 
 	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
 
-	bool Subvolume_Is_Relative_To_Source() {return _sub_origin == 0 ? true : false;}
+	bool Anchor_Is_Source() {return _sub_origin == 0 ? true : false;}
+	bool Anchor_Is_Model_Origin() {return _sub_origin == 1 ? true : false;}
+	bool Anchor_Is_Source_And_Receivers() {return _sub_origin == 2 ? true : false;}
+	bool Anchor_Is_Receivers() {return _sub_origin == 3 ? true : false;}
 	void Compute_Subvolume();
 
 	bool Web_Allowed() {return _web_allowed;}
@@ -127,6 +134,15 @@ public:
 	void Write_XY_Slice(const char* path, int wf_type, int iz);
 
 	Voxet* Get_Voxet() {return _voxet;}
+	int Get_Number_of_Voxet_Properties() {return _num_em_props;}
+	Voxet_Property* Get_Voxet_Property(int prop_idx)
+	{
+		if (prop_idx >= 0 && prop_idx < _num_em_props)
+		{
+			return _props[prop_idx];
+		}
+		return 0L;
+	}
 
 	int Get_Number_Of_GPU_Pipes();
 	void Set_Number_Of_GPU_Pipes(int num_pipes);
@@ -156,6 +172,8 @@ public:
 private:
 	friend class Elastic_Propagator;
 	Elastic_Propagator* _propagator;
+
+	void _initialize(int log_level, const char* parmfile_path, std::istream& fs);
 
 	bool _Is_Valid;
 	int _log_level;
@@ -197,7 +215,7 @@ private:
 	float _vpvert_avgtop;
 	float _vpvert_avgbot;
 	
-	// 0->Source, 1->Volume
+	// 0->Source, 1->Volume, 2->Source & Receivers, 3->Receivers
 	int _sub_origin;
 
 	bool _sub_x_set;

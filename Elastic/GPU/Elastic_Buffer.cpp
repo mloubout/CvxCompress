@@ -10,8 +10,8 @@
 #include "Elastic_Shot.hxx"
 #include "Elastic_SEGY_File.hxx"
 #include "Elastic_Earth_Model_Interface.hxx"
-#include "Voxet.hxx"
-#include "Global_Coordinate_System.hxx"
+#include "../../Common/Voxet.hxx"
+#include "../../Common/Global_Coordinate_System.hxx"
 
 #include "Propagate_Stresses.hxx"
 #include "Propagate_Particle_Velocities.hxx"

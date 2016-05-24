@@ -1,27 +1,48 @@
 #include <math.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 #include <ctype.h>
-#include <stdio.h>
+#include <cstdio>
 #include <fcntl.h>
 #include <unistd.h>
+#include <istream>
+#include <fstream>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <omp.h>
-#include "swapbytes.h"
+#include "../../Common/swapbytes.h"
 #include "Elastic_Modeling_Job.hxx"
 #include "Elastic_Shot.hxx"
-#include "Voxet.hxx"
-#include "Voxet_Property.hxx"
-#include "Global_Coordinate_System.hxx"
+#include "../../Common/Voxet.hxx"
+#include "../../Common/Voxet_Property.hxx"
+#include "../../Common/Global_Coordinate_System.hxx"
 #include "Elastic_Propagator.hxx"
 #include "Elastic_SEGY_File.hxx"
 
 Elastic_Modeling_Job::Elastic_Modeling_Job(
 	int log_level,
-	const char* parmfile_path
+        const char* parmfile_path
+        )
+{
+	std::ifstream fs(parmfile_path);
+	_initialize(log_level,parmfile_path,fs);
+}
+
+Elastic_Modeling_Job::Elastic_Modeling_Job(
+	int log_level,
+        const char* parmfile_path,
+	std::istream& fs
 	)
+{
+	_initialize(log_level,parmfile_path,fs);
+}
+
+void Elastic_Modeling_Job::_initialize(
+	int log_level,
+        const char* parmfile_path,
+        std::istream& fs
+        )
 {
 	Print_Version_Information();
 
@@ -177,12 +198,11 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	_Steps_Per_GPU = 0;
 	_web_allowed = true;
 	if (_log_level > 2) printf("Parameter file is %s.\n",parmfile_path);
-	FILE* fp = fopen(parmfile_path, "r");
-	if (fp != 0L)
+	if (fs.good())
 	{
 		int line_num = 0;
-		char str[4096];
-		for (char* s = fgets(str, 4096, fp);  s != 0L && !error;  s = fgets(str, 4096, fp))
+		char s[4096];
+		for (fs.getline(s,4096);  !fs.eof() && !error;  fs.getline(s,4096))
 		{
 			// strip whitespace and remove end-of-line comments
 			bool prev_isspace = true;
@@ -399,7 +419,17 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 					break;
 				}
 				_tolower(sub_origin);
-				if (strcmp(sub_origin, "source") == 0)
+				if (strcmp(sub_origin, "source_and_receivers") == 0)
+				{
+					_sub_origin = 2;
+					if (_log_level >= 3) printf("Sub volume is relative to source and receiver locations.\n");
+				}
+				else if (strcmp(sub_origin, "receivers") == 0)
+				{
+					_sub_origin = 3;
+					if (_log_level >= 3) printf("Sub volume is relative to receiver locations.\n");
+				}
+				else if (strcmp(sub_origin, "source") == 0)
 				{
 					_sub_origin = 0;
 					if (_log_level >= 3) printf("Sub volume is relative to source location.\n");
@@ -1289,7 +1319,6 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 				if (_log_level > 3) printf("STEPS_PER_GPU = %d\n", _Steps_Per_GPU);
 			}
 		}
-		fclose(fp);
 	}
 	if (!error)
 	{
@@ -1406,7 +1435,7 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 			}
 		}
 	}
-	if (Subvolume_Is_Relative_To_Source())	
+	if (Anchor_Is_Source())
 	{
 		// find smallest bounding box that includes all source locations.
 		int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
@@ -1436,6 +1465,106 @@ void Elastic_Modeling_Job::Compute_Subvolume()
 			{
 				if (src_y0 < src_min_y) src_min_y = src_y0;
 				if (src_y1 > src_max_y) src_max_y = src_y1;
+			}
+		}
+		_sub_ix0 += src_min_x;
+		_sub_ix1 += src_max_x;
+		_sub_iy0 += src_min_y;
+		_sub_iy1 += src_max_y;
+	}
+	else if (Anchor_Is_Source_And_Receivers())
+	{
+		// find smallest bounding box that includes all source and receiver locations.
+		int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
+		for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+		{
+			Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+			int src_x0 = (int)floor(shot->Get_Source_X());
+			int src_x1 = (int)ceil(shot->Get_Source_X());
+			int src_y0 = (int)floor(shot->Get_Source_Y());
+			int src_y1 = (int)ceil(shot->Get_Source_Y());
+			if (src_min_x > src_max_x)
+			{
+				src_min_x = src_x0;
+				src_max_x = src_x1;
+			}
+			else
+			{
+				if (src_x0 < src_min_x) src_min_x = src_x0;
+				if (src_x1 > src_max_x) src_max_x = src_x1;
+			}
+			if (src_min_y > src_max_y)
+			{
+				src_min_y = src_y0;
+				src_max_y = src_y1;
+			}
+			else
+			{
+				if (src_y0 < src_min_y) src_min_y = src_y0;
+				if (src_y1 > src_max_y) src_max_y = src_y1;
+			}
+			for (int iFile = 0;  iFile < shot->Get_Number_Of_SEGY_Files();  ++iFile)
+			{
+				Elastic_SEGY_File* segy = shot->Get_SEGY_File_by_Index(iFile);
+				double *recx, *recy, *recz;
+				int nrec = segy->Compute_Receiver_Locations_NO_COPY(recx,recy,recz);
+				for (int iRec = 0;  iRec < nrec;  ++iRec)
+				{
+					int rec_x0 = (int)floor(recx[iRec]);
+					int rec_x1 = (int)ceil(recx[iRec]);
+					int rec_y0 = (int)floor(recy[iRec]);
+					int rec_y1 = (int)ceil(recy[iRec]);
+					if (rec_x0 < src_min_x) src_min_x = rec_x0;
+					if (rec_x1 > src_max_x) src_max_x = rec_x1;
+					if (rec_y0 < src_min_y) src_min_y = rec_y0;
+					if (rec_y1 > src_max_y) src_max_y = rec_y1;
+				}
+			}
+		}
+		_sub_ix0 += src_min_x;
+		_sub_ix1 += src_max_x;
+		_sub_iy0 += src_min_y;
+		_sub_iy1 += src_max_y;
+	}
+	else if (Anchor_Is_Receivers())
+	{
+		// find smallest bounding box that includes all receiver locations.
+		int src_min_x=1, src_max_x=0, src_min_y=1, src_max_y=0;
+		for (int iShot = 0;  iShot < Get_Number_Of_Shots();  ++iShot)
+		{
+			Elastic_Shot* shot = Get_Shot_By_Index(iShot);
+			for (int iFile = 0;  iFile < shot->Get_Number_Of_SEGY_Files();  ++iFile)
+			{
+				Elastic_SEGY_File* segy = shot->Get_SEGY_File(iFile);
+				double *recx, *recy, *recz;
+				int nrec = segy->Compute_Receiver_Locations_NO_COPY(recx,recy,recz);
+				for (int iRec = 0;  iRec < nrec;  ++iRec)
+				{
+					int rec_x0 = (int)floor(recx[iRec]);
+					int rec_x1 = (int)ceil(recx[iRec]);
+					int rec_y0 = (int)floor(recy[iRec]);
+					int rec_y1 = (int)ceil(recy[iRec]);
+					if (src_min_x > src_max_x)
+					{
+						src_min_x = rec_x0;
+						src_max_x = rec_x1;
+					}
+					else
+					{
+						if (rec_x0 < src_min_x) src_min_x = rec_x0;
+						if (rec_x1 > src_max_x) src_max_x = rec_x1;
+					}
+					if (src_min_y > src_max_y)
+					{
+						src_min_y = rec_y0;
+						src_max_y = rec_y1;
+					}
+					else
+					{
+						if (rec_y0 < src_min_y) src_min_y = rec_y0;
+						if (rec_y1 > src_max_y) src_max_y = rec_y1;
+					}
+				}
 			}
 		}
 		_sub_ix0 += src_min_x;

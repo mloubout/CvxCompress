@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include "swapbytes.h"
+#include "../../Common/swapbytes.h"
 #include "Elastic_SEGY_File.hxx"
 #include "Elastic_SEGY_File_Receiver_Range.hxx"
 #include "Elastic_Buffer.hxx"

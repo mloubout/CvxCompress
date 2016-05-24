@@ -1,4 +1,4 @@
-#include "Global_Coordinate_System.hxx"
+#include "../../Common/Global_Coordinate_System.hxx"
 
 //
 // Base class that defines earth model interface for elastic propagator.

@@ -15,8 +15,8 @@
 #include "Elastic_Modeling_Job.hxx"
 #include "Elastic_Shot.hxx"
 #include "Elastic_SEGY_File.hxx"
-#include "Global_Coordinate_System.hxx"
-#include "Voxet.hxx"
+#include "../../Common/Global_Coordinate_System.hxx"
+#include "../../Common/Voxet.hxx"
 
 //Un-comment this to do more detailed timing of the various sections
 //of the propagate one block routine
@@ -132,6 +132,7 @@ void Elastic_Propagator::_init(
 	_prev_d2h = 0;
 	_prev_h2h = 0;
 	_num_timesteps = 0;
+	_steps_per_GPU = 0;
 	_job = job;
 	_debug = debug;
 	_num_devices = 0;
@@ -203,6 +204,7 @@ bool Elastic_Propagator::Build_Compute_Pipelines(
 	bool load_balance_possible = true;
 	_num_devices = num_devices;
 	_device_id = new int[_num_devices];
+	_steps_per_GPU = num_timesteps;
 	_cmp_streams = new cudaStream_t[_num_devices];
 	_inp_streams = new cudaStream_t[_num_devices];
 	_out_streams = new cudaStream_t[_num_devices];
@@ -1889,11 +1891,16 @@ void Elastic_Propagator::Release_Resources_After_Propagation(Elastic_Shot* shot)
 	shot->Free_Trace_Resample_Buffers();
 }
 
-void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices)
+void Elastic_Propagator::Propagate_Shot_Dont_Write_SEGY(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices)
 {
 	Prepare_For_Propagation(shot,debug_output_source_wavelet,false);
 	int ts_out;
 	while (!Propagate_One_Block(_num_timesteps, shot, false, debug_output_xz_slices, true, true, true, ts_out));
+	printf("Finished Elastic_Propagator::Propagate_Shot_Dont_Write_SEGY\n");
+}
+void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices)
+{
+	Propagate_Shot_Dont_Write_SEGY(shot,debug_output_source_wavelet,debug_output_xz_slices);
 	shot->Write_SEGY_Files();
 	Release_Resources_After_Propagation(shot);
 	printf("Finished Elastic_Propagator::Propagate_Shot\n");
@@ -2685,6 +2692,21 @@ Elastic_Pipeline* Elastic_Propagator::Get_Pipeline(int pipe_idx)
 		return _pipes[pipe_idx];
 	}
 	return 0L;
+}
+
+int Elastic_Propagator::Get_Steps_Per_GPU()
+{
+	return _steps_per_GPU;
+}
+
+const int* Elastic_Propagator::Get_GPU_Devices()
+{
+	return _device_id;
+}
+
+int Elastic_Propagator::Get_Number_Of_GPU_Devices()
+{
+	return _num_devices;
 }
 
 void Elastic_Propagator::Print_Graphical()

@@ -43,6 +43,10 @@ public:
 
 	int Get_Number_Of_Pipelines();
 	Elastic_Pipeline* Get_Pipeline(int pipe_idx);
+	
+	int Get_Steps_Per_GPU();
+	const int* Get_GPU_Devices();
+	int Get_Number_Of_GPU_Devices();
 
 	void Print_Graphical();
 
@@ -97,7 +101,9 @@ public:
 	cudaStream_t Get_Output_Stream(int device_id);
 	cudaStream_t Get_Receiver_Stream(int device_id);
 
-	// call this function to completely propagate one shot
+	// propagate shot, don't write to SEGY and don't clean up
+	void Propagate_Shot_Dont_Write_SEGY(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices);
+	// propagate shot, write to SEGY and clean up
 	void Propagate_Shot(Elastic_Shot* shot, bool debug_output_source_wavelet, bool debug_output_xz_slices);
 
 	double Get_Internal_Sample_Rate() {return _dti;}
@@ -162,6 +168,7 @@ private:
 
 	double _dti;
 	int _num_timesteps;
+	int _steps_per_GPU;
 
 	float _dx;		// X cell size
 	float _dy;		// Y cell size

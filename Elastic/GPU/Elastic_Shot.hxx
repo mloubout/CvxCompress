@@ -151,6 +151,11 @@ public:
 			);
 
 	void Write_SEGY_Files();
+	void Copy_Traces_To_External_Buffer(
+		int nTraces,
+		int nsamp,
+		float* samples
+		);
 
 private:
 	int _log_level;

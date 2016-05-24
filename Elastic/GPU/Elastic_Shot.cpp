@@ -1,3 +1,4 @@
+#include <cassert>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,13 +13,13 @@
 #include "Elastic_SEGY_File.hxx"
 #include "Elastic_Pipeline.hxx"
 #include "Extract_Receiver_Values.hxx"
-#include "Voxet.hxx"
-#include "Global_Coordinate_System.hxx"
+#include "../../Common/Voxet.hxx"
+#include "../../Common/Global_Coordinate_System.hxx"
 #include "DFT.hxx"
 #include "gpuAssert.h"
 
 //#define RESAMPLE_DEBUG 0
-#define DEBUG_TMJ
+//#define DEBUG_TMJ
 
 Elastic_Shot::Elastic_Shot(int log_level, Elastic_Modeling_Job* job, int souidx, double x, double y, double z)
 {
@@ -809,6 +810,33 @@ float Elastic_Shot::Compute_Reciprocal_Scale_Factor(int flag, float srcx, float 
 		}
 	}
 	return scalefac;
+}
+
+void Elastic_Shot::Copy_Traces_To_External_Buffer(
+		int nTraces,
+		int nsamp,
+		float* samples
+		)
+{
+	//printf("_num_traces = %d, nTraces = %d\n",_num_traces,nTraces);
+	assert(nTraces == _num_traces);
+	for (int iTrc = 0;  iTrc < _num_traces;  ++iTrc)
+        {
+		float* dst = samples + nsamp * iTrc;
+		float* src = _h_traces[iTrc]->Get_Samples();
+		int nsamp_src = _h_traces[iTrc]->Get_NSAMP();
+		if (nsamp_src >= nsamp)
+		{
+			// source is at least same size as destination, copy using destination length
+			memcpy(dst,src,nsamp*sizeof(float));
+		}
+		else
+		{
+			// source is shorter than destination, copy and zero pad
+			memcpy(dst,src,nsamp_src*sizeof(float));
+			memset(dst+nsamp_src,0,(nsamp-nsamp_src)*sizeof(float));
+		}
+	}
 }
 
 void Elastic_Shot::Write_SEGY_Files()
