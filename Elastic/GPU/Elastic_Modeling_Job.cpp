@@ -202,8 +202,10 @@ void Elastic_Modeling_Job::_initialize(
 	{
 		int line_num = 0;
 		char s[4096];
-		for (fs.getline(s,4096);  !fs.eof() && !error;  fs.getline(s,4096))
+		while (!fs.eof() && !error)
 		{
+			fs.getline(s,4096);
+
 			// strip whitespace and remove end-of-line comments
 			bool prev_isspace = true;
 			int j = 0;
