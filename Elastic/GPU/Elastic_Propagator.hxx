@@ -136,6 +136,7 @@ private:
 			int Stencil_Order,
 			bool debug
 		  );
+	void Skip_Leadin();
 	bool Build_Compute_Pipelines(
 			int log_level,
 			int num_pipes, 

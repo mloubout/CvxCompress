@@ -5,10 +5,12 @@
 
 #include <cuda_runtime_api.h>
 
-#include "Elastic_Propagator.hxx"
-#include "Elastic_Modeling_Job.hxx"
-#include "Elastic_Shot.hxx"
-#include "Elastic_Buffer.hxx"
+#include <Elastic_Propagator.hxx>
+#include <Elastic_Modeling_Job.hxx>
+#include <Elastic_Shot.hxx>
+#include <Elastic_Buffer.hxx>
+#include <Voxet_Memory_Mapper.hxx>
+#include <Variable_Water_Velocity.hxx>
 
 int main(int argc, char* argv[])
 {
@@ -30,7 +32,9 @@ int main(int argc, char* argv[])
 
 	int log_level = 4;
 
-	Elastic_Modeling_Job* job = new Elastic_Modeling_Job(log_level, argv[1]);
+	Voxet_Memory_Mapper* mapper = new Voxet_Memory_Mapper();
+	Variable_Water_Velocity* vwv = new Variable_Water_Velocity();
+	Elastic_Modeling_Job* job = new Elastic_Modeling_Job(log_level, argv[1], mapper, vwv);
 	if (job->Is_Valid())
 	{
 		bool xz_model = false, xz_slices = false, source_wavelet = false;
@@ -73,6 +77,8 @@ int main(int argc, char* argv[])
 			delete prop;
 		}
 	}
+	delete mapper;
+	delete vwv;
 	delete job;
 	return 0;
 }

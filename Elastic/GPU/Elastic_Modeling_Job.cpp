@@ -11,20 +11,26 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <omp.h>
-#include "../../Common/swapbytes.h"
-#include "Elastic_Modeling_Job.hxx"
-#include "Elastic_Shot.hxx"
-#include "../../Common/Voxet.hxx"
-#include "../../Common/Voxet_Property.hxx"
-#include "../../Common/Global_Coordinate_System.hxx"
-#include "Elastic_Propagator.hxx"
-#include "Elastic_SEGY_File.hxx"
+#include <swapbytes.h>
+#include <Elastic_Modeling_Job.hxx>
+#include <Elastic_Shot.hxx>
+#include <Voxet.hxx>
+#include <Voxet_Property.hxx>
+#include <Global_Coordinate_System.hxx>
+#include <Voxet_Memory_Mapper.hxx>
+#include <Elastic_Propagator.hxx>
+#include <Elastic_SEGY_File.hxx>
+#include <Variable_Water_Velocity.hxx>
 
 Elastic_Modeling_Job::Elastic_Modeling_Job(
 	int log_level,
-        const char* parmfile_path
+        const char* parmfile_path,
+	Voxet_Memory_Mapper* mapper,
+	Variable_Water_Velocity* Vwxyzt
         )
 {
+	_mapper = mapper;
+	_Vwxyzt_Computer = Vwxyzt;
 	std::ifstream fs(parmfile_path);
 	_initialize(log_level,parmfile_path,fs);
 }
@@ -32,171 +38,23 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 Elastic_Modeling_Job::Elastic_Modeling_Job(
 	int log_level,
         const char* parmfile_path,
+	Voxet_Memory_Mapper* mapper,
+	Variable_Water_Velocity* Vwxyzt,
 	std::istream& fs
 	)
 {
+	_mapper = mapper;
+	_Vwxyzt_Computer = Vwxyzt;
 	_initialize(log_level,parmfile_path,fs);
 }
 
-void Elastic_Modeling_Job::_initialize(
-	int log_level,
-        const char* parmfile_path,
-        std::istream& fs
-        )
+bool Elastic_Modeling_Job::_read_parmfile(
+		int log_level,
+		const char* parmfile_path,
+		std::istream& fs
+		)
 {
-	Print_Version_Information();
-
-	_Is_Valid = false;
-	_log_level = log_level;
-	_propagator = 0L;
-
-	_spatial_order = 8;  // default is 8th order, optional 16
-	_ebcdic_header_filename = 0L;
-	
-	_num_em_props = 14;
-
-	//Attr_Idx_Vp       = 0;
-	//Attr_Idx_Vs       = 1;
-	//Attr_Idx_Density  = 2;
-	//Attr_Idx_Q        = 3;
-	//Attr_Idx_Dip      = 4;
-	//Attr_Idx_Azimuth  = 5;
-	//Attr_Idx_Rake     = 6;
-	//Attr_Idx_Delta1   = 7;
-	//Attr_Idx_Delta2   = 8;
-	//Attr_Idx_Delta3   = 9;
-	//Attr_Idx_Epsilon1 = 10;
-	//Attr_Idx_Epsilon2 = 11;
-	//Attr_Idx_Gamma1   = 12;
-	//Attr_Idx_Gamma2   = 13;
-
-	_pck_moniker = new char*[_num_em_props];
-	_pck_moniker[Attr_Idx_Vp]       = strdup("Vp");
-	_pck_moniker[Attr_Idx_Vs]       = strdup("Vs");
-	_pck_moniker[Attr_Idx_Density]  = strdup("Density");
-	_pck_moniker[Attr_Idx_Q]        = strdup("Q");
-	_pck_moniker[Attr_Idx_Dip]      = strdup("Dip");
-	_pck_moniker[Attr_Idx_Azimuth]  = strdup("Azimuth");
-	_pck_moniker[Attr_Idx_Rake]     = strdup("Rake");
-	_pck_moniker[Attr_Idx_Delta1]   = strdup("Delta1");
-	_pck_moniker[Attr_Idx_Delta2]   = strdup("Delta2");
-	_pck_moniker[Attr_Idx_Delta3]   = strdup("Delta3");
-	_pck_moniker[Attr_Idx_Epsilon1] = strdup("Epsilon1");
-	_pck_moniker[Attr_Idx_Epsilon2] = strdup("Epsilon2");
-	_pck_moniker[Attr_Idx_Gamma1]   = strdup("Gamma1");
-	_pck_moniker[Attr_Idx_Gamma2]   = strdup("Gamma2");
-
-	_pck_mask = new int[_num_em_props];
-	_pck_mask[Attr_Idx_Vp]       = 65535;
-	_pck_mask[Attr_Idx_Vs]       = 65535;
-	_pck_mask[Attr_Idx_Density]  =   255;
-	_pck_mask[Attr_Idx_Q]        =   255;
-	_pck_mask[Attr_Idx_Dip]      =   255;
-	_pck_mask[Attr_Idx_Azimuth]  =   255;
-	_pck_mask[Attr_Idx_Rake]     =   255;
-	_pck_mask[Attr_Idx_Delta1]   =   255;
-	_pck_mask[Attr_Idx_Delta2]   =   255;
-	_pck_mask[Attr_Idx_Delta3]   =   255;
-	_pck_mask[Attr_Idx_Epsilon1] =   255;
-	_pck_mask[Attr_Idx_Epsilon2] =   255;
-	_pck_mask[Attr_Idx_Gamma1]   =   255;
-	_pck_mask[Attr_Idx_Gamma2]   =   255;
-
-	_pck_shft = new int[_num_em_props];
-	_pck_shft[Attr_Idx_Vp]       = 16;
-	_pck_shft[Attr_Idx_Vs]       =  0;
-	_pck_shft[Attr_Idx_Density]  = 16;
-	_pck_shft[Attr_Idx_Q]        = 24;
-	_pck_shft[Attr_Idx_Dip]      =  8;
-	_pck_shft[Attr_Idx_Azimuth]  =  0;
-	_pck_shft[Attr_Idx_Rake]     = 24;
-	_pck_shft[Attr_Idx_Delta1]   = 16;
-	_pck_shft[Attr_Idx_Delta2]   =  8;
-	_pck_shft[Attr_Idx_Delta3]   =  0;
-	_pck_shft[Attr_Idx_Epsilon1] = 24;
-	_pck_shft[Attr_Idx_Epsilon2] = 16;
-	_pck_shft[Attr_Idx_Gamma1]   =  8;
-	_pck_shft[Attr_Idx_Gamma2]   =  0;
-
-	_pck_widx = new int[_num_em_props];
-	_pck_widx[Attr_Idx_Vp]       = 0;
-	_pck_widx[Attr_Idx_Vs]       = 0;
-	_pck_widx[Attr_Idx_Density]  = 3;
-	_pck_widx[Attr_Idx_Q]        = 3;
-	_pck_widx[Attr_Idx_Dip]      = 3;
-	_pck_widx[Attr_Idx_Azimuth]  = 3;
-	_pck_widx[Attr_Idx_Rake]     = 1;
-	_pck_widx[Attr_Idx_Delta1]   = 1;
-	_pck_widx[Attr_Idx_Delta2]   = 1;
-	_pck_widx[Attr_Idx_Delta3]   = 1;
-	_pck_widx[Attr_Idx_Epsilon1] = 2;
-	_pck_widx[Attr_Idx_Epsilon2] = 2;
-	_pck_widx[Attr_Idx_Gamma1]   = 2;
-	_pck_widx[Attr_Idx_Gamma2]   = 2;
-
-	_pck_min = new float[_num_em_props];
-	_pck_max = new float[_num_em_props];
-	_pck_range = new float[_num_em_props];
-	_pck_iso = new float[_num_em_props];
-	// initialization of these tables is done after parameter file has been read
-
 	bool error = false;
-	_use_isotropic_sphere_during_source_injection = false;
-	_Courant_Factor = 1.0f;
-	_voxet = 0L;
-	_shots = 0L;
-	_num_shots = 0;
-	_props = new Voxet_Property*[_num_em_props];
-	_const_vals = new float[_num_em_props];
-	for (int i = 0;  i < _num_em_props;  ++i)
-	{
-		_props[i] = 0L;
-		_const_vals[i] = 0.0f;
-	}
-	_fq = 5.0;
-	_sub_origin = 0;  // default is source
-	_sub_x_set = false;
-	_sub_y_set = false;
-	_sub_z_set = false;
-	_parm_sub_ix0 = 0;
-	_parm_sub_ix1 = 0;
-	_parm_sub_iy0 = 0;
-	_parm_sub_iy1 = 0;
-	_parm_sub_iz0 = 0;
-	_parm_sub_iz1 = 0;
-	_parm_nabc_sdx = 0;
-	_parm_nabc_sdy = 0;
-	_parm_nabc_top = 0;
-	_parm_nabc_bot = 0;
-	_parm_nabc_sdx_extend = false;
-	_parm_nabc_sdy_extend = false;
-	_parm_nabc_top_extend = false;
-	_parm_nabc_bot_extend = false;
-	_sub_ix0 = 0;
-	_sub_ix1 = 0;
-	_sub_iy0 = 0;
-	_sub_iy1 = 0;
-	_sub_iz0 = 0;
-	_sub_iz1 = 0;
-	_nabc_sdx = 0;
-	_nabc_sdy = 0;
-	_nabc_top = 0;
-	_nabc_bot = 0;
-	_nabc_sdx_extend = false;
-	_nabc_sdy_extend = false;
-	_nabc_top_extend = false;
-	_nabc_bot_extend = false;
-	_freesurface_enabled = true;
-	_source_ghost_enabled = true;
-	_receiver_ghost_enabled = true;
-	_lower_Q_seafloor_enabled = false;
-	_scholte_only = false;
-	_extend_model_if_necessary = false;
-	_GPU_Devices = 0L;
-	_num_GPU_Devices = 0;
-	_GPU_Pipes = 0;
-	_Steps_Per_GPU = 0;
-	_web_allowed = true;
 	if (_log_level > 2) printf("Parameter file is %s.\n",parmfile_path);
 	if (fs.good())
 	{
@@ -256,6 +114,77 @@ void Elastic_Modeling_Job::_initialize(
 					{
 						continue;
 					}
+				}
+			}
+			char mmapstr[4096];
+			if (!error && sscanf(s, "MEMORY_MAP_VOXET %s", mmapstr) == 1)
+			{
+				_tolower(mmapstr);
+				if (strcmp(mmapstr, "enabled") == 0) _mapper_enabled = true;
+				if (_log_level >= 3 && _mapper_enabled) printf("Voxet will be memory mapped.\n");
+			}
+			if (_Vwxyzt_Computer != 0L && !_Vwxyzt_Computer->Has_Been_Initialized())
+			{
+				char Vwxyzt_Voxet_Path[4096];
+				if (!error && sscanf(s, "Vwxyzt_Voxet %s", Vwxyzt_Voxet_Path) == 1)
+				{
+					int status = _Vwxyzt_Computer->Create_Voxet(Vwxyzt_Voxet_Path,parmfile_path,line_num,_log_level);
+					if (status != 0)
+					{
+						error = true;
+						break;
+					}
+					else
+					{
+						continue;
+					}
+				}
+				char Vwxyzt_transpose[4096];
+				if (!error && sscanf(s, "Vwxyzt TRANSPOSE UVW = %s", Vwxyzt_transpose) == 1)
+				{
+					_tolower(Vwxyzt_transpose);
+					int status = _Vwxyzt_Computer->Set_Transpose(Vwxyzt_transpose,parmfile_path,line_num,_log_level);
+					if (status != 0)
+					{
+						error = true;
+						break;
+					}
+					else
+					{
+						continue;
+					}
+				}
+				char Vwxyzt_moniker[4096];
+				char Vwxyzt_start_time_str[4096];
+				if (!error && sscanf(s, "Vwxyzt %s %s", Vwxyzt_moniker, Vwxyzt_start_time_str) == 2)
+				{
+					struct tm start_time_tm;
+					strptime(Vwxyzt_start_time_str,"%m/%d/%Y-%H:%M:%S",&start_time_tm);
+					time_t start_time = mktime(&start_time_tm);
+					int status = _Vwxyzt_Computer->Add_Water_Volume(Vwxyzt_moniker,start_time,parmfile_path,line_num,_log_level);
+					if (status != 0)
+					{
+						error = true;
+						break;
+					}
+					else
+					{
+						continue;
+					}
+				}
+				char PIES_file[4096];
+				if (!error && sscanf(s, "PIES_File %s", PIES_file) == 1)
+				{
+					int status = _Vwxyzt_Computer->Add_PIES_File(PIES_file,parmfile_path,line_num,_log_level);
+					if (status != 0)
+                                        {
+                                                error = true;
+                                                break;
+                                        }
+                                        else
+                                        {
+                                                continue;
+                                        }
 				}
 			}
 			char transpose[4096];
@@ -357,13 +286,13 @@ void Elastic_Modeling_Job::_initialize(
 			if (!error && sscanf(s, "PROPERTY %s = %lf", property, &const_val) == 2)
 			{
 				if (_voxet == 0L)
-                                {
-                                        printf("%s (line %d): Error - PROPERTY cannot appear before USE VOXET.\n",parmfile_path,line_num);
-                                        error = true;
+				{
+					printf("%s (line %d): Error - PROPERTY cannot appear before USE VOXET.\n",parmfile_path,line_num);
+					error = true;
 					break;
-                                }
-                                else
-                                {
+				}
+				else
+				{
 					int attr_idx = Get_Earth_Model_Attribute_Index(property);
 					if (attr_idx < 0)
 					{
@@ -466,13 +395,13 @@ void Elastic_Modeling_Job::_initialize(
 			if (!error && sscanf(s, "PROPAGATE_X = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
 			{
 				if (_voxet == 0L)
-                                {
-                                        printf("%s (line %d): Error - PROPAGATE_X cannot appear before USE VOXET.\n",parmfile_path,line_num);
-                                        error = true;
-                                        break;
-                                }
-                                else
-                                {
+				{
+					printf("%s (line %d): Error - PROPAGATE_X cannot appear before USE VOXET.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				else
+				{
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_X",parmfile_path,line_num,gcs->Get_NX(),gcs->Get_DX(),sub_min,sub_max,sub_unit,_parm_sub_ix0,_parm_sub_ix1);
 					if (error) break;
@@ -482,13 +411,13 @@ void Elastic_Modeling_Job::_initialize(
 			if (!error && sscanf(s, "PROPAGATE_Y = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
 			{
 				if (_voxet == 0L)
-                                {
-                                        printf("%s (line %d): Error - PROPAGATE_Y cannot appear before USE VOXET.\n",parmfile_path,line_num);
-                                        error = true;
-                                        break;
-                                }
-                                else
-                                {
+				{
+					printf("%s (line %d): Error - PROPAGATE_Y cannot appear before USE VOXET.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				else
+				{
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_Y",parmfile_path,line_num,gcs->Get_NY(),gcs->Get_DY(),sub_min,sub_max,sub_unit,_parm_sub_iy0,_parm_sub_iy1);
 					if (error) break;
@@ -498,13 +427,13 @@ void Elastic_Modeling_Job::_initialize(
 			if (!error && sscanf(s, "PROPAGATE_Z = %lf %lf %s", &sub_min, &sub_max, sub_unit) == 3)
 			{
 				if (_voxet == 0L)
-                                {
-                                        printf("%s (line %d): Error - PROPAGATE_Z cannot appear before USE VOXET.\n",parmfile_path,line_num);
-                                        error = true;
-                                        break;
-                                }
-                                else
-                                {
+				{
+					printf("%s (line %d): Error - PROPAGATE_Z cannot appear before USE VOXET.\n",parmfile_path,line_num);
+					error = true;
+					break;
+				}
+				else
+				{
 					Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
 					error = _Calculate_Sub_Volume("PROPAGATE_Z",parmfile_path,line_num,gcs->Get_NZ(),gcs->Get_DZ(),sub_min,sub_max,sub_unit,_parm_sub_iz0,_parm_sub_iz1);
 					if (error) break;
@@ -605,19 +534,19 @@ void Elastic_Modeling_Job::_initialize(
 				}
 			}
 			if (!error)
-                        {
-                                char scholte_only_str[4096];
-                                int matched = sscanf(s, "SCHOLTE_ONLY %s", scholte_only_str);
-                                if (matched == 1)
-                                {
-                                        _tolower(scholte_only_str);
-                                        if (strcmp(scholte_only_str, "enabled") == 0)
-                                        {
-                                                _scholte_only = true;
-                                                if (_log_level >= 3) printf("Model will be altered to model only Scholte waves.\n");
-                                        }
-                                }
-                        }
+			{
+				char scholte_only_str[4096];
+				int matched = sscanf(s, "SCHOLTE_ONLY %s", scholte_only_str);
+				if (matched == 1)
+				{
+					_tolower(scholte_only_str);
+					if (strcmp(scholte_only_str, "enabled") == 0)
+					{
+						_scholte_only = true;
+						if (_log_level >= 3) printf("Model will be altered to model only Scholte waves.\n");
+					}
+				}
+			}
 			if (!error)
 			{
 				char web_allowed_str[4096];
@@ -646,13 +575,13 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched == 5)
 				{
 					if (_voxet == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_LOCATION cannot appear before USE VOXET.\n",parmfile_path,line_num);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
+					{
+						printf("%s (line %d): Error - SOURCE_LOCATION cannot appear before USE VOXET.\n",parmfile_path,line_num);
+						error = true;
+						break;
+					}
+					else
+					{
 						Elastic_Shot* shot = Get_Shot(souidx);
 						if (shot != 0L)
 						{
@@ -672,9 +601,9 @@ void Elastic_Modeling_Job::_initialize(
 								shot = new Elastic_Shot(_log_level,this,souidx,x,y,z);
 								Add_Shot(shot);
 								printf("Shot %d :: Source location global=(%lf,%lf,%lf) index=(%lf,%lf,%lf)\n",
-									shot->Get_Source_Index(),
-									sou_x,sou_y,sou_z,
-									x,y,z);
+										shot->Get_Source_Index(),
+										sou_x,sou_y,sou_z,
+										x,y,z);
 							}
 							else if (strcmp(sub_unit, "local") == 0)
 							{
@@ -684,9 +613,9 @@ void Elastic_Modeling_Job::_initialize(
 								shot = new Elastic_Shot(_log_level,this,souidx,x,y,z);
 								Add_Shot(shot);
 								printf("Shot %d :: Source location local=(%lf,%lf,%lf) index=(%lf,%lf,%lf)\n",
-									shot->Get_Source_Index(),
-									sou_x,sou_y,sou_z,
-									x,y,z);
+										shot->Get_Source_Index(),
+										sou_x,sou_y,sou_z,
+										x,y,z);
 							}
 							else if (strcmp(sub_unit, "index") == 0)
 							{
@@ -694,8 +623,8 @@ void Elastic_Modeling_Job::_initialize(
 								shot = new Elastic_Shot(_log_level,this,souidx,sou_x,sou_y,sou_z);
 								Add_Shot(shot);
 								printf("Shot %d :: Source location index=(%lf,%lf,%lf)\n",
-									shot->Get_Source_Index(),
-									sou_x,sou_y,sou_z);
+										shot->Get_Source_Index(),
+										sou_x,sou_y,sou_z);
 							}
 							else
 							{
@@ -704,7 +633,7 @@ void Elastic_Modeling_Job::_initialize(
 								break;
 							}
 						}
-                                        }
+					}
 				}
 			}
 			if (!error)
@@ -810,13 +739,13 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched == 2 || matched == 4)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_AMPLITUDE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SOURCE_AMPLITUDE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
 					{
 						if (matched == 2)
 						{
@@ -867,14 +796,14 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched == 3)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_WAVELET Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SOURCE_WAVELET Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
+					{
 						_tolower(wavetype);
 						error = shot->Use_Builtin_Source_Wavelet(wavetype, freq, parmfile_path, line_num);
 						if (error) break;
@@ -890,18 +819,18 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched == 2)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
+					{
 						error = shot->Read_Source_Wavelet_From_File(wavelet_path);
-                                                if (error) break;
-                                                if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s. NB! No filter will be applied, this may cause dispersion.\n",shot->Get_Source_Index(),wavelet_path);
-                                        }
+						if (error) break;
+						if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s. NB! No filter will be applied, this may cause dispersion.\n",shot->Get_Source_Index(),wavelet_path);
+					}
 				}
 			}
 			if (!error)
@@ -914,18 +843,18 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched == 4)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
-                                                printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
-                                                error = true;
-                                                break;
-                                        }
-                                        else
-                                        {
+					if (shot == 0L)
+					{
+						printf("%s (line %d): Error - SOURCE_WAVELET FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
+						error = true;
+						break;
+					}
+					else
+					{
 						error = shot->Read_Source_Wavelet_From_File(wavelet_path,fmax,filter_order);
-                                                if (error) break;
-                                                if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s and filtered to comply with F_max=%.2fHz.\n",shot->Get_Source_Index(),wavelet_path,fmax);
-                                        }
+						if (error) break;
+						if (_log_level > 3) printf("Shot %d :: Source wavelet will be read from file %s and filtered to comply with F_max=%.2fHz.\n",shot->Get_Source_Index(),wavelet_path,fmax);
+					}
 				}
 			}
 			if (!error)
@@ -943,8 +872,8 @@ void Elastic_Modeling_Job::_initialize(
 				if (matched >= 7 && matched <= 10)
 				{
 					Elastic_Shot* shot = Get_Shot(souidx);
-                                        if (shot == 0L)
-                                        {
+					if (shot == 0L)
+					{
 						printf("%s (line %d): Error - SEGY_FILE Shot with source index %d not found.\n",parmfile_path,line_num,souidx);
 						error = true;
 						break;
@@ -1261,26 +1190,26 @@ void Elastic_Modeling_Job::_initialize(
 				}
 			}
 			char flag[4096];
-			if (sscanf(s, "FREESURFACE = %s", flag) == 1)
+			if (!error && sscanf(s, "FREESURFACE = %s", flag) == 1)
 			{
 				_tolower(flag);
 				_freesurface_enabled = strcmp(flag, "enabled") == 0 ? true : false;
 				if (_log_level > 3) printf("FREESURFACE is %s.\n", _freesurface_enabled?"enabled":"disabled");
 			}
-			if (sscanf(s, "SOURCE_GHOST = %s", flag) == 1)
+			if (!error && sscanf(s, "SOURCE_GHOST = %s", flag) == 1)
 			{
 				_tolower(flag);
 				_source_ghost_enabled = strcmp(flag, "enabled") == 0 ? true : false;
 				if (_log_level > 3) printf("SOURCE_GHOST is %s.\n", _source_ghost_enabled?"enabled":"disabled");
 			}
-			if (sscanf(s, "RECEIVER_GHOST = %s", flag) == 1)
+			if (!error && sscanf(s, "RECEIVER_GHOST = %s", flag) == 1)
 			{
 				_tolower(flag);
 				_receiver_ghost_enabled = strcmp(flag, "enabled") == 0 ? true : false;
 				if (_log_level > 3) printf("RECEIVER_GHOST is %s.\n", _receiver_ghost_enabled?"enabled":"disabled");
 			}
 			char GPU_Devices[4096];
-			if (sscanf(s, "GPU_DEVICES = %s", GPU_Devices) == 1)
+			if (!error && sscanf(s, "GPU_DEVICES = %s", GPU_Devices) == 1)
 			{
 				if (_GPU_Devices != 0L) delete [] _GPU_Devices;
 				_GPU_Devices = new int[1024];
@@ -1309,16 +1238,206 @@ void Elastic_Modeling_Job::_initialize(
 				}
 			}
 			int GPU_Pipes;
-			if (sscanf(s, "GPU_PIPES = %d", &GPU_Pipes) == 1)
+			if (!error && sscanf(s, "GPU_PIPES = %d", &GPU_Pipes) == 1)
 			{
 				_GPU_Pipes = GPU_Pipes;
 				if (_log_level > 3) printf("GPU_PIPES = %d\n",_GPU_Pipes);
 			}
 			int Steps_Per_GPU;
-			if (sscanf(s, "STEPS_PER_GPU = %d", &Steps_Per_GPU) == 1)
+			if (!error && sscanf(s, "STEPS_PER_GPU = %d", &Steps_Per_GPU) == 1)
 			{
 				_Steps_Per_GPU = Steps_Per_GPU;
 				if (_log_level > 3) printf("STEPS_PER_GPU = %d\n", _Steps_Per_GPU);
+			}
+			int num_parallel_shots;
+			if (!error && sscanf(s, "NUM_PARALLEL_SHOTS %d", &num_parallel_shots) == 1)
+			{
+				_Num_Parallel_Shots = num_parallel_shots;
+				if (_log_level > 3) printf("NUM_PARALLEL_SHOTS %d\n",_Num_Parallel_Shots);
+			}
+		}
+	}
+	return error;
+}
+
+void Elastic_Modeling_Job::_initialize(
+	int log_level,
+        const char* parmfile_path,
+        std::istream& fs
+        )
+{
+	Print_Version_Information();
+
+	_Is_Valid = false;
+	_log_level = log_level;
+	_propagator = 0L;
+	setenv("TZ", "UTC", 1);  // TMJ - We override local timezone, force it to UTC since all field timestamps are in UTC
+
+	_spatial_order = 8;  // default is 8th order, optional 16
+	_ebcdic_header_filename = 0L;
+	
+	_num_em_props = 14;
+
+	//Attr_Idx_Vp       = 0;
+	//Attr_Idx_Vs       = 1;
+	//Attr_Idx_Density  = 2;
+	//Attr_Idx_Q        = 3;
+	//Attr_Idx_Dip      = 4;
+	//Attr_Idx_Azimuth  = 5;
+	//Attr_Idx_Rake     = 6;
+	//Attr_Idx_Delta1   = 7;
+	//Attr_Idx_Delta2   = 8;
+	//Attr_Idx_Delta3   = 9;
+	//Attr_Idx_Epsilon1 = 10;
+	//Attr_Idx_Epsilon2 = 11;
+	//Attr_Idx_Gamma1   = 12;
+	//Attr_Idx_Gamma2   = 13;
+
+	_pck_moniker = new char*[_num_em_props];
+	_pck_moniker[Attr_Idx_Vp]       = strdup("Vp");
+	_pck_moniker[Attr_Idx_Vs]       = strdup("Vs");
+	_pck_moniker[Attr_Idx_Density]  = strdup("Density");
+	_pck_moniker[Attr_Idx_Q]        = strdup("Q");
+	_pck_moniker[Attr_Idx_Dip]      = strdup("Dip");
+	_pck_moniker[Attr_Idx_Azimuth]  = strdup("Azimuth");
+	_pck_moniker[Attr_Idx_Rake]     = strdup("Rake");
+	_pck_moniker[Attr_Idx_Delta1]   = strdup("Delta1");
+	_pck_moniker[Attr_Idx_Delta2]   = strdup("Delta2");
+	_pck_moniker[Attr_Idx_Delta3]   = strdup("Delta3");
+	_pck_moniker[Attr_Idx_Epsilon1] = strdup("Epsilon1");
+	_pck_moniker[Attr_Idx_Epsilon2] = strdup("Epsilon2");
+	_pck_moniker[Attr_Idx_Gamma1]   = strdup("Gamma1");
+	_pck_moniker[Attr_Idx_Gamma2]   = strdup("Gamma2");
+
+	_pck_mask = new int[_num_em_props];
+	_pck_mask[Attr_Idx_Vp]       = 65535;
+	_pck_mask[Attr_Idx_Vs]       = 65535;
+	_pck_mask[Attr_Idx_Density]  =   255;
+	_pck_mask[Attr_Idx_Q]        =   255;
+	_pck_mask[Attr_Idx_Dip]      =   255;
+	_pck_mask[Attr_Idx_Azimuth]  =   255;
+	_pck_mask[Attr_Idx_Rake]     =   255;
+	_pck_mask[Attr_Idx_Delta1]   =   255;
+	_pck_mask[Attr_Idx_Delta2]   =   255;
+	_pck_mask[Attr_Idx_Delta3]   =   255;
+	_pck_mask[Attr_Idx_Epsilon1] =   255;
+	_pck_mask[Attr_Idx_Epsilon2] =   255;
+	_pck_mask[Attr_Idx_Gamma1]   =   255;
+	_pck_mask[Attr_Idx_Gamma2]   =   255;
+
+	_pck_shft = new int[_num_em_props];
+	_pck_shft[Attr_Idx_Vp]       = 16;
+	_pck_shft[Attr_Idx_Vs]       =  0;
+	_pck_shft[Attr_Idx_Density]  = 16;
+	_pck_shft[Attr_Idx_Q]        = 24;
+	_pck_shft[Attr_Idx_Dip]      =  8;
+	_pck_shft[Attr_Idx_Azimuth]  =  0;
+	_pck_shft[Attr_Idx_Rake]     = 24;
+	_pck_shft[Attr_Idx_Delta1]   = 16;
+	_pck_shft[Attr_Idx_Delta2]   =  8;
+	_pck_shft[Attr_Idx_Delta3]   =  0;
+	_pck_shft[Attr_Idx_Epsilon1] = 24;
+	_pck_shft[Attr_Idx_Epsilon2] = 16;
+	_pck_shft[Attr_Idx_Gamma1]   =  8;
+	_pck_shft[Attr_Idx_Gamma2]   =  0;
+
+	_pck_widx = new int[_num_em_props];
+	_pck_widx[Attr_Idx_Vp]       = 0;
+	_pck_widx[Attr_Idx_Vs]       = 0;
+	_pck_widx[Attr_Idx_Density]  = 3;
+	_pck_widx[Attr_Idx_Q]        = 3;
+	_pck_widx[Attr_Idx_Dip]      = 3;
+	_pck_widx[Attr_Idx_Azimuth]  = 3;
+	_pck_widx[Attr_Idx_Rake]     = 1;
+	_pck_widx[Attr_Idx_Delta1]   = 1;
+	_pck_widx[Attr_Idx_Delta2]   = 1;
+	_pck_widx[Attr_Idx_Delta3]   = 1;
+	_pck_widx[Attr_Idx_Epsilon1] = 2;
+	_pck_widx[Attr_Idx_Epsilon2] = 2;
+	_pck_widx[Attr_Idx_Gamma1]   = 2;
+	_pck_widx[Attr_Idx_Gamma2]   = 2;
+
+	_pck_min = new float[_num_em_props];
+	_pck_max = new float[_num_em_props];
+	_pck_range = new float[_num_em_props];
+	_pck_iso = new float[_num_em_props];
+	// initialization of these tables is done after parameter file has been read
+
+	bool error = false;
+	_use_isotropic_sphere_during_source_injection = false;
+	_Courant_Factor = 1.0f;
+	_mapper_enabled = false;
+	_voxet = 0L;
+	_shots = 0L;
+	_num_shots = 0;
+	_props = new Voxet_Property*[_num_em_props];
+	_const_vals = new float[_num_em_props];
+	for (int i = 0;  i < _num_em_props;  ++i)
+	{
+		_props[i] = 0L;
+		_const_vals[i] = 0.0f;
+	}
+	_fq = 5.0;
+	_sub_origin = 0;  // default is source
+	_sub_x_set = false;
+	_sub_y_set = false;
+	_sub_z_set = false;
+	_parm_sub_ix0 = 0;
+	_parm_sub_ix1 = 0;
+	_parm_sub_iy0 = 0;
+	_parm_sub_iy1 = 0;
+	_parm_sub_iz0 = 0;
+	_parm_sub_iz1 = 0;
+	_parm_nabc_sdx = 0;
+	_parm_nabc_sdy = 0;
+	_parm_nabc_top = 0;
+	_parm_nabc_bot = 0;
+	_parm_nabc_sdx_extend = false;
+	_parm_nabc_sdy_extend = false;
+	_parm_nabc_top_extend = false;
+	_parm_nabc_bot_extend = false;
+	_sub_ix0 = 0;
+	_sub_ix1 = 0;
+	_sub_iy0 = 0;
+	_sub_iy1 = 0;
+	_sub_iz0 = 0;
+	_sub_iz1 = 0;
+	_nabc_sdx = 0;
+	_nabc_sdy = 0;
+	_nabc_top = 0;
+	_nabc_bot = 0;
+	_nabc_sdx_extend = false;
+	_nabc_sdy_extend = false;
+	_nabc_top_extend = false;
+	_nabc_bot_extend = false;
+	_freesurface_enabled = true;
+	_source_ghost_enabled = true;
+	_receiver_ghost_enabled = true;
+	_lower_Q_seafloor_enabled = false;
+	_scholte_only = false;
+	_extend_model_if_necessary = false;
+	_GPU_Devices = 0L;
+	_num_GPU_Devices = 0;
+	_GPU_Pipes = 0;
+	_Steps_Per_GPU = 0;
+	_Num_Parallel_Shots = 0;
+	_web_allowed = true;
+	error = _read_parmfile(log_level,parmfile_path,fs);
+	if (!error)
+	{
+		char* custom_parmfile = getenv("ELAORTHO_CUSTOM_PARMFILE");
+		if (custom_parmfile != 0L)
+		{
+			std::ifstream cfs(custom_parmfile);
+			if (cfs.good())
+			{
+				printf("Reading CUSTOM PARMFILE %s, potentially overriding SeisSpace options.\n",custom_parmfile);
+				error = _read_parmfile(log_level,custom_parmfile,cfs);
+			}
+			else
+			{
+				printf("Error! Unable to open custom parmfile %s.\n",custom_parmfile);
+				exit(-1);
 			}
 		}
 	}
@@ -1354,7 +1473,7 @@ void Elastic_Modeling_Job::_initialize(
 					{
 						if (!prop->Has_MinMax())
 						{
-							prop->Get_MinMax_From_File();
+							prop->Get_MinMax_From_File(_mapper);
 							if (i == Attr_Idx_Q) prop->Set_MinMax(1.0f/prop->Get_Max(), 1.0f/prop->Get_Min()); // for Q we pack reciprocal of Q
 						}
 						_pck_min[i] = prop->Get_Min();
@@ -1386,6 +1505,28 @@ void Elastic_Modeling_Job::_initialize(
 						
 				}
 				*/
+			}
+			if (_Vwxyzt_Computer != 0L && !_Vwxyzt_Computer->Has_Been_Initialized() && _Vwxyzt_Computer->Ready_For_Initialization())
+			{
+				if (_mapper == 0L || !_mapper_enabled)
+				{
+					printf("Vwxyzt :: Voxet memory mapper must be enabled for this feature.\n");
+					_Is_Valid = false;
+				}
+				else
+				{
+					Voxet_Property* propVs = _props[Attr_Idx_Vs];
+					if (propVs == 0L)
+					{
+						printf("Vwxyzt :: Vs earth model field is required for this feature.\n");
+						_Is_Valid = false;
+					}
+					else
+					{
+						float* Vs = _mapper->Get_Memory_Mapped_File(propVs->Get_Full_Path());
+						_Vwxyzt_Computer->Initialize(_mapper,_voxet->Get_Global_Coordinate_System(),Vs);
+					}
+				}
 			}
 			if (_log_level > 2) printf("Parameter file appears to be %s.\n",_Is_Valid?"valid":"invalid");
 		}
@@ -2612,6 +2753,7 @@ bool Elastic_Modeling_Job::_Check_Property(
 
 Elastic_Modeling_Job::~Elastic_Modeling_Job()
 {
+	delete _Vwxyzt_Computer;
 	if (_ebcdic_header_filename != 0L) free(_ebcdic_header_filename);
 	if (_shots != 0L)
 	{
@@ -2669,6 +2811,20 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	struct timeval start;
 	gettimeofday(&start, 0L);
 
+	if (_props[Attr_Idx_Vp]->Min_Max_Is_From_Scan() && _Vwxyzt_Computer != 0L && _Vwxyzt_Computer->Has_Been_Initialized())
+	{
+		float Vw_min = _Vwxyzt_Computer->Get_Min();
+		float Vw_max = _Vwxyzt_Computer->Get_Max();
+		float Vp_min = _pck_min[Attr_Idx_Vp];
+		float Vp_max = Vp_min + _pck_range[Attr_Idx_Vp];
+		if (Vw_min < Vp_min) Vp_min = Vw_min;
+		if (Vw_max > Vp_max) Vp_max = Vw_max;
+		_props[Attr_Idx_Vp]->Set_MinMax(Vp_min,Vp_max);
+		_pck_min[Attr_Idx_Vp] = Vp_min;
+		_pck_max[Attr_Idx_Vp] = Vp_max;
+		_pck_range[Attr_Idx_Vp] = Vp_max - Vp_min;
+	}
+
 	for (long trace_group = 0;  trace_group < nn;  trace_group+=nthreads*trcblk)
 	{
 		long max_trace = trace_group + nthreads*trcblk;
@@ -2706,9 +2862,14 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 				{
 					// read traces into buffer.
 					// this is done by single thread to ensure sequential read.
-					FILE* fp = fopen(_props[attr_idx]->Get_Full_Path(), "rb");
-					if (fp != 0L)
+					if (_mapper == 0L || !_mapper_enabled)
 					{
+						FILE* fp = fopen(_props[attr_idx]->Get_Full_Path(), "rb");
+						if (fp == 0L)
+						{
+							printf("ERROR! Failed to open %s for reading.\n",_props[attr_idx]->Get_Full_Path());
+							exit(-1);
+						}
 						long vals_off = -1, file_off = -1, file_nu = -1;
 						for (long trace = trace_group;  trace < max_trace;  ++trace)
 						{
@@ -2738,7 +2899,10 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 								//printf("  READ :: file_off=%ld, file_nu=%ld\n",file_off,file_nu);
 								fseek(fp, file_off*sizeof(float), SEEK_SET);
 								long nread = fread(vals+vals_off, sizeof(float), file_nu, fp);
-								if (nread != file_nu) printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",file_off,ilu,ilv,ilw,file_nu,nread);
+								swap4bytes((int*)(vals+vals_off),file_nu);
+								if (nread != file_nu) 
+									printf("_read :: offset=%ld, ilu=%ld, ilv=%ld, ilw=%ld -- tried to read %ld, got %ld\n",
+											file_off,ilu,ilv,ilw,file_nu,nread);
 								if (!last_read)
 								{
 									vals_off = curr_vals_off;
@@ -2754,30 +2918,46 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 					}
 					else
 					{
-						printf("ERROR! Failed to open %s for reading.\n",_props[attr_idx]->Get_Full_Path());
-						exit(-1);
+						float* memfile = _mapper->Get_Memory_Mapped_File(_props[attr_idx]->Get_Full_Path());
+						long vals_off = -1, file_off = -1, file_nu = -1;
+#pragma omp parallel for
+						for (long trace = trace_group;  trace < max_trace;  ++trace)
+						{
+							long ilw = trace / nv;
+							long ilv = trace - ilw * nv;
+							ilw += (long)ilw0;
+							ilv += (long)ilv0;
+							long curr_vals_off = (trace - trace_group) * nu;
+							long curr_file_off = ilw*one_w_size_f + ilv*one_v_size_f + ilu;
+							memcpy((void*)(vals+curr_vals_off),(void*)(memfile+curr_file_off),nu*sizeof(float));
+							swap4bytes((int*)(vals+curr_vals_off),nu);
+							if (attr_idx == Attr_Idx_Vp && _Vwxyzt_Computer != 0L && _Vwxyzt_Computer->Has_Been_Initialized())
+							{
+								// add Vw(x,y,z,t) term
+								for (int u = 0;  u < nu;  ++u)
+								{
+									int x,y,z;
+									gcs->Convert_Local_Index_To_Transposed_Index(ilu+u,ilv,ilw,x,y,z);
+									float Vwxyzt = _Vwxyzt_Computer->Compute_Velocity_Increment(x,y,z);
+									if (Vwxyzt > 0.0f) vals[curr_vals_off+u] = Vwxyzt;
+								}
+							}
+						}
 					}
 				}
-
-				// reverse endian-ness
-#pragma omp parallel for
-				for (long trace = trace_group;  trace < max_trace;  ++trace)
+				else
 				{
-					long ilw = trace / nv;
-					long ilv = trace - ilw * nv;
-					ilw += (long)ilw0;
-					ilv += (long)ilv0;
-					long vals_off = (trace - trace_group) * nu;
-					for (int sample = 0;  sample < nu;  ++sample)
+					// attribute has a constant value
+#pragma omp parallel for
+					for (long trace = trace_group;  trace < max_trace;  ++trace)
 					{
-						if (_props[attr_idx] != 0L)
-						{
-							swap4bytes((int*)&(vals[vals_off+sample]),1);
-						}
-						else
-						{
+						long ilw = trace / nv;
+						long ilv = trace - ilw * nv;
+						ilw += (long)ilw0;
+						ilv += (long)ilv0;
+						long vals_off = (trace - trace_group) * nu;
+						for (int sample = 0;  sample < nu;  ++sample)
 							vals[vals_off+sample] = _const_vals[attr_idx];
-						}
 					}
 				}
 
@@ -2878,5 +3058,23 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	propagator->_NABC_BOT_Extend(_sub_iz1 - _prop_z0);
 	propagator->_NABC_SDX_Extend(_sub_ix0 - _prop_x0, _sub_ix1 - _prop_x0);
 	propagator->_NABC_SDY_Extend(_sub_iy0 - _prop_y0, _sub_iy1 - _prop_y0);
+
+	/*
+	FILE* fp8 = fopen("Vp_mod.bin","wb");
+	for (int z = 0;  z < _prop_nz;  ++z)
+	{
+		for (int y = 0;  y < _prop_ny;  ++y)
+		{
+			for (int x = 0;  x < _prop_nx;  ++x)
+			{
+				float val = Get_Earth_Model_Attribute(Attr_Idx_Vp,x,y,z);
+				fwrite(&val,sizeof(float),1,fp8);
+			}
+		}
+	}
+	fclose(fp8);
+	printf("Wote Vp_mod.bin (nx=%d, ny=%d, nz=%d)\n",_prop_nx,_prop_ny,_prop_nz);
+	exit(0);
+	*/
 }
 

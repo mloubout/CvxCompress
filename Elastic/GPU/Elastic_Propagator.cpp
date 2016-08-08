@@ -8,15 +8,15 @@
 #include <sys/time.h>
 #include <cuda_runtime_api.h>
 
-#include "gpuAssert.h"
-#include "Elastic_Buffer.hxx"
-#include "Elastic_Pipeline.hxx"
-#include "Elastic_Propagator.hxx"
-#include "Elastic_Modeling_Job.hxx"
-#include "Elastic_Shot.hxx"
-#include "Elastic_SEGY_File.hxx"
-#include "../../Common/Global_Coordinate_System.hxx"
-#include "../../Common/Voxet.hxx"
+#include <gpuAssert.h>
+#include <Elastic_Buffer.hxx>
+#include <Elastic_Pipeline.hxx>
+#include <Elastic_Propagator.hxx>
+#include <Elastic_Modeling_Job.hxx>
+#include <Elastic_Shot.hxx>
+#include <Elastic_SEGY_File.hxx>
+#include <Global_Coordinate_System.hxx>
+#include <Voxet.hxx>
 
 //Un-comment this to do more detailed timing of the various sections
 //of the propagate one block routine
@@ -103,6 +103,7 @@ void Elastic_Propagator::_init(
 	bool debug
 	)
 {
+	/*
 	int Cache_Size_Per_Core_KB;
 	int num_cores = Get_Physical_Core_Count(Cache_Size_Per_Core_KB);
 	if (num_cores > 0)
@@ -111,6 +112,7 @@ void Elastic_Propagator::_init(
 		printf("Elastic_Propagator::_init - Machine has %d physical cores. Using %d threads for openmp.\n",num_cores,num_threads);
 		omp_set_num_threads(num_threads);
 	}
+	*/
 
 	_log_level = log_level;
 	_best_num_z = -1;
@@ -691,7 +693,8 @@ void Elastic_Propagator::Automatically_Build_Compute_Pipelines()
 
 					// skip past lead-in
 					int ts_out = -1;
-					while (ts_out < 0) Propagate_One_Block(_num_timesteps, shot, false, false, false, false, false, ts_out);
+					Skip_Leadin();
+					//while (ts_out < 0) Propagate_One_Block(_num_timesteps, shot, false, false, false, false, false, ts_out);
 
 					perf_num_z[perf_idx] = -1;
 					max_mcells_per_second = 0.0;
@@ -1904,6 +1907,18 @@ void Elastic_Propagator::Propagate_Shot(Elastic_Shot* shot, bool debug_output_so
 	shot->Write_SEGY_Files();
 	Release_Resources_After_Propagation(shot);
 	printf("Finished Elastic_Propagator::Propagate_Shot\n");
+}
+
+// skips the leadin phase to avoid a long wait during automatic hardware configuration determination.
+// subsequent calls to Propagate_One_Block will produce wrong results after calling this method.
+// don't use it for the regular processing.
+void Elastic_Propagator::Skip_Leadin()
+{
+	int ts_output = -1;
+	do {
+		for (int i = 0;  i < _num_pipes;  ++i) _pipes[i]->Shift_Buffers();
+		ts_output = _pipes[0]->Get_Output_Block_Timestep(0) - Get_Total_Number_Of_Timesteps();
+	} while (ts_output <= 0);
 }
 
 // returns true if at least Number_Of_Timesteps timesteps have been completed

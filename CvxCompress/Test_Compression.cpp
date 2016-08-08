@@ -53,6 +53,9 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 
+	const bool use_local_RMS = false;
+	printf("Using %s RMS.\n",use_local_RMS?"local":"global");
+
 	int num_threads = 0;
 #pragma omp parallel 
 	{
@@ -112,7 +115,7 @@ int main(int argc, char* argv[])
 		long compressed_length = 0;
 		struct timespec before, after;
 		clock_gettime(CLOCK_REALTIME,&before);
-		float ratio = compressor->Compress(scale,vol,nx,ny,nz,bx,by,bz,compressed,compressed_length);
+		float ratio = compressor->Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,compressed_length);
 		clock_gettime(CLOCK_REALTIME,&after);
 		double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);

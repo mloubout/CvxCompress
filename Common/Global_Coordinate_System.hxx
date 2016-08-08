@@ -210,23 +210,103 @@ public:
 			double &filw
 			);
 
-	void Convert_Local_Index_To_Transposed_Index(
+	inline void Convert_Local_Index_To_Transposed_Index(
 			int ilu,
 			int ilv,
 			int ilw,
 			int &ix,
 			int &iy,
 			int &iz
-			);
+			)
+	{
+		switch (_transpose)
+		{
+			case 0: // zyx
+				iz = ilu;
+				iy = ilv;
+				ix = ilw;
+				break;
+			case 1: // zxy
+				iz = ilu;
+				ix = ilv;
+				iy = ilw;
+				break;
+			case 2: // yzx
+				iy = ilu;
+				iz = ilv;
+				ix = ilw;
+				break;
+			case 3: // yxz
+				iy = ilu;
+				ix = ilv;
+				iz = ilw;
+				break;
+			case 4: // xzy
+				ix = ilu;
+				iz = ilv;
+				iy = ilw;
+				break;
+			case 5: // xyz
+				ix = ilu;
+				iy = ilv;
+				iz = ilw;
+				break;
+			default:
+				ix = 0;
+				iy = 0;
+				iz = 0;
+				break;
+		}
+	}
 
-	void Convert_Transposed_Index_To_Local_Index(
+	inline void Convert_Transposed_Index_To_Local_Index(
 			int ix,
 			int iy,
 			int iz,
 			int &ilu,
 			int &ilv,
 			int &ilw
-			);
+			)
+	{
+		switch (_transpose)
+		{
+			case 0: // zyx
+				ilu = iz;
+				ilv = iy;
+				ilw = ix;
+				break;
+			case 1: // zxy
+				ilu = iz;
+				ilv = ix;
+				ilw = iy;
+				break;
+			case 2: // yzx
+				ilu = iy;
+				ilv = iz;
+				ilw = ix;
+				break;
+			case 3: // yxz
+				ilu = iy;
+				ilv = ix;
+				ilw = iz;
+				break;
+			case 4: // xzy
+				ilu = ix;
+				ilv = iz;
+				ilw = iy;
+				break;
+			case 5: // xyz
+				ilu = ix;
+				ilv = iy;
+				ilw = iz;
+				break;
+			default:
+				ilu = 0;
+				ilv = 0;
+				ilw = 0;
+				break;
+		}
+	}
 
 	void Convert_Global_To_Transposed_Fractional_Index(
 		double g0,

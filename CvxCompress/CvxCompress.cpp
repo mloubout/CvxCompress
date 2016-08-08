@@ -12,6 +12,14 @@
 #include "Run_Length_Encode_Slow.hxx"  // turns out, it isn't that slow after all
 #include "Read_Raw_Volume.hxx"
 
+#ifndef __INTEL_COMPILER
+#undef PAPI
+#endif
+
+#ifdef PAPI
+#include "papi.h"
+#endif
+
 CvxCompress::CvxCompress()
 {
 }
@@ -31,7 +39,7 @@ static int Find_Pow2(int val)
 	return cnt;
 }
 
-bool CvxCompress::_Valid_Block_Size(int bx, int by, int bz)
+bool CvxCompress::Is_Valid_Block_Size(int bx, int by, int bz)
 {
 	if (
 		((1 << Find_Pow2(bx)) == bx) && 
@@ -39,7 +47,7 @@ bool CvxCompress::_Valid_Block_Size(int bx, int by, int bz)
 		((1 << Find_Pow2(bz)) == bz) &&
 		(bx >= Min_BX() && bx <= Max_BX()) &&
 		(by >= Min_BY() && by <= Max_BY()) &&
-		(bz >= Min_BZ() && bz <= Max_BZ())
+		(bz == 1 || (bz >= Min_BZ() && bz <= Max_BZ()))
 	)
 	{
 		return true;
@@ -96,6 +104,31 @@ static float Compute_Global_RMS(float* vol, int nx, int ny, int nz)
 	return (float)rms;
 }
 
+static float Compute_Local_RMS(__m256* blk, int bx, int by, int bz)
+{
+	int nn = bz * by * (bx >> 3);
+	float rms = 0.0f;
+	__m256 acc = _mm256_setzero_ps();
+	for (int i = 0;  i < nn;  ++i)
+	{
+		__m256 val = _mm256_loadu_ps((float*)(blk+i));
+#ifdef __AVX2__
+		acc = _mm256_fmadd_ps(val,val,acc);
+#else
+		acc = _mm256_add_ps(acc,_mm256_mul_ps(val,val));
+#endif
+	}
+	acc = _mm256_hadd_ps(acc,acc);
+	acc = _mm256_hadd_ps(acc,acc);
+	__m128 acc0 = _mm256_extractf128_ps(acc,0);
+	__m128 acc1 = _mm256_extractf128_ps(acc,1);
+	acc0 = _mm_add_ps(acc0,acc1);
+	float v[4];
+	_mm_store_ps(v,acc0);
+	rms = sqrtf(v[0]/(float)(bx*by*bz));
+	return rms;
+}
+
 #define GET_PRIVATE_POINTERS(work,thread_id) \
 float* priv_work = (float*)(work + thread_id * work_size_one_thread); \
 float* priv_tmp = priv_work + work_wave_transform_buffer_size; \
@@ -138,10 +171,28 @@ float CvxCompress::Compress(
 	long& compressed_length 
 	)
 {
+	bool use_local_RMS = false;
+	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,compressed_length);
+}
+
+float CvxCompress::Compress(
+	float scale,
+	float* vol,
+	int nx,
+	int ny,
+	int nz,
+	int bx,
+	int by,
+	int bz,
+	bool use_local_RMS,
+	unsigned int* compressed,
+	long& compressed_length 
+	)
+{
 	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
 	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
 	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
-	float global_rms = Compute_Global_RMS(vol,nx,ny,nz);
+	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
 	
 	int num_threads;
 #pragma omp parallel
@@ -186,14 +237,27 @@ float CvxCompress::Compress(
 	compressed[4] = by;
 	compressed[5] = bz;
 	
-	float mulfac = global_rms != 0.0f ? 1.0f / (global_rms * scale) : 1.0f;
-	compressed[6] = *((unsigned int*)&mulfac);
+	float glob_mulfac = global_rms != 0.0f ? 1.0f / (global_rms * scale) : 1.0f;
+	compressed[6] = *((unsigned int*)&glob_mulfac);
 
-	compressed[7] = 0;  // not used
+	// flags:
+	// 1 -> use local RMS (global RMS otherwise)
+	compressed[7] = use_local_RMS ? 1 : 0;
 
 	long* glob_blkoffs = (long*)(compressed+8);  // no need to initialize
-	
-	unsigned int* bytes = (unsigned int*)(glob_blkoffs+nnn);
+
+	float* blkmulfac = 0L;
+	unsigned int* bytes;
+	if (use_local_RMS)
+	{
+		blkmulfac = (float*)(glob_blkoffs+nnn);
+		bytes = (unsigned int*)(blkmulfac+nnn);
+	}
+	else
+	{
+		blkmulfac = 0L;
+		bytes = (unsigned int*)(glob_blkoffs+nnn);
+	}
 	long byte_offset = 0l;
 
 #pragma omp parallel for schedule(dynamic)
@@ -220,6 +284,13 @@ float CvxCompress::Compress(
 		Copy_To_Block(vol,x0,y0,z0,nx,ny,nz,(__m128*)priv_work,bx,by,bz);
 		Wavelet_Transform_Fast_Forward((__m256*)priv_work,(__m256*)priv_tmp,bx,by,bz);
 		int bytepos = 0, error = 0;
+		float mulfac = glob_mulfac;
+		if (use_local_RMS)
+		{
+			float local_RMS = Compute_Local_RMS((__m256*)priv_work,bx,by,bz);
+			mulfac = local_RMS != 0.0f ? 1.0f / (local_RMS * scale) : 1.0f;
+			blkmulfac[iBlk] = mulfac;
+		}
 		Run_Length_Encode_Slow(mulfac,priv_work,bx*by*bz,priv_compressed,bytepos);
 		error = (bytepos > (4*bx*by*bz)) ? -1 : 0;
 		//printf("Compressed block is %d bytes (ratio=%.2f:1, error = %d)\n",bytepos,(double)(4*bx*by*bz)/(double)bytepos,error);
@@ -293,6 +364,7 @@ float CvxCompress::Compress(
 		}
 	}
 	compressed_length = 32 + 8*nnn + byte_offset + 7;
+	if (use_local_RMS) compressed_length += 4*nnn;
 
 	free(work);
 	double ratio = ((double)nx * (double)ny * (double)nz * (double)sizeof(float)) / (double)compressed_length;
@@ -335,7 +407,9 @@ void CvxCompress::Decompress(
 	int bx = ((int*)compressed)[3];
 	int by = ((int*)compressed)[4];
 	int bz = ((int*)compressed)[5];
-	float mulfac = ((float*)compressed)[6];
+	float glob_mulfac = ((float*)compressed)[6];
+	int flags = ((int*)compressed)[7];
+	bool use_local_RMS = (flags & 1) ? true : false;
 	//printf("nx=%d, ny=%d, nz=%d, bx=%d, by=%d, bz=%d, mulfac=%e\n",nx,ny,nz,bx,by,bz,mulfac);
 
 	int nbx = (nx+bx-1)/bx;
@@ -346,7 +420,18 @@ void CvxCompress::Decompress(
 
 	long* glob_blkoffs = (long*)(compressed+8);
 	
-	unsigned int* bytes = (unsigned int*)(glob_blkoffs+nnn);
+	float* blkmulfac = 0L;
+	unsigned int* bytes;
+	if (use_local_RMS)
+	{
+		blkmulfac = (float*)(glob_blkoffs+nnn);
+		bytes = (unsigned int*)(blkmulfac+nnn);
+	}
+	else
+	{
+		blkmulfac = 0L;
+		bytes = (unsigned int*)(glob_blkoffs+nnn);
+	}
 
 	int num_threads;
 #pragma omp parallel
@@ -383,6 +468,7 @@ void CvxCompress::Decompress(
 		bool Is_Uncompressed = (priv_blkoff & 0x8000000000000000) ? true : false;
 		priv_blkoff = Is_Uncompressed ? (priv_blkoff & 0x7FFFFFFFFFFFFFFF) : priv_blkoff;
 		unsigned long* priv_compressed = (unsigned long*)(((char*)bytes) + priv_blkoff);
+		float mulfac = use_local_RMS ? blkmulfac[iBlk] : glob_mulfac;
 		//printf("  Is_Uncompressed=%s, priv_blkoff=%ld\n",Is_Uncompressed?"true":"false",priv_blkoff);
 		
 		if (Is_Uncompressed)
@@ -494,6 +580,16 @@ static bool Check_Volume(float* vol, float* vol2, int nx, int ny, int nz)
 			return false;
 		}
 	return true;
+}
+
+static double Compute_FLOPS_Single_Dimension(int bx)
+{
+	int flop = 0;
+	for (int i = 2;  i <= bx;  i=i<<1)
+	{
+		flop += ((23*i)>>1);
+	}
+	return (double)flop / (double)bx;
 }
 
 bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_tests)
@@ -610,6 +706,22 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 			printf("[\x1B[31mFailed\x1B[0m]\n");
 	}
 
+#ifdef PAPI
+        int retval = PAPI_library_init( PAPI_VER_CURRENT );
+        assert(retval == PAPI_VER_CURRENT);
+        int sp_ops_events[1]{PAPI_SP_OPS};
+        bool sp_ops_counter_is_available = (PAPI_query_event(sp_ops_events[0]) == PAPI_OK);
+        if (sp_ops_counter_is_available)
+        {
+                assert(PAPI_thread_init((unsigned long (*)(void))(omp_get_num_threads)) == PAPI_OK);
+        }
+        else
+        {
+                printf("PAPI does not support PAPI_VEC_SP counter on this machine.\n");
+                PAPI_shutdown();
+        }
+#endif
+
 	printf("4. Test throughput of wavelet transform (forward + inverse)...\n");
 	for (int k = min_k;  k <= max_k;  ++k)
 	{
@@ -642,6 +754,17 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						Fill_Block(priv_data1,priv_data2,bx,by,bz);
 					}
 
+#ifdef PAPI
+					long long sp_ops1 = 0;
+					if (sp_ops_counter_is_available)
+					{
+#pragma omp parallel for schedule(static,1)
+						for (int iThr = 0;  iThr < num_threads;  ++iThr)
+						{
+							PAPI_start_counters(sp_ops_events,1);
+						}
+					}
+#endif
 					struct timespec before, after;
 					clock_gettime(CLOCK_REALTIME,&before);
 #pragma omp parallel for schedule(static,1)
@@ -655,10 +778,35 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						Wavelet_Transform_Fast_Inverse((__m256*)priv_data2,(__m256*)priv_work,bx,by,bz);
 					}
 					clock_gettime(CLOCK_REALTIME,&after);
+#ifdef PAPI
+					if (sp_ops_counter_is_available)
+					{
+#pragma omp parallel for schedule(static,1) reduction(+:sp_ops1)
+						for (int iThr = 0;  iThr < num_threads;  ++iThr)
+						{
+							long long curr_sp_ops = 0L;
+							PAPI_stop_counters(&curr_sp_ops,1);
+							sp_ops1 += curr_sp_ops;
+						}
+					}
+#endif
 					double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 					double mcells_per_second = (double)(bx*by*bz) * (double)niter / (elapsed * 1e6);
-					double GF_per_second = mcells_per_second * 1e-3 * 2.0 * 69.0;
+					double FLOPS_per_cell = Compute_FLOPS_Single_Dimension(bx) + Compute_FLOPS_Single_Dimension(by) + Compute_FLOPS_Single_Dimension(bz);
+					double GF_per_second = mcells_per_second * 1e-3 * 2.0 * FLOPS_per_cell;
+#ifdef PAPI
+					if (sp_ops_counter_is_available)
+					{
+						double PAPI_GF_per_second = (double)sp_ops1 / (elapsed * 1e9);
+						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s - PAPI %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second,PAPI_GF_per_second);
+					}
+					else
+					{
+						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second);
+					}
+#else
 					printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second);
+#endif
 				}
 			}
 		}
@@ -947,7 +1095,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					do
 					{
 						long compressed_length = 0l;
-						ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,(unsigned int*)compressed3,compressed_length);
+						ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,false,(unsigned int*)compressed3,compressed_length);
 						clock_gettime(CLOCK_REALTIME,&after);
 						++niter;
 						elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
@@ -975,7 +1123,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 				if (exhaustive_throughput_tests || (bx == by && by == bz))
 				{
 					long compressed_length3 = 0l;
-					float ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,(unsigned int*)compressed3,compressed_length3);
+					float ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,false,(unsigned int*)compressed3,compressed_length3);
 
 					const char* memtype = 0L;
 					long block_size = (long)bx * (long)by * (long)bz;
@@ -1039,7 +1187,7 @@ cvx_compress(
 	long         *compressed_length)
 {
 	CvxCompress c;
-	return c.Compress(scale, vol, nx, ny, nz, bx, by, bz, compressed, *compressed_length);
+	return c.Compress(scale, vol, nx, ny, nz, bx, by, bz, false, compressed, *compressed_length);
 }
 
 float* 

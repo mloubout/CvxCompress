@@ -34,6 +34,10 @@ int main(int argc, char* argv[])
 	const int by = 32;
 	const int bz = 32;
 	const float scale = 1e-2f;
+	const bool use_local_RMS = false;
+	printf("Using %s RMS.\n",use_local_RMS?"local":"global");
+
+	long overall_compressed = 0;
 
 	int num_threads = 0;
 #pragma omp parallel
@@ -88,11 +92,11 @@ int main(int argc, char* argv[])
 	assert(retval == PAPI_VER_CURRENT);
 
 	int fip = 0;
-	assert ( PAPI_query_event( PAPI_VEC_SP ) == PAPI_OK );
+	assert ( PAPI_query_event( PAPI_SP_OPS ) == PAPI_OK );
 
 	PAPI_shutdown(  );
 
-	int vec_sp_events[1]{PAPI_VEC_SP};
+	int vec_sp_events[1]{PAPI_SP_OPS};
 	long long vec_sp_ops = 0;
 #endif
 	double tot_elapsed_time = 0.0;
@@ -123,12 +127,13 @@ int main(int argc, char* argv[])
 		struct timespec before, after;
 		clock_gettime(CLOCK_REALTIME,&before);
 
-		float ratio = compressor->Compress(scale,p1,nz,ny,nx,bz,by,bx,compressed,length);
+		float ratio = compressor->Compress(scale,p1,nz,ny,nx,bz,by,bx,use_local_RMS,compressed,length);
 
 		clock_gettime(CLOCK_REALTIME,&after);
 		double elapsed1 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
 		double mcells_per_sec1 = (double)nx * (double)ny * (double)nz / (elapsed1 * 1e6);
 		tot_elapsed_time += elapsed1;
+		overall_compressed += (long)length;
 	
 		//fwrite(compressed,1,length,fp3);
 
@@ -194,9 +199,10 @@ int main(int argc, char* argv[])
 		acc1 = sqrt(acc1/(double)volsize);
 		acc2 = sqrt(acc2/(double)volsize);
 		double error = acc2 / acc1;
+		double snr = -20.0 * log10(error);
 
-		printf("vol %d, compression ratio = %.2f:1, compression throughput = %.0f MC/s, decompression throughput = %.0f MC/s, error = %.6e\n",i+1,ratio,mcells_per_sec1,mcells_per_sec2,error);
-		fprintf(fp2,"%d, %.2f, %.6e, %.5f, %.5f\n",i+1,ratio,error,elapsed1,elapsed2);
+		printf("vol %d, compression ratio = %.2f:1, compression throughput = %.0f MC/s, decompression throughput = %.0f MC/s, error = %.6e, SNR = %.0fdB\n",i+1,ratio,mcells_per_sec1,mcells_per_sec2,error,snr);
+		fprintf(fp2,"%d, %.2f, %.6e, %.5f, %.5f, %.0f, %.0f\n",i+1,ratio,error,elapsed1,elapsed2,mcells_per_sec1,mcells_per_sec2);
 	}
 
 #ifdef PAPI
@@ -205,6 +211,8 @@ int main(int argc, char* argv[])
 #else
 	printf("Total compression and decompression times were %.2f seconds\n",tot_elapsed_time);
 #endif
+	double overall_ratio = ((double)nx * (double)ny * (double)nz * (double)nn * 4.0) / (double)overall_compressed;
+	printf("Total compression ratio (all snapshots) was %.2f:1\n",overall_ratio);
 
 #ifdef VERBOSE
 	fclose(fp3);

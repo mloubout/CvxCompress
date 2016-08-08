@@ -35,7 +35,13 @@ public:
 	void Set_Source_Y(double y){_y =y;}
 	void Set_Source_Z(double z){_z =z;}
 
-	void Set_Source(double x, double y, double z){_x=x;_y=y;_z=z;}
+	void Set_Source(double x, double y, double z, int iline, int xline){_x=x;_y=y;_z=z;_il=iline;_xl=xline;}
+
+	int Get_Source_Inline() {return _il;}
+	int Get_Source_Xline() {return _xl;}
+	
+	void Set_Source_Inline(int il) {_il=il;}
+	void Set_Source_Xline(int xl) {_xl=xl;}
 
 	double Get_Propagation_Source_X();
 	double Get_Propagation_Source_Y();
@@ -95,7 +101,11 @@ public:
 		double* rec_z,
 		int* iline,
 		int* xline,
-		int* trcens);
+		int* trcens,
+		int* rec_ffid,
+		time_t* acqtime,
+		int* usec
+		);
 
 	Elastic_SEGY_File* Get_SEGY_File(int segy_file_idx);
 
@@ -169,6 +179,7 @@ private:
 	double _x;
 	double _y;
 	double _z;
+	int _il,_xl;
 	int _soutype;
 	Elastic_Interpolation_t _souintrp;
 	double _ampl1, _ampl2, _ampl3;

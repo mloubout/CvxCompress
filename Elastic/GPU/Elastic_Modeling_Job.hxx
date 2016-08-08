@@ -3,22 +3,25 @@
 
 #include <cstdio>
 #include <istream>
+#include <map>
 
 class Voxet;
 class Voxet_Property;
+class Voxet_Memory_Mapper;
 class Elastic_Propagator;
 class Elastic_Shot;
+class Variable_Water_Velocity;
 
 class Elastic_Modeling_Job
 {
 public:
-	Elastic_Modeling_Job(int log_level, const char* parmfile_path);
-	Elastic_Modeling_Job(int log_level, const char* parmfile_path, std::istream& fs);
+	Elastic_Modeling_Job(int log_level, const char* parmfile_path, Voxet_Memory_Mapper* mapper, Variable_Water_Velocity* Vwxyzt);
+	Elastic_Modeling_Job(int log_level, const char* parmfile_path, Voxet_Memory_Mapper* mapper, Variable_Water_Velocity* Vwxyzt, std::istream& fs);
 	~Elastic_Modeling_Job();
 
 	static void Print_Version_Information()
 	{
-		printf("\nCVX 3D Elastic Orthorhombic Modeling - v2.0a - 05/27/16\n\n");
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v2.2 - 08/08/16\n\n");
 	}
 
 	bool Is_Valid() {return _Is_Valid;}
@@ -133,6 +136,18 @@ public:
 	void Write_XZ_Slice(const char* path, int wf_type, int iy);
 	void Write_XY_Slice(const char* path, int wf_type, int iz);
 
+	//!
+	//! Returns TRUE if voxet memory mapper was enabled in parmfile.
+	//!
+	bool Memory_Mapper_Enabled() {return _mapper_enabled;}
+	//!
+	//! Provide an optional memory mapper object for the voxet.
+	//! If provided, all files in the voxet will be read through mmap()'ed files inside this object.
+	//! This object is managed outside of this class so that it can be shared among multiple instances.
+	//!
+	void Set_Memory_Mapper(Voxet_Memory_Mapper* mapper) {_mapper=mapper;}
+	Voxet_Memory_Mapper* Get_Memory_Mapper() {return _mapper;}
+
 	Voxet* Get_Voxet() {return _voxet;}
 	int Get_Number_of_Voxet_Properties() {return _num_em_props;}
 	Voxet_Property* Get_Voxet_Property(int prop_idx)
@@ -154,6 +169,8 @@ public:
 	void Set_GPU_Devices(const int* device_ids, int num_devices);
 	int Get_Number_Of_GPU_Devices();
 
+	int Get_Number_Of_Parallel_Shots() {return _Num_Parallel_Shots;}
+
 	static const int Attr_Idx_Vp = 0;
 	static const int Attr_Idx_Vs = 1;
 	static const int Attr_Idx_Density = 2;
@@ -174,6 +191,7 @@ private:
 	Elastic_Propagator* _propagator;
 
 	void _initialize(int log_level, const char* parmfile_path, std::istream& fs);
+	bool _read_parmfile(int log_level, const char* parmfile_path, std::istream& fs);
 
 	bool _Is_Valid;
 	int _log_level;
@@ -190,6 +208,8 @@ private:
 	int _prop_y0;
 	int _prop_z0;
 
+	bool _mapper_enabled;
+	Voxet_Memory_Mapper* _mapper;
 	Voxet* _voxet;
 
 	int _num_em_props;
@@ -272,8 +292,11 @@ private:
 	int _num_GPU_Devices;
 	int _GPU_Pipes;
 	int _Steps_Per_GPU;
+	int _Num_Parallel_Shots;
 
 	bool _web_allowed;
+
+	Variable_Water_Velocity* _Vwxyzt_Computer;
 
 	float _Courant_Factor;
 
@@ -313,4 +336,3 @@ private:
 };
 
 #endif
-

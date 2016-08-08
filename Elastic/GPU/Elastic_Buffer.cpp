@@ -3,18 +3,18 @@
 #include <stdlib.h>
 #include <cuda_runtime_api.h>
 
-#include "Elastic_Buffer.hxx"
-#include "Elastic_Propagator.hxx"
-#include "Elastic_Pipeline.hxx"
-#include "Elastic_Modeling_Job.hxx"
-#include "Elastic_Shot.hxx"
-#include "Elastic_SEGY_File.hxx"
-#include "Elastic_Earth_Model_Interface.hxx"
-#include "../../Common/Voxet.hxx"
-#include "../../Common/Global_Coordinate_System.hxx"
+#include <Elastic_Buffer.hxx>
+#include <Elastic_Propagator.hxx>
+#include <Elastic_Pipeline.hxx>
+#include <Elastic_Modeling_Job.hxx>
+#include <Elastic_Shot.hxx>
+#include <Elastic_SEGY_File.hxx>
+#include <Elastic_Earth_Model_Interface.hxx>
+#include <Voxet.hxx>
+#include <Global_Coordinate_System.hxx>
 
-#include "Propagate_Stresses.hxx"
-#include "Propagate_Particle_Velocities.hxx"
+#include <Propagate_Stresses.hxx>
+#include <Propagate_Particle_Velocities.hxx>
 
 // forward declaration of global call that starts cuda copy kernel
 void Host_Simple_Copy_Kernel(

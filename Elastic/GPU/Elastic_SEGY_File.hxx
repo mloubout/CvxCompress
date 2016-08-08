@@ -28,6 +28,9 @@ public:
 	int Get_File_Index() {return _fileidx;}
 	void Set_File_Index(int fileidx) {_fileidx=fileidx;}
 
+	int Get_SeqNo() {return _seqno;}
+	void Set_SeqNo(int seqno) {_seqno=seqno;}
+
 	Elastic_Gather_Type_t Get_Gather_Type() {return _gather_type;}
 	void Set_Gather_Type(Elastic_Gather_Type_t gather_type) {_gather_type = gather_type;}
 
@@ -72,7 +75,10 @@ public:
 		double* rec_z,
 		int* iline,
 		int* xline,
-		int* trcens
+		int* trcens,
+		int* rec_ffid,
+		time_t* acqtime,
+		int* usec
 		);
 
 	int Compute_Receiver_Locations(
@@ -86,7 +92,10 @@ public:
 		double*& rcv_z,
 		int*& iline,
 		int*& xline,
-		int*& trcens
+		int*& trcens,
+		int*& rec_ffid,
+		time_t*& acqtime,
+		int*& usec
 		);
 	int Compute_Receiver_Locations_NO_COPY(
 		double*& rcv_x,
@@ -99,7 +108,10 @@ public:
 		double*& rcv_z,
 		int*& iline,
 		int*& xline,
-		int*& trcens
+		int*& trcens,
+		int*& rec_ffid,
+		time_t*& acqtime,
+		int*& usec
 		);
 	
 	void Write_Source_Wavelet_To_SEGY_File(
@@ -109,7 +121,9 @@ public:
 			int nsamp,
 			double srcx,
 			double srcy,
-			double srcz
+			double srcz,
+			int src_il,
+			int src_xl
 			);
 	void Write_SEGY_File(
 			float** traces,
@@ -117,12 +131,17 @@ public:
 			double srcx,
 			double srcy,
 			double srcz,
+			int src_il,
+			int src_xl,
 			double* recx,
 			double* recy,
 			double* recz,
-			int* iline,
-			int* xline,
+			int* rec_il,
+			int* rec_xl,
 			int* trcens,
+			int* rec_ffid,
+			time_t* acqtime,
+			int* usec,
 			float src_model_water_depth,
 			float src_model_water_Vp,
 			float src_bath_z,
@@ -133,23 +152,29 @@ public:
 			int nsamp,
 			int flag
 			);
-	static void Write_SEGY_File(
+	void Write_SEGY_File(
 			const char* filename,
 			double sample_rate,
 			Elastic_Gather_Type_t gather_type,
 			int file_idx,
+			int seqno,
 			double start_time,
 			float** traces,
 			char* EBCDIC_Header,
 			double srcx,
 			double srcy,
 			double srcz,
+			int src_il,
+			int src_xl,
 			double* recx,
 			double* recy,
 			double* recz,
-			int* iline,
-			int* xline,
+			int* rec_il,
+			int* rec_xl,
 			int* trcens,
+			int* rec_ffid,
+			time_t* acqtime,
+			int* usec,
 			float src_model_water_depth,
 			float src_model_water_Vp,
 			float src_bath_z,
@@ -158,12 +183,13 @@ public:
 			float* rec_bath_z,
 			int num_traces,
 			int nsamp
-		);
+			);
 
 	void printRec();
 private:
 	bool _Is_Valid;
 	int _fileidx;
+	int _seqno;
 	char* _base_filename;
 	double _sample_rate;
 	double _tshift;
@@ -184,6 +210,9 @@ private:
 	int* _h_user_iline;
 	int* _h_user_xline;
 	int* _h_user_trcens;
+	int* _h_user_rec_ffid;
+	time_t* _h_user_acqtime;
+	int* _h_user_usec;
 	int _num_user_rcv;
 
 	Elastic_SEGY_File_Receiver_Range* _Get_Receiver_Range(int range_idx);

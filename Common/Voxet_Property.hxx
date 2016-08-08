@@ -1,6 +1,7 @@
 #ifndef CVX_ESDRD_MI_TMJ_VOXET_PROPERTY_HXX
 #define CVX_ESDRD_MI_TMJ_VOXET_PROPERTY_HXX
 
+class Voxet_Memory_Mapper;
 class Voxet_Property
 {
 public:
@@ -16,6 +17,7 @@ public:
 	void Set_MinMax(double min, double max);
 	double Get_Min();
 	double Get_Max();
+	bool Min_Max_Is_From_Scan() {return _min_max_from_scan;}
 
 	void Set_Path(const char* path, const char* fullpath);
 
@@ -25,7 +27,7 @@ public:
 	// get full path, i.e. dirname of .vo file + path
 	const char* Get_Full_Path();
 
-	void Get_MinMax_From_File();
+	void Get_MinMax_From_File(Voxet_Memory_Mapper* mapper);
 
 private:
 	int _log_level;
@@ -37,6 +39,7 @@ private:
 	bool _has_min_max;
 	double _min;
 	double _max;
+	bool _min_max_from_scan;
 
 	char* _strdup(const char* src);
 };

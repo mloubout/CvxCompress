@@ -6,17 +6,17 @@
 #include <math.h>
 #include <xmmintrin.h>
 #include <omp.h>
-#include "Elastic_Shot.hxx"
-#include "Elastic_Propagator.hxx"
-#include "Elastic_Modeling_Job.hxx"
-#include "Elastic_Buffer.hxx"
-#include "Elastic_SEGY_File.hxx"
-#include "Elastic_Pipeline.hxx"
-#include "Extract_Receiver_Values.hxx"
-#include "../../Common/Voxet.hxx"
-#include "../../Common/Global_Coordinate_System.hxx"
-#include "DFT.hxx"
-#include "gpuAssert.h"
+#include <Elastic_Shot.hxx>
+#include <Elastic_Propagator.hxx>
+#include <Elastic_Modeling_Job.hxx>
+#include <Elastic_Buffer.hxx>
+#include <Elastic_SEGY_File.hxx>
+#include <Elastic_Pipeline.hxx>
+#include <Extract_Receiver_Values.hxx>
+#include <Voxet.hxx>
+#include <Global_Coordinate_System.hxx>
+#include <DFT.hxx>
+#include <gpuAssert.h>
 
 //#define RESAMPLE_DEBUG 0
 //#define DEBUG_TMJ
@@ -121,10 +121,10 @@ double Elastic_Shot::Get_Propagation_Time()
 	return propagation_time;
 }
 
-void Elastic_Shot::Add_Receiver_Array(int nrec,	double* rec_x, double* rec_y, double* rec_z, int* iline, int* xline, int* trcens ) {
+void Elastic_Shot::Add_Receiver_Array(int nrec,	double* rec_x, double* rec_y, double* rec_z, int* iline, int* xline, int* trcens, int* rec_ffid, time_t* acqtime, int* usec ) {
 	
 	for (int iFile = 0;  iFile < _num_segy_files;  ++iFile){
-		_segy_files[iFile]->Add_Receiver_Array(nrec,rec_x,rec_y,rec_z, iline, xline, trcens);
+		_segy_files[iFile]->Add_Receiver_Array(nrec,rec_x,rec_y,rec_z, iline, xline, trcens, rec_ffid, acqtime, usec);
 	}
 }
 
@@ -173,7 +173,7 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wa
 			double srcx, srcy, srcz;
 			Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
 			gcs->Convert_Transposed_Fractional_Index_To_Global(_x,_y,_z,srcx,srcy,srcz);
-			_segy_files[iFile]->Write_Source_Wavelet_To_SEGY_File(_stf,_stf_int,dt,_tsrc,srcx,srcy,srcz);
+			_segy_files[iFile]->Write_Source_Wavelet_To_SEGY_File(_stf,_stf_int,dt,_tsrc,srcx,srcy,srcz,_il,_xl);
 		}
 		FILE* fp = fopen("filtered.txt", "w");
 		if (fp != 0L)
@@ -929,6 +929,9 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *iline = new int[count];
 				int *xline = new int[count];
 				int *trcens = new int[count];
+				int* irec = new int[count];
+				time_t *acqtime = new time_t[count];
+				int* usec = new int[count];
 				float* rec_model_water_depth = new float[count];
 				float* rec_model_water_Vp = new float[count];
 				float* rec_bath_z = new float[count];
@@ -953,12 +956,15 @@ void Elastic_Shot::Write_SEGY_Files()
 						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
 						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
 						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
+						irec[ii] = _h_traces_hdr[iTrc]->Get_Receiver_FFID();
+						acqtime[ii] = _h_traces_hdr[iTrc]->Get_Shot_Time();
+						usec[ii] = _h_traces_hdr[iTrc]->Get_Shot_Time_usec();
 						++ii;
 					}
 				}
 				_segy_files[iFile]->Write_SEGY_File(
 					traces,EBCDIC_Header,
-					srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
+					srcx,srcy,srcz,_il,_xl,recx,recy,recz,iline,xline,trcens,irec,acqtime,usec,
 					src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,count,nsamp,flag
 					);
 				delete [] rec_bath_z;
@@ -971,6 +977,9 @@ void Elastic_Shot::Write_SEGY_Files()
 				delete [] iline;
 				delete [] xline;
 				delete [] trcens;
+				delete [] irec;
+				delete [] acqtime;
+				delete [] usec;
 			}
 		}
 	}
@@ -1150,8 +1159,10 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 	for (int iFile = 0, trace_no_idx = 0;  iFile < _num_segy_files;  ++iFile)
         {
                 double *rcv_x, *rcv_y, *rcv_z;
-		int *il, *xl, *trce;
-		int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z, il, xl, trce);
+		int *il, *xl, *rec_ffid, *trce;
+		time_t *acqt;
+		int* usec;
+		int num_rx = _segy_files[iFile]->Compute_Receiver_Locations_NO_COPY(rcv_x, rcv_y, rcv_z, il, xl, trce, rec_ffid, acqt, usec);
 		double tshift = _segy_files[iFile]->Get_Timeshift();
 		double sample_rate = _segy_files[iFile]->Get_Sample_Rate();
 		int nsamp_out = (int)round(_segy_files[iFile]->Get_Record_Length() / sample_rate) + 1;
@@ -1173,7 +1184,7 @@ void Elastic_Shot::_Create_Receiver_Transfer_Buffers(Elastic_Propagator* prop)
 							tshift,				// trace start time
 							sample_rate,			// trace sample rate
 							nsamp_out,			// # samples in trace, length of sinc operator
-							iFile,1<<iSel,rcv_x[iRx],rcv_y[iRx],rcv_z[iRx],il[iRx],xl[iRx],trce[iRx]
+							iFile,1<<iSel,rcv_x[iRx],rcv_y[iRx],rcv_z[iRx],il[iRx],xl[iRx],trce[iRx],rec_ffid[iRx],acqt[iRx],usec[iRx]
 							);
 						++curr_trace_no_idx;
 					}

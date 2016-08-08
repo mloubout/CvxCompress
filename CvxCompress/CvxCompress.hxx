@@ -30,9 +30,26 @@ public:
 			int bx,
 			int by,
 			int bz,
+			bool use_local_RMS,
 			unsigned int* compressed,
 			long& compressed_length 
 		      );
+	/*!
+ 	 * Compress a 3D wavefield using a given block size.
+ 	 * Works same as above, except parameter use_local_RMS is hardcoded to be false.
+ 	 */
+	float Compress(
+                        float scale,
+                        float* vol,
+                        int nx,
+                        int ny,
+                        int nz,
+                        int bx,
+                        int by,
+                        int bz,
+                        unsigned int* compressed,
+                        long& compressed_length
+                      );
 	/*!< Decompress a 3D wavefield that was compressed with Compress(...) method */
 	float* Decompress(
 			int& nx,
@@ -50,6 +67,8 @@ public:
 			unsigned int* compressed,
 			long compressed_length 
 		       );
+	
+	bool Is_Valid_Block_Size(int bx, int by, int bz);
 
 	static int Min_BX() {return  8;}  /*!< Get minimum X block size. Will always be a power of two.*/
 	static int Max_BX() {return 256;}  /*!< Get maximum X block size. Will always be a power of two.*/
@@ -60,8 +79,6 @@ public:
 
 	bool Run_Module_Tests(bool verbose, bool exhaustive_throughput_tests);  /*!< Execute module tests.*/
 
-private:
-	bool _Valid_Block_Size(int bx, int by, int bz);
 };
 
 #endif

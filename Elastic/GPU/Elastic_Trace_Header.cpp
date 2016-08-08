@@ -11,7 +11,10 @@ Elastic_Trace_Header::Elastic_Trace_Header(
                 double loc_z,
                 int iline,
                 int xline,
-                int trcens
+                int trcens,
+		int rec_ffid,
+		time_t acqtime,
+		int usec
                 )
 {
 	_start_time = start_time;
@@ -25,6 +28,9 @@ Elastic_Trace_Header::Elastic_Trace_Header(
 	_iline = iline;
 	_xline = xline;
 	_trcens = trcens;
+	_rec_ffid = rec_ffid;
+	_acqtime = acqtime;
+	_usec = usec;
 }
 
 Elastic_Trace_Header::~Elastic_Trace_Header()

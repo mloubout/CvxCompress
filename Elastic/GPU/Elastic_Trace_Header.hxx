@@ -1,6 +1,8 @@
 #ifndef CVX_ELASTIC_TRACE_HEADER_HXX
 #define CVX_ELASTIC_TRACE_HEADER_HXX
 
+#include <time.h>
+
 //
 // This class is a container for trace meta-data normally found in the SEGY trace header.
 //
@@ -19,7 +21,10 @@ public:
 		double loc_z,
 		int iline,
 		int xline,
-		int trcens
+		int trcens,
+		int rec_ffid,
+		time_t acqtime,
+		int usec
 		);
 	virtual ~Elastic_Trace_Header();
 
@@ -44,6 +49,10 @@ public:
 	inline int Get_Crossline() {return _xline;}
 	inline int Get_Trace_Ensemble() {return _trcens;}
 
+	inline int Get_Receiver_FFID() {return _rec_ffid;}
+	inline time_t Get_Shot_Time() {return _acqtime;}
+	inline int Get_Shot_Time_usec() {return _usec;}
+
 protected:
 	double _start_time;
 	double _sample_rate;
@@ -56,6 +65,9 @@ protected:
 	int _iline;
 	int _xline;
 	int _trcens;
+	int _rec_ffid;
+	time_t _acqtime;
+	int _usec;
 };
 
 #endif

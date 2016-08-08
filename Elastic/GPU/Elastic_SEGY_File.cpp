@@ -1,16 +1,17 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include "../../Common/swapbytes.h"
-#include "Elastic_SEGY_File.hxx"
-#include "Elastic_SEGY_File_Receiver_Range.hxx"
-#include "Elastic_Buffer.hxx"
-#include "Elastic_Pipeline.hxx"
-#include "Elastic_Propagator.hxx"
-#include "Elastic_Gather_Type.hxx"
-#include "ASCII2EBCDIC.h"
+#include <time.h>
+#include <swapbytes.h>
+#include <Elastic_SEGY_File.hxx>
+#include <Elastic_SEGY_File_Receiver_Range.hxx>
+#include <Elastic_Buffer.hxx>
+#include <Elastic_Pipeline.hxx>
+#include <Elastic_Propagator.hxx>
+#include <Elastic_Gather_Type.hxx>
+#include <ASCII2EBCDIC.h>
 #include <cuda_runtime_api.h>
-#include "gpuAssert.h"
+#include <gpuAssert.h>
 
 Elastic_SEGY_File::Elastic_SEGY_File(
 		int fileidx,
@@ -46,6 +47,9 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 	_h_user_iline = 0L;
 	_h_user_xline = 0L;
 	_h_user_trcens = 0L;
+	_h_user_rec_ffid = 0L;
+	_h_user_acqtime = 0L;
+	_h_user_usec = 0L;
 }
 
 Elastic_SEGY_File::~Elastic_SEGY_File()
@@ -62,6 +66,12 @@ Elastic_SEGY_File::~Elastic_SEGY_File()
 	_h_user_xline = 0L;
 	delete [] _h_user_trcens;
 	_h_user_trcens = 0L;
+	delete [] _h_user_rec_ffid;
+	_h_user_rec_ffid = 0L;
+	delete [] _h_user_acqtime;
+	_h_user_acqtime = 0L;
+	delete [] _h_user_usec;
+	_h_user_usec = 0L;
 
 	if (_base_filename != 0L) free(_base_filename);
 }
@@ -101,7 +111,9 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	int nsamp,
 	double srcx,
 	double srcy,
-        double srcz
+        double srcz,
+	int src_il,
+	int src_xl
 	)
 {
 	char buf[4096];
@@ -118,13 +130,19 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	iline[0] = iline[1] = 1;
 	xline[0] = xline[1] = 1;
 	trcens[0] = trcens[1] = 1;
+	int irec[2];
+	irec[0] = irec[1] = 0;
+	time_t acqtime[2];
+	acqtime[0] = acqtime[1] = time(0L);
+	int usec[2];
+	usec[0] = usec[1] = 0;
 	float rec_model_water_depth[2], rec_model_Vp[2], rec_bath_z[2];
 	rec_model_water_depth[0] = rec_model_water_depth[1] = 0.0f;
 	rec_model_Vp[0] = rec_model_Vp[1] = 0.0f;
 	rec_bath_z[0] = rec_bath_z[1] = 0.0f;
 	char EBCDIC_Header[3200];
 	memset((void*)EBCDIC_Header, 0, 3200);
-	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,0.0,&traces[0],EBCDIC_Header,srcx,srcy,srcz,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
+	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,_seqno,0.0,&traces[0],EBCDIC_Header,srcx,srcy,srcz,src_il,src_xl,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],&irec[0],&acqtime[0],&usec[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
 	delete [] traces[0];
 	delete [] traces[1];
 }
@@ -135,12 +153,17 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	double srcx,
 	double srcy,
 	double srcz,
+	int src_il,
+	int src_xl,
 	double* recx,
 	double* recy,
 	double* recz,
-	int* iline,
-	int* xline,
+	int* rec_il,
+	int* rec_xl,
 	int* trcens,
+	int* irec,
+	time_t* acqtime,
+	int* usec,
 	float src_model_water_depth,
 	float src_model_water_Vp,
 	float src_bath_z,
@@ -155,8 +178,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	char filename[4096];
 	Get_Full_Path(filename,flag);
 	this->Write_SEGY_File(
-		filename,_sample_rate,Get_Gather_Type(),_fileidx,_tshift,traces,EBCDIC_Header,
-		srcx,srcy,srcz,recx,recy,recz,iline,xline,trcens,
+		filename,_sample_rate,Get_Gather_Type(),_fileidx,_seqno,_tshift,traces,EBCDIC_Header,
+		srcx,srcy,srcz,src_il,src_xl,recx,recy,recz,rec_il,rec_xl,trcens,irec,acqtime,usec,
 		src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,num_traces,nsamp
 		);
 }
@@ -166,18 +189,24 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	double sample_rate,
 	Elastic_Gather_Type_t gather_type,
 	int file_idx,
+	int seqno,
 	double start_time,
 	float** traces,
 	char* EBCDIC_Header,
 	double srcx,
 	double srcy,
 	double srcz,
+	int src_il,
+	int src_xl,
 	double* recx,
 	double* recy,
 	double* recz,
-	int* iline,
-	int* xline,
+	int* rec_il,
+	int* rec_xl,
 	int* trcens,
+	int* irec,
+	time_t* acqtime,
+	int* usec,
 	float src_model_water_depth,
 	float src_model_water_Vp,
 	float src_bath_z,
@@ -302,7 +331,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 short tstartrec;
 
 		// 110-113
-                char skip6[4];
+		char skip6[4];
 
 		// 114-115
                 short nsamp;
@@ -325,8 +354,36 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		// 144-151
 		double rec_yd;
 
-		// 152-179
-		char skip8[28];
+		// 152-155
+		int irec;
+
+		// 156-157
+		short year;
+
+		// 158-159
+		short day;
+
+		// 160-161
+		short hour;
+
+		// 162-163
+		short minute;
+	
+		// 164-165
+		short second;
+
+		// 166-167
+		// 1=local, 2=GMT/UTC
+		short time_basis_code;
+
+		// 168-171
+		int usec;
+
+		// 172-175
+		int src_iline;
+
+		// 176-179
+		int src_xline;
 
 		// 180-183
                 int cmp_x;
@@ -335,10 +392,10 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 int cmp_y;
 	
 		// 188-191
-                int iline_no;
+                int rec_iline;
 
 		// 192-195
-                int xline_no;
+                int rec_xline;
 
 		// 196-199
                 int shot_point;
@@ -347,7 +404,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		short scalar3;
 
 		// 202-213
-		char skip9[12];
+		char skip10[12];
 
 		// 214-215
 		short scalar4;
@@ -442,6 +499,15 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rec_water_bathymetry_depth = rec_bath_z[iTrc];
 				rec_water_Vp = rec_model_water_Vp[iTrc];
 			}
+
+			struct tm shot_time;
+			localtime_r(acqtime+iTrc,&shot_time);
+			short tm_year = shot_time.tm_year;
+			short tm_day = shot_time.tm_yday;
+			short tm_hour = shot_time.tm_hour;
+			short tm_min = shot_time.tm_min;
+			short tm_sec = shot_time.tm_sec;
+			int tm_usec = usec[iTrc];
 		
 			int recwaterdepthbathymetry = (int)(10.*rec_water_bathymetry_depth);
 			int srcwaterdepthbathymetry = (int)(10.*src_water_bathymetry_depth);
@@ -463,6 +529,13 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			short recstatic = recwaterVp;
 			if(swapflag)
 			{
+				swap2bytes(&tm_year,1);
+				swap2bytes(&tm_day,1);
+				swap2bytes(&tm_hour,1);
+				swap2bytes(&tm_min,1);
+				swap2bytes(&tm_sec,1);
+				swap4bytes(&tm_usec,1);
+
 				swap4bytes(&ffid, 1);
 				swap4bytes(&elevatsrc, 1);     swap4bytes(&srcdepth, 1);
 				swap4bytes(&srcwaterdepth, 1);
@@ -481,6 +554,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				swap4bytes((int*)&rec_water_model_depth, 1);
 				swap4bytes((int*)&rec_water_Vp, 1);
 			}
+			trc_id_hdr.year = tm_year;
+			trc_id_hdr.day = tm_day;
+			trc_id_hdr.hour = tm_hour;
+			trc_id_hdr.minute = tm_min;
+			trc_id_hdr.second = tm_sec;
+			trc_id_hdr.usec = tm_usec;
 			trc_id_hdr.isrc = ffid;
 			trc_id_hdr.elevatsrc = elevatsrc; 
 			trc_id_hdr.srcdepth = srcdepth;
@@ -509,12 +588,19 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.recelev = recelev;
 
 			int yrec = (int)(100.*ry);
-			int xl = xline[iTrc];
-			if(swapflag) { swap4bytes(&yrec, 1); swap4bytes(&xl, 1); }
+			int sxl = src_xl;
+			int xl = rec_xl[iTrc];
+			if(swapflag)
+			{ 
+				swap4bytes(&yrec, 1); 
+				swap4bytes(&xl, 1); 
+				swap4bytes(&sxl, 1);
+			}
 			trc_id_hdr.recy = yrec;
-                        trc_id_hdr.iline_no = xl; /* yes, this is correct */
+                        trc_id_hdr.rec_xline = xl;
+			trc_id_hdr.src_xline = sxl;
 
-			int trcseq = iTrc+1;       
+			int trcseq = seqno;
 			int ichan = iTrc+1;      
 			int trce = trcens[iTrc];
 			int xrec = (int)(100.*rx);
@@ -522,7 +608,9 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			double yoff = ry - sy;
 			double cmpx = 0.5*(sx + rx);  
 			double cmpy = 0.5*(sy + ry);
-			int il = iline[iTrc];
+			int sil = src_il;
+			int il = rec_il[iTrc];
+			int rec_ffid = irec[iTrc];
 			int offset = (int)round(sqrt(yoff*yoff + xoff*xoff));
 			double azim = r2d*atan2(yoff, xoff);
 
@@ -530,10 +618,14 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			int ycmp = (int)(100.*cmpy);
 			if(swapflag)
 			{
-				swap4bytes(&trcseq, 1);  swap4bytes(&ichan, 1);  swap4bytes(&trce, 1);
+				swap4bytes(&trcseq, 1);  
+				swap4bytes(&ichan, 1);  
+				swap4bytes(&trce, 1);
 				swap4bytes(&xrec, 1);
 				swap4bytes((int*)(&xcmp), 1); swap4bytes((int*)(&ycmp), 1);
+				swap4bytes(&sil, 1);
 				swap4bytes(&il, 1);
+				swap4bytes(&rec_ffid, 1);
 				swap4bytes(&offset, 1);
 
 				swap8bytes((long*)&sx, 1);
@@ -554,7 +646,9 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.recx = xrec;
 			trc_id_hdr.cmp_x = xcmp;
 			trc_id_hdr.cmp_y = ycmp;
-			trc_id_hdr.xline_no = il; /* yes, this is correct */
+			trc_id_hdr.irec = rec_ffid;
+			trc_id_hdr.rec_iline = il;
+			trc_id_hdr.src_iline = il;
 			//trc_id_hdr.xoff = xoff;
 			//trc_id_hdr.yoff = yoff;
 			//trc_id_hdr.azim = azim;
@@ -586,7 +680,10 @@ void Elastic_SEGY_File::Add_Receiver_Array(
 		double* rcv_z,
 		int* iline,
 		int* xline,
-		int* trcens
+		int* trcens,
+		int* rec_ffid,
+		time_t* acqtime,
+		int* usec
 )
 {
 
@@ -596,6 +693,9 @@ void Elastic_SEGY_File::Add_Receiver_Array(
 	_h_user_iline = new int[nrec];
 	_h_user_xline = new int[nrec];
 	_h_user_trcens = new int[nrec];
+	_h_user_rec_ffid = new int[nrec];
+	_h_user_acqtime = new time_t[nrec];
+	_h_user_usec = new int[nrec];
 	_num_user_rcv = nrec;
 
 	for (int i=0;i<_num_user_rcv;i++) {
@@ -605,6 +705,9 @@ void Elastic_SEGY_File::Add_Receiver_Array(
 		_h_user_iline[i]=iline[i];
 		_h_user_xline[i]=xline[i];
 		_h_user_trcens[i]=trcens[i];
+		_h_user_rec_ffid[i]=rec_ffid[i];
+		_h_user_acqtime[i]=acqtime[i];
+		_h_user_usec[i]=usec[i];
 	}
 
 }
@@ -651,8 +754,10 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 		)
 {
 	double *rx, *ry, *rz;
-	int *il, *xl, *te;
-	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te);
+	int *il, *xl, *te, *rff;
+	time_t *acqt;
+	int* usec;
+	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te,rff,acqt,usec);
 	if (num > 0)
 	{
 		rcv_x = new double[num];
@@ -680,8 +785,10 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		double*& rcv_z
 		)
 {
-	int *iline, *xline, *trcens;
-	int num_rx = Compute_Receiver_Locations_NO_COPY(rcv_x,rcv_y,rcv_z,iline,xline,trcens);
+	int *iline, *xline, *trcens, *rec_ffid;
+	time_t *acqt;
+	int* usec;
+	int num_rx = Compute_Receiver_Locations_NO_COPY(rcv_x,rcv_y,rcv_z,iline,xline,trcens,rec_ffid,acqt,usec);
 	return num_rx;
 }
 
@@ -691,12 +798,17 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 		double*& rcv_z,
 		int*& iline,
 		int*& xline,
-		int*& trcens
+		int*& trcens,
+		int*& rec_ffid,
+		time_t*& acqtime,
+		int*& usec
 		)
 {
 	double *rx, *ry, *rz;
-	int *il, *xl, *te;
-	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te);
+	int *il, *xl, *te, *rff;
+	time_t *acqt;
+	int* usc;
+	int num = Compute_Receiver_Locations_NO_COPY(rx,ry,rz,il,xl,te,rff,acqt,usc);
 	if (num > 0)
 	{
 		rcv_x = new double[num];
@@ -705,6 +817,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 		iline = new int[num];
 		xline = new int[num];
 		trcens = new int[num];
+		rec_ffid = new int[num];
+		acqtime = new time_t[num];
+		usec = new int[num];
 		for (int i = 0;  i < num;  ++i)
 		{
 			rcv_x[i] = rx[i];
@@ -713,6 +828,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 			iline[i] = il[i];
 			xline[i] = xl[i];
 			trcens[i] = te[i];
+			rec_ffid[i] = rff[i];
+			acqtime[i] = acqt[i];
+			usec[i] = usc[i];
 		}
 	}
 	else
@@ -723,6 +841,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations(
 		iline = 0L;
 		xline = 0L;
 		trcens = 0L;
+		rec_ffid = 0L;
+		acqtime = 0L;
+		usec = 0L;
 	}
 	return num;
 }
@@ -733,7 +854,10 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		double*& rcv_z,
 		int*& iline,
 		int*& xline,
-		int*& trcens
+		int*& trcens,
+		int*& rec_ffid,
+		time_t*& acqtime,
+		int*& usec
 		)
 {
 	int num = 0;
@@ -743,6 +867,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 	iline = 0L;
 	xline = 0L;
 	trcens = 0L;
+	rec_ffid = 0L;
+	acqtime = 0L;
+	usec = 0L;
 
 	if (_h_user_rcv_x == 0L) { //Array of receivers has not been specified by user, create arrays from range in parmfile
 
@@ -810,6 +937,19 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 					num = num + nn;
 				}
 			}
+			if (num > 0)
+			{
+				rec_ffid = new int[num];
+				acqtime = new time_t[num];
+				usec = new int[num];
+				time_t ima = time(0L);
+				for (long i = 0;  i < num;  ++i)
+				{
+					rec_ffid[i] = 0;
+					acqtime[i] = ima;
+					usec[i] = 0;
+				}
+			}
 		}
 
 		_h_user_rcv_x = rcv_x;
@@ -818,6 +958,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		_h_user_iline = iline;
 		_h_user_xline = xline;
 		_h_user_trcens = trcens;
+		_h_user_rec_ffid = rec_ffid;
+		_h_user_acqtime = acqtime;
+		_h_user_usec = usec;
 		_num_user_rcv = num;
 	} 
 	else { //Array of receivers has been specified by the user
@@ -827,6 +970,9 @@ int Elastic_SEGY_File::Compute_Receiver_Locations_NO_COPY(
 		iline = _h_user_iline;
 		xline = _h_user_xline;
 		trcens = _h_user_trcens;
+		rec_ffid = _h_user_rec_ffid;
+		acqtime = _h_user_acqtime;
+		usec = _h_user_usec;
 		num = _num_user_rcv;		
 	}
 	return num;
