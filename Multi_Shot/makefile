@@ -5,7 +5,7 @@ common:
 	cd ../Common; make -B -f ./makefile
 
 singleshot:
-	mkdir -p ../lib
+	mkdir -p ../bin
 	cd ../Elastic/GPU; make -B -f ./makefile
 
 multishot: 
