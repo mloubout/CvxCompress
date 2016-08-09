@@ -29,6 +29,11 @@ public:
 
 	int Get_Spatial_Order() {return _spatial_order;}
 
+	//!
+	//! Return true if this model includes a variable (in time and space) water column.
+	//!
+	bool Is_Vwxyzt();
+
 	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
 
 	bool Anchor_Is_Source() {return _sub_origin == 0 ? true : false;}

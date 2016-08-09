@@ -31,6 +31,9 @@ public:
 	int Get_SeqNo() {return _seqno;}
 	void Set_SeqNo(int seqno) {_seqno=seqno;}
 
+	int Get_GunSeq() {return _gunseq;}
+	void Set_GunSeq(int gunseq) {_gunseq=gunseq;}
+
 	Elastic_Gather_Type_t Get_Gather_Type() {return _gather_type;}
 	void Set_Gather_Type(Elastic_Gather_Type_t gather_type) {_gather_type = gather_type;}
 
@@ -115,6 +118,7 @@ public:
 		);
 	
 	void Write_Source_Wavelet_To_SEGY_File(
+			bool Is_Vwxyzt,
 			double* filtered,
 			double* filtered_int,
 			double sample_rate,
@@ -128,6 +132,7 @@ public:
 	void Write_SEGY_File(
 			float** traces,
 			char* EBCDIC_Header,
+			bool Is_Vwxyzt,
 			double srcx,
 			double srcy,
 			double srcz,
@@ -139,6 +144,7 @@ public:
 			int* rec_il,
 			int* rec_xl,
 			int* trcens,
+			short* compon,
 			int* rec_ffid,
 			time_t* acqtime,
 			int* usec,
@@ -156,8 +162,10 @@ public:
 			const char* filename,
 			double sample_rate,
 			Elastic_Gather_Type_t gather_type,
+			bool Is_Vwxyzt,
 			int file_idx,
 			int seqno,
+			int gunseq,
 			double start_time,
 			float** traces,
 			char* EBCDIC_Header,
@@ -172,6 +180,7 @@ public:
 			int* rec_il,
 			int* rec_xl,
 			int* trcens,
+			short* compon,
 			int* rec_ffid,
 			time_t* acqtime,
 			int* usec,
@@ -190,6 +199,7 @@ private:
 	bool _Is_Valid;
 	int _fileidx;
 	int _seqno;
+	int _gunseq;
 	char* _base_filename;
 	double _sample_rate;
 	double _tshift;

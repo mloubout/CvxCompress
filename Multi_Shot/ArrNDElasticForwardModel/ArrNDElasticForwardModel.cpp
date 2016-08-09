@@ -173,6 +173,7 @@ public:
 			//Reading in shot id from geom file
 			file->Set_File_Index(dat[0].getSortindex());
 			file->Set_SeqNo(dat_aux[0].getSeqNo());
+			file->Set_GunSeq(dat_aux[0].getGunSeq());
 
 			cout<<"File index="<<file->Get_File_Index()<<endl;
 			//Convert_Global_To_Transposed_Fractional_Index expects u,v,w as input.

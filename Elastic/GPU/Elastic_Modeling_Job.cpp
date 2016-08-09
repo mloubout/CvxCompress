@@ -1536,6 +1536,11 @@ void Elastic_Modeling_Job::_initialize(
 	}
 }
 
+bool Elastic_Modeling_Job::Is_Vwxyzt()
+{
+	return (_Vwxyzt_Computer != 0L && _Vwxyzt_Computer->Has_Been_Initialized()) ? true : false;
+}
+
 void Elastic_Modeling_Job::Compute_Subvolume()
 {
 	// copy sub volume parameters from parameter file

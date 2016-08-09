@@ -27,6 +27,8 @@ Elastic_SEGY_File::Elastic_SEGY_File(
 {
 	_Is_Valid = false;
 	_fileidx = fileidx;
+	_seqno = 0;
+	_gunseq = 0;
 	_gather_type = Common_Shot_Gather;
 	_base_filename = strdup(base_filename);
 	_sample_rate = sample_rate;
@@ -105,6 +107,7 @@ const char* Elastic_SEGY_File::Get_Full_Path(char* buf, int flag)
 }
 
 void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
+	bool Is_Vwxyzt,
 	double* filtered,
 	double* filtered_int,
 	double sample_rate,
@@ -130,6 +133,8 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	iline[0] = iline[1] = 1;
 	xline[0] = xline[1] = 1;
 	trcens[0] = trcens[1] = 1;
+	short compon[2];
+	compon[0] = compon[1] = 0;
 	int irec[2];
 	irec[0] = irec[1] = 0;
 	time_t acqtime[2];
@@ -142,7 +147,7 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 	rec_bath_z[0] = rec_bath_z[1] = 0.0f;
 	char EBCDIC_Header[3200];
 	memset((void*)EBCDIC_Header, 0, 3200);
-	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,_fileidx,_seqno,0.0,&traces[0],EBCDIC_Header,srcx,srcy,srcz,src_il,src_xl,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],&irec[0],&acqtime[0],&usec[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
+	this->Write_SEGY_File((const char*)buf,sample_rate,Common_Shot_Gather,Is_Vwxyzt,_fileidx,_seqno,_gunseq,0.0,&traces[0],EBCDIC_Header,srcx,srcy,srcz,src_il,src_xl,&recx[0],&recy[0],&recz[0],&iline[0],&xline[0],&trcens[0],&compon[0],&irec[0],&acqtime[0],&usec[0],0.0f,0.0f,0.0f,&rec_model_water_depth[0],&rec_model_Vp[0],&rec_bath_z[0],2,nsamp);
 	delete [] traces[0];
 	delete [] traces[1];
 }
@@ -150,6 +155,7 @@ void Elastic_SEGY_File::Write_Source_Wavelet_To_SEGY_File(
 void Elastic_SEGY_File::Write_SEGY_File(
 	float** traces,
 	char* EBCDIC_Header,
+	bool Is_Vwxyzt,
 	double srcx,
 	double srcy,
 	double srcz,
@@ -161,6 +167,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int* rec_il,
 	int* rec_xl,
 	int* trcens,
+	short* compon,
 	int* irec,
 	time_t* acqtime,
 	int* usec,
@@ -178,8 +185,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	char filename[4096];
 	Get_Full_Path(filename,flag);
 	this->Write_SEGY_File(
-		filename,_sample_rate,Get_Gather_Type(),_fileidx,_seqno,_tshift,traces,EBCDIC_Header,
-		srcx,srcy,srcz,src_il,src_xl,recx,recy,recz,rec_il,rec_xl,trcens,irec,acqtime,usec,
+		filename,_sample_rate,Get_Gather_Type(),Is_Vwxyzt,_fileidx,_seqno,_gunseq,_tshift,traces,EBCDIC_Header,
+		srcx,srcy,srcz,src_il,src_xl,recx,recy,recz,rec_il,rec_xl,trcens,compon,irec,acqtime,usec,
 		src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,num_traces,nsamp
 		);
 }
@@ -188,8 +195,10 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	const char* filename,
 	double sample_rate,
 	Elastic_Gather_Type_t gather_type,
+	bool Is_Vwxyzt,
 	int file_idx,
 	int seqno,
+	int gunseq,
 	double start_time,
 	float** traces,
 	char* EBCDIC_Header,
@@ -204,6 +213,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 	int* rec_il,
 	int* rec_xl,
 	int* trcens,
+	short* compon,
 	int* irec,
 	time_t* acqtime,
 	int* usec,
@@ -249,8 +259,11 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		// 0-3
                 int trcseqno;
 
-		// 4-7
-                int skip0;
+		// 4-5
+                short gunseq;
+		
+		// 6-7
+		short compon;
 
 		// 8-11
                 int isrc;
@@ -316,7 +329,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 short lenunit;
 		
 		// 90-97
-		char skip4[8];
+		double aoffset;		// absolute offset, including depth difference, between source and receiver
 
 		// 98-99
 		short srcstatic;
@@ -340,7 +353,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
                 short dtmicro;
 
 		// 118-119
-		char skip7[2];
+		short Vwxyzt_flag;
 
 		// 120-127
 		double sou_xd;
@@ -499,6 +512,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rec_water_bathymetry_depth = rec_bath_z[iTrc];
 				rec_water_Vp = rec_model_water_Vp[iTrc];
 			}
+			double aoffset = sqrt((sx-rx)*(sx-rx)+(sy-ry)*(sy-ry)+(sz-rz)*(sz-rz));
 
 			struct tm shot_time;
 			localtime_r(acqtime+iTrc,&shot_time);
@@ -529,6 +543,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			short recstatic = recwaterVp;
 			if(swapflag)
 			{
+				swap8bytes((long*)&aoffset, 1);
 				swap2bytes(&tm_year,1);
 				swap2bytes(&tm_day,1);
 				swap2bytes(&tm_hour,1);
@@ -575,6 +590,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.rec_water_Vp = rec_water_Vp;
 			trc_id_hdr.srcx = xsrc;           
 			trc_id_hdr.srcy = ysrc;
+			trc_id_hdr.aoffset = aoffset;
 			trc_id_hdr.nsamp = nsamp2;
 			trc_id_hdr.tstartrec = tstartrec2;
 			trc_id_hdr.dtmicro = dtmicro2;
@@ -601,6 +617,8 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.src_xline = sxl;
 
 			int trcseq = seqno;
+			short sgunseq = gunseq;
+			short svwxyzt = Is_Vwxyzt ? 1 : 0;
 			int ichan = iTrc+1;      
 			int trce = trcens[iTrc];
 			int xrec = (int)(100.*rx);
@@ -610,6 +628,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			double cmpy = 0.5*(sy + ry);
 			int sil = src_il;
 			int il = rec_il[iTrc];
+			short scompon = compon[iTrc];
 			int rec_ffid = irec[iTrc];
 			int offset = (int)round(sqrt(yoff*yoff + xoff*xoff));
 			double azim = r2d*atan2(yoff, xoff);
@@ -619,12 +638,15 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			if(swapflag)
 			{
 				swap4bytes(&trcseq, 1);  
+				swap2bytes(&sgunseq, 1);
+				swap2bytes(&svwxyzt, 1);
 				swap4bytes(&ichan, 1);  
 				swap4bytes(&trce, 1);
 				swap4bytes(&xrec, 1);
 				swap4bytes((int*)(&xcmp), 1); swap4bytes((int*)(&ycmp), 1);
 				swap4bytes(&sil, 1);
 				swap4bytes(&il, 1);
+				swap2bytes(&scompon, 1);
 				swap4bytes(&rec_ffid, 1);
 				swap4bytes(&offset, 1);
 
@@ -640,12 +662,15 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 			/* Assign & Write Trace Header */
 			trc_id_hdr.trcseqno = trcseq;
+			trc_id_hdr.gunseq = sgunseq;
+			trc_id_hdr.Vwxyzt_flag = svwxyzt;
 			trc_id_hdr.ichan = ichan;
 			trc_id_hdr.trcensemb = trce;
 			trc_id_hdr.offset = offset;
 			trc_id_hdr.recx = xrec;
 			trc_id_hdr.cmp_x = xcmp;
 			trc_id_hdr.cmp_y = ycmp;
+			trc_id_hdr.compon = scompon;
 			trc_id_hdr.irec = rec_ffid;
 			trc_id_hdr.rec_iline = il;
 			trc_id_hdr.src_iline = il;

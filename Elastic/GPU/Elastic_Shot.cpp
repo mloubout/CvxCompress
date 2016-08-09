@@ -173,7 +173,7 @@ void Elastic_Shot::Prepare_Source_Wavelet(double dt, bool debug_output_source_wa
 			double srcx, srcy, srcz;
 			Global_Coordinate_System* gcs = _job->Get_Voxet()->Get_Global_Coordinate_System();
 			gcs->Convert_Transposed_Fractional_Index_To_Global(_x,_y,_z,srcx,srcy,srcz);
-			_segy_files[iFile]->Write_Source_Wavelet_To_SEGY_File(_stf,_stf_int,dt,_tsrc,srcx,srcy,srcz,_il,_xl);
+			_segy_files[iFile]->Write_Source_Wavelet_To_SEGY_File(_job->Is_Vwxyzt(),_stf,_stf_int,dt,_tsrc,srcx,srcy,srcz,_il,_xl);
 		}
 		FILE* fp = fopen("filtered.txt", "w");
 		if (fp != 0L)
@@ -929,6 +929,7 @@ void Elastic_Shot::Write_SEGY_Files()
 				int *iline = new int[count];
 				int *xline = new int[count];
 				int *trcens = new int[count];
+				short* compon = new short[count];
 				int* irec = new int[count];
 				time_t *acqtime = new time_t[count];
 				int* usec = new int[count];
@@ -956,6 +957,22 @@ void Elastic_Shot::Write_SEGY_Files()
 						iline[ii] = _h_traces_hdr[iTrc]->Get_Inline();
 						xline[ii] = _h_traces_hdr[iTrc]->Get_Crossline();
 						trcens[ii] = _h_traces_hdr[iTrc]->Get_Trace_Ensemble();
+						if (_h_traces_hdr[iTrc]->Is_Pressure())
+						{
+							compon[ii] = 1;
+						}
+						else if (_h_traces_hdr[iTrc]->Is_Vz())
+						{
+							compon[ii] = 2;
+						}
+						else if (_h_traces_hdr[iTrc]->Is_Vx())
+                                                {
+                                                        compon[ii] = 3;
+                                                }
+						else if (_h_traces_hdr[iTrc]->Is_Vy())
+                                                {
+                                                        compon[ii] = 4;
+                                                }
 						irec[ii] = _h_traces_hdr[iTrc]->Get_Receiver_FFID();
 						acqtime[ii] = _h_traces_hdr[iTrc]->Get_Shot_Time();
 						usec[ii] = _h_traces_hdr[iTrc]->Get_Shot_Time_usec();
@@ -963,8 +980,8 @@ void Elastic_Shot::Write_SEGY_Files()
 					}
 				}
 				_segy_files[iFile]->Write_SEGY_File(
-					traces,EBCDIC_Header,
-					srcx,srcy,srcz,_il,_xl,recx,recy,recz,iline,xline,trcens,irec,acqtime,usec,
+					traces,EBCDIC_Header,_job->Is_Vwxyzt(),
+					srcx,srcy,srcz,_il,_xl,recx,recy,recz,iline,xline,trcens,compon,irec,acqtime,usec,
 					src_model_water_depth,src_model_water_Vp,src_bath_z,rec_model_water_depth,rec_model_water_Vp,rec_bath_z,count,nsamp,flag
 					);
 				delete [] rec_bath_z;
@@ -978,6 +995,7 @@ void Elastic_Shot::Write_SEGY_Files()
 				delete [] xline;
 				delete [] trcens;
 				delete [] irec;
+				delete [] compon;
 				delete [] acqtime;
 				delete [] usec;
 			}
