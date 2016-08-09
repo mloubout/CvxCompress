@@ -1423,6 +1423,8 @@ void Elastic_Modeling_Job::_initialize(
 	_Num_Parallel_Shots = 0;
 	_web_allowed = true;
 	error = _read_parmfile(log_level,parmfile_path,fs);
+	/*
+ 	TMJ no need for custom parmfile anymore, new features are in GUI
 	if (!error)
 	{
 		char* custom_parmfile = getenv("ELAORTHO_CUSTOM_PARMFILE");
@@ -1441,6 +1443,7 @@ void Elastic_Modeling_Job::_initialize(
 			}
 		}
 	}
+	*/
 	if (!error)
 	{
 		if (_voxet == 0L)
