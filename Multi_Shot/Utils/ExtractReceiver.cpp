@@ -12,12 +12,82 @@
 
 void Print_Usage(char* cmd)
 {
-	printf("\nUsage: %s <input-ArrND-geom-file> <receiver-ffid> <output-ArrND-geom-file>\n\n",cmd);
+	printf("\nUsage: %s in=<input-geom-file> rcv_stat=<receiver-ffid> sou_line=<min>:<max> shot_po=<min>:<max> out=<output-geom-file>\n\n",cmd);
 }
 
-void Extract_Receiver(const char* input_path, long rec_ffid, const char* output_path)
+std::string input;
+std::string output;
+bool use_rcv_stat = false;
+int rcv_stat = 0;
+int sou_line_min = 0;
+int sou_line_max = -1;
+int shot_po_min = 0;
+int shot_po_max = -1;
+
+bool Process_Arguments(int argc, char* argv[])
 {
-	std::string geom_path = (std::string)input_path;
+	int num1, num2;
+	char str1[256];
+	for (int i = 1;  i < argc;  ++i)
+	{
+		if (sscanf(argv[i], "in=%s", str1) == 1)
+		{
+			input = (std::string)str1;
+		}
+		if (sscanf(argv[i], "out=%s", str1) == 1)
+		{
+			output = (std::string)str1;
+		}
+		if (sscanf(argv[i], "rcv_stat=%d", &num1) == 1)
+		{
+			rcv_stat = num1;
+			use_rcv_stat = true;
+		}
+		if (sscanf(argv[i], "sou_line=%d:%d", &num1, &num2) == 2)
+		{
+			sou_line_min = num1;
+			sou_line_max = num2;
+		}
+		if (sscanf(argv[i], "shot_po=%d:%d", num1, &num2) == 2)
+                {
+			shot_po_min = num1;
+			shot_po_max = num2;
+		}
+	}
+
+	printf("Arguments :: ");
+	if (input.size() > 0) printf("in=%s ",input.c_str());
+	if (output.size() > 0) printf("out=%s ",output.c_str());
+	if (use_rcv_stat) printf("rcv_stat=%d ",rcv_stat);
+	if (sou_line_min <= sou_line_max) printf("sou_line=%d:%d ",sou_line_min,sou_line_max);
+	if (shot_po_min <= shot_po_max) printf("shot_po=%d:%d ",shot_po_min,shot_po_max);
+	printf("\n");
+
+	if (input.size() > 0 && output.size() > 0)
+		return true;
+	else
+		return false;
+}
+
+bool Is_Included(GeomTraceAuxiliary &gtaux)
+{
+	if (
+		(!use_rcv_stat || rcv_stat == gtaux.getReceiverFFID()) && 
+		((sou_line_min > sou_line_max) || (gtaux.getSourceInline() >= sou_line_min && gtaux.getSourceInline() <= sou_line_max)) &&
+		((shot_po_min > shot_po_max) || (gtaux.getSourceXline() >= shot_po_min && gtaux.getSourceXline() <= shot_po_max))
+		)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+void Extract_Receiver()
+{
+	std::string geom_path = (std::string)input;
 	std::string ixl_path = geom_path + ".ixl";
 
 	struct stat st_geom; 
@@ -51,12 +121,20 @@ void Extract_Receiver(const char* input_path, long rec_ffid, const char* output_
 	int num_included = 0;
 	for (int isrc = 0; isrc < nsrc; isrc++)
 	{
+		gtm << gtd[isrc];
 		gtauxm << gtauxd[isrc];
 		bool included = false;
 		for (int ircv = 0;  ircv < nrcv;  ++ircv)
 		{
+			GeomTrace &gt = gtm[ircv].dat();
 			GeomTraceAuxiliary &gtaux = gtauxm[ircv].dat();
-			if (gtaux.getReceiverFFID() == rec_ffid) included = true;
+			if (gt.isLive())
+			{
+				//printf("SRC[il=%d,xl=%d,seqno=%d,gunseq=%d] - REC[ffid=%d,il=%d,xl=%d]\n",
+				//		gtaux.getSourceInline(),gtaux.getSourceXline(),gtaux.getSeqNo(),gtaux.getGunSeq(),
+				//		gtaux.getReceiverFFID(),gtaux.getReceiverInline(),gtaux.getReceiverXline());
+				included = included || Is_Included(gtaux);
+			}
 		}
 		if (included)
 		{
@@ -76,17 +154,18 @@ void Extract_Receiver(const char* input_path, long rec_ffid, const char* output_
 		int cnt = 0;
 		for (int isrc = 0; isrc < nsrc; isrc++)
 		{
+			gtm << gtd[isrc];
 			gtauxm << gtauxd[isrc];
 			bool included = false;
 			for (int ircv = 0;  ircv < nrcv;  ++ircv)
 			{
+				GeomTrace &gt = gtm[ircv].dat();
 				GeomTraceAuxiliary &gtaux = gtauxm[ircv].dat();
-				if (gtaux.getReceiverFFID() == rec_ffid) included = true;
+				included = included || (gt.isLive() && Is_Included(gtaux));
 			}
 			if (included)
 			{
 				printf("isrc %d is included\n",isrc);
-				gtm << gtd[isrc];
 				for (int ircv = 0;  ircv < nrcv;  ++ircv)
 				{
 					GeomTrace &gt = gtm[ircv].dat();
@@ -108,8 +187,8 @@ void Extract_Receiver(const char* input_path, long rec_ffid, const char* output_
 			}
 		}
 
-		ArrND<GeomTrace> gtd2(size3, output_path);
-		ArrND<GeomTraceAuxiliary> gtauxd2(size3, ((std::string)(output_path)+".ixl").c_str());
+		ArrND<GeomTrace> gtd2(size3, output.c_str());
+		ArrND<GeomTraceAuxiliary> gtauxd2(size3, (output+".ixl").c_str());
 
 		gtd2<<gtarr;
 		gtauxd2<<gtauxarr;
@@ -135,13 +214,13 @@ void Extract_Receiver(const char* input_path, long rec_ffid, const char* output_
 
 int main(int argc, char* argv[])
 {
-	if (argc != 4)
+	if (!Process_Arguments(argc,argv))
 	{
 		Print_Usage(argv[0]);
 		return -1;
 	}
 
-	Extract_Receiver(argv[1],atol(argv[2]),argv[3]);
+	Extract_Receiver();
 
 	return 0;
 }

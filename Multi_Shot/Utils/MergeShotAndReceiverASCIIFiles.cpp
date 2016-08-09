@@ -21,6 +21,7 @@ struct pos
 {
 	long ffid;
 	int seqno;
+	int gunseq;
 	int il;
 	int xl;
 	time_t shot_time;
@@ -72,6 +73,7 @@ std::list<pos> read_ascii(
 	char* filename,
 	int idx_ffid,
 	int idx_seqno,
+	int idx_gunseq,
 	int idx_shot_time,
 	int idx_il,
 	int idx_xl,
@@ -123,6 +125,14 @@ std::list<pos> read_ascii(
 			{
 				p.seqno = 0;
 			}
+			if (idx_gunseq > 0)
+			{
+				p.gunseq = atoi(substrings[idx_gunseq-1].c_str());
+			}
+			else
+			{
+				p.gunseq = 0;
+			}
 			if (idx_il > 0)
 			{
 				p.il = atoi(substrings[idx_il-1].c_str());
@@ -166,11 +176,11 @@ std::list<pos> read_ascii(
 
 int main(int argc, char* argv[])
 {
-	if (argc != 23)
+	if (argc != 24)
 	{
 		printf("\n");
 		printf("Usage : %s \n",argv[0]);
-		printf("        <source-file> <seqno> <source-ffid-column> <source-il-column> <source-xl-column> <source-X-column> <source-Y-column> <source-Z-column> <shot-time-column>\n");
+		printf("        <source-file> <seqno> <gunseq> <source-ffid-column> <source-il-column> <source-xl-column> <source-X-column> <source-Y-column> <source-Z-column> <shot-time-column>\n");
 		printf("        <receiver-file> <receiver-ffid_column> <receiver-il-column> <receiver-xl-column> <receiver-X-column> <receiver-Y-column> <receiver-Z-column>\n");
 		printf("        <maximum-offset> <voxet-file> <voxet-axis-mapping> <geometry-file>\n");
 		printf("        <start-day> <start-year>\n");
@@ -190,7 +200,7 @@ int main(int argc, char* argv[])
 	setenv("TZ", "UTC", 1);  // TMJ - We override local timezone, force it to UTC since all field timestamps are in UTC
 	const int log_level = 2;
 
-	double max_offset = atof(argv[17]);
+	double max_offset = atof(argv[18]);
 	if (max_offset <= 0.0)
 	{
 		printf("Maximum offset filter disabled, all source-receiver pairs will be included.\n");
@@ -200,8 +210,8 @@ int main(int argc, char* argv[])
 		printf("Maximum offset filter enabled. Offset capped at %.2lf\n",max_offset);
 	}
 
-	int start_day = atoi(argv[21]);
-	int start_year = atoi(argv[22]);
+	int start_day = atoi(argv[22]);
+	int start_year = atoi(argv[23]);
 	if (start_day < 1 || start_day > 366)
 	{
 		printf("Error! <start-day> must be >= 1 and <= 366\n");
@@ -215,20 +225,21 @@ int main(int argc, char* argv[])
 		return -2;
 	}
 	struct stat rfs;
-	if (stat(argv[10],&rfs) != 0)
+	if (stat(argv[11],&rfs) != 0)
 	{
-		printf("stat(%s) returned error.\n",argv[10]);
+		printf("stat(%s) returned error.\n",argv[11]);
 		return -2;
 	}
 
 	int seqno = atoi(argv[2]);
-	int source_ffid = atoi(argv[3]);
-	int source_il = atoi(argv[4]);
-	int source_xl = atoi(argv[5]);
-	int source_X = atoi(argv[6]);
-	int source_Y = atoi(argv[7]);
-	int source_Z = atoi(argv[8]);
-	int shot_time = atoi(argv[9]);
+	int gunseq = atoi(argv[3]);
+	int source_ffid = atoi(argv[4]);
+	int source_il = atoi(argv[5]);
+	int source_xl = atoi(argv[6]);
+	int source_X = atoi(argv[7]);
+	int source_Y = atoi(argv[8]);
+	int source_Z = atoi(argv[9]);
+	int shot_time = atoi(argv[10]);
 	if (source_X <= 0 || source_Y <= 0 || source_Z <= 0)
 	{
 		printf("Error! Source columns must be >= 1.\n");
@@ -245,12 +256,12 @@ int main(int argc, char* argv[])
 		printf("All shots will have zero time.\n");
 	}
 
-	int receiver_ffid = atoi(argv[11]);
-	int receiver_il = atoi(argv[12]);
-	int receiver_xl = atoi(argv[13]);
-	int receiver_X = atoi(argv[14]);
-	int receiver_Y = atoi(argv[15]);
-	int receiver_Z = atoi(argv[16]);
+	int receiver_ffid = atoi(argv[12]);
+	int receiver_il = atoi(argv[13]);
+	int receiver_xl = atoi(argv[14]);
+	int receiver_X = atoi(argv[15]);
+	int receiver_Y = atoi(argv[16]);
+	int receiver_Z = atoi(argv[17]);
 	if (receiver_X <= 0 || receiver_Y <= 0 || receiver_Z <= 0)
 	{
 		printf("Error! Receiver columns must be >= 1.\n");
@@ -261,13 +272,13 @@ int main(int argc, char* argv[])
 	Global_Coordinate_System* gcs = 0L;
 	if (max_offset > 0.0)
 	{
-		voxet = new Voxet(log_level,argv[18]);
+		voxet = new Voxet(log_level,argv[19]);
 		gcs = voxet->Get_Global_Coordinate_System();
-		gcs->Set_Transpose(argv[19]);
+		gcs->Set_Transpose(argv[20]);
 	}
 
-	std::list<pos> receiver_positions = read_ascii("receiver",argv[10],receiver_ffid,0,0,receiver_il,receiver_xl,receiver_X,receiver_Y,receiver_Z,0,0);
-	std::list<pos> source_positions = read_ascii("source",argv[1],source_ffid,seqno,shot_time,source_il,source_xl,source_X,source_Y,source_Z,start_day,start_year);
+	std::list<pos> receiver_positions = read_ascii("receiver",argv[11],receiver_ffid,0,0,0,receiver_il,receiver_xl,receiver_X,receiver_Y,receiver_Z,0,0);
+	std::list<pos> source_positions = read_ascii("source",argv[1],source_ffid,seqno,gunseq,shot_time,source_il,source_xl,source_X,source_Y,source_Z,start_day,start_year);
 	if (max_offset > 0.0)
 	{
 		int max_rx = 0;
@@ -346,6 +357,7 @@ int main(int argc, char* argv[])
 					GeomTraceAuxiliary &gtaux = gtauxarr[isrc][irec].dat();
 					gtaux.setSourceFFID(it1.ffid);
 					gtaux.setSeqNo(it1.seqno);
+					gtaux.setGunSeq(it1.gunseq);
 					gtaux.setSourceInline(it1.il);
 					gtaux.setSourceXline(it1.xl);
 					gtaux.setReceiverFFID(it2.ffid);
@@ -377,8 +389,8 @@ int main(int argc, char* argv[])
 			++ isrc;
 		}
 
-		ArrND<GeomTrace> gtd(size, argv[20]);
-		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(argv[20])+".ixl").c_str());
+		ArrND<GeomTrace> gtd(size, argv[21]);
+		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(argv[21])+".ixl").c_str());
 
 		gtd<<gtarr;
 		gtauxd<<gtauxarr;
@@ -432,6 +444,7 @@ int main(int argc, char* argv[])
 				GeomTraceAuxiliary &gtaux = gtauxarr[isrc][irec].dat();
 				gtaux.setSourceFFID(it1.ffid);
 				gtaux.setSeqNo(it1.seqno);
+				gtaux.setGunSeq(it1.gunseq);
 				gtaux.setSourceInline(it1.il);
 				gtaux.setSourceXline(it1.xl);
 				gtaux.setReceiverFFID(it2.ffid);
@@ -442,8 +455,8 @@ int main(int argc, char* argv[])
 			++ isrc;
 		}
 
-		ArrND<GeomTrace> gtd(size, argv[20]);
-		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(argv[20])+".ixl").c_str());
+		ArrND<GeomTrace> gtd(size, argv[21]);
+		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(argv[21])+".ixl").c_str());
 
 		gtd<<gtarr;
 		gtauxd<<gtauxarr;

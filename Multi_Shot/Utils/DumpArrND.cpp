@@ -83,8 +83,8 @@ void DumpArrND(const char* path)
 					int usec = gt.getShotTimeUSec();
 					char* time_str = strdup(asctime(localtime(&shotTime)));
 					time_str[strlen(time_str)-1] = 0;  // remove newline char
-					printf("SRC[time=%s,usec=%d,ffid=%d,il=%d,xl=%d,seqno=%d,pos=(%.2f,%.2f,%.2f)] - REC[ffid=%d,il=%d,xl=%d,pos=(%.2f,%.2f,%.2f)]\n",
-							time_str,usec,gt.getSortindex(),gtaux.getSourceInline(),gtaux.getSourceXline(),gtaux.getSeqNo(),gt.getSx(),gt.getSy(),gt.getSz(),
+					printf("SRC[time=%s,usec=%d,ffid=%d,il=%d,xl=%d,seqno=%d,gunseq=%d,pos=(%.2f,%.2f,%.2f)] - REC[ffid=%d,il=%d,xl=%d,pos=(%.2f,%.2f,%.2f)]\n",
+							time_str,usec,gt.getSortindex(),gtaux.getSourceInline(),gtaux.getSourceXline(),gtaux.getSeqNo(),gtaux.getGunSeq(),gt.getSx(),gt.getSy(),gt.getSz(),
 							gtaux.getReceiverFFID(),gtaux.getReceiverInline(),gtaux.getReceiverXline(),gt.getRx(),gt.getRy(),gt.getRz());
 				}
 			}

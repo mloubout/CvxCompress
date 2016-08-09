@@ -296,6 +296,7 @@ int main(int argc, char **argv) {
 	//	getline (in_pathfile, comment);
 	
 	// TMJ set ELAORTHO_CUSTOM_PARMFILE to point to custom parmfile
+	/*
 	string custom_parmfile_path = parmfile_path + "_custom";
 	setenv("ELAORTHO_CUSTOM_PARMFILE",custom_parmfile_path.c_str(),1);
 	struct stat st;
@@ -308,6 +309,7 @@ int main(int argc, char **argv) {
 	{
 		printf("Changed environment variable ELAORTHO_CUSTOM_PARMFILE to %s.\n",custom_parmfile_path.c_str());
 	}
+	*/
 
 	in_pathfile.close();
 	char parmfile [parmfile_path.size()+1];

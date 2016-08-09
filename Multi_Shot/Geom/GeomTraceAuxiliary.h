@@ -13,6 +13,7 @@ class GeomTraceAuxiliary {
 private:
 	int _sffid;	// source ffid
 	int _seqno;	// source sequence number
+	int _gunseq;	// gun id (1 or 2)
 	int _sil;	// source inline
 	int _sxl;	// source xline
 	int _rffid;	// receiver ffid
@@ -35,6 +36,9 @@ public:
 	int getSeqNo() {return _seqno;}
 	void setSeqNo(int seqno) {_seqno=seqno;}
 
+	int getGunSeq() {return _gunseq;}
+	void setGunSeq(int gunseq) {_gunseq=gunseq;}
+
 	int getSourceInline() {return _sil;}
 	void setSourceInline(int il) {_sil=il;}
 
@@ -55,6 +59,7 @@ GeomTraceAuxiliary::GeomTraceAuxiliary(){
 
 	_sffid = 0;
 	_seqno = 0;
+	_gunseq = 0;
 	_sil = 0;
 	_sxl = 0;
 	_rffid = 0;
@@ -65,6 +70,7 @@ GeomTraceAuxiliary::GeomTraceAuxiliary(GeomTraceAuxiliary& gt)
 {
 	_sffid = gt._sffid;
 	_seqno = gt._seqno;
+	_gunseq = gt._gunseq;
 	_sil = gt._sil;
 	_sxl = gt._sxl;
 	_rffid = gt._rffid;
@@ -76,6 +82,7 @@ GeomTraceAuxiliary& GeomTraceAuxiliary::operator=(const GeomTraceAuxiliary &gt){
 
 	_sffid = gt._sffid;
 	_seqno = gt._seqno;
+	_gunseq = gt._gunseq;
 	_sil = gt._sil;
 	_sxl = gt._sxl;
 	_rffid = gt._rffid;
