@@ -413,7 +413,7 @@ int SEGY_Trace_Header::Get_Custom1_REC_H2OD()
 
 double SEGY_Trace_Header::Get_Custom1_AOFFSET()
 {
-	return _Get_Double(90);
+	return _Get_Float(52);
 }
 
 short SEGY_Trace_Header::Get_Custom1_FLAG_VWXYZT()

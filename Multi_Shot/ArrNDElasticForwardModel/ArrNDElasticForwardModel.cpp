@@ -241,6 +241,9 @@ public:
 
 			//Re-read the earth model for the new subvolume
 			prop->Read_Earth_Model();
+			std::list<int> fields;
+			fields.push_back(job->Attr_Idx_Vp);
+			if (job->Vp_QC_Output_Enabled()) job->Write_Propagation_Earth_Model_To_Voxet(file->Get_Base_Filename(),fields);
 			if (debug_earthmodel_slices) {
 				char str[512];
 				sprintf(str,"slices/model_xz_slice_%04d",itask+1);

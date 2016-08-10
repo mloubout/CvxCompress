@@ -697,6 +697,27 @@ const char* Global_Coordinate_System::_Transpose_Idx2String(int index)
 	}
 }
 
+const char* Global_Coordinate_System::Get_Axis_Labels()
+{
+	switch (_transpose)
+        {
+                case 0:
+                        return "Z Y X";
+                case 1:
+                        return "Z X Y";
+                case 2:
+                        return "Y Z X";
+                case 3:
+                        return "Y X Z";
+                case 4:
+                        return "X Z Y";
+                case 5:
+                        return "X Y Z";
+                default:
+                        return 0L;
+        }
+}
+
 bool Global_Coordinate_System::_Transpose_Is_Valid()
 {
 	return _Transpose_Idx2String(_transpose) != 0L ? true : false;

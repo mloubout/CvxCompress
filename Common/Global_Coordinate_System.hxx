@@ -174,6 +174,10 @@ public:
 	bool V_Is_Z();
 	bool W_Is_Z();
 
+	//!
+	//! Ex.: Returns "Z X Y" if transpose is set to "zxy";
+	const char* Get_Axis_Labels();
+
 	void Convert_Local_To_Transposed_Fractional_Index(
 			double lu,
 			double lv,

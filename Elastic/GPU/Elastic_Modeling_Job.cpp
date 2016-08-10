@@ -27,7 +27,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
         const char* parmfile_path,
 	Voxet_Memory_Mapper* mapper,
 	Variable_Water_Velocity* Vwxyzt
-        )
+        ) : Attr_Idx_Vp(0),Attr_Idx_Vs(1),Attr_Idx_Density(2),Attr_Idx_Q(3),Attr_Idx_Dip(4),Attr_Idx_Azimuth(5),Attr_Idx_Rake(6),Attr_Idx_Delta1(7),Attr_Idx_Delta2(8),Attr_Idx_Delta3(9),Attr_Idx_Epsilon1(10),Attr_Idx_Epsilon2(11),Attr_Idx_Gamma1(12),Attr_Idx_Gamma2(13)
 {
 	_mapper = mapper;
 	_Vwxyzt_Computer = Vwxyzt;
@@ -41,7 +41,7 @@ Elastic_Modeling_Job::Elastic_Modeling_Job(
 	Voxet_Memory_Mapper* mapper,
 	Variable_Water_Velocity* Vwxyzt,
 	std::istream& fs
-	)
+	) : Attr_Idx_Vp(0),Attr_Idx_Vs(1),Attr_Idx_Density(2),Attr_Idx_Q(3),Attr_Idx_Dip(4),Attr_Idx_Azimuth(5),Attr_Idx_Rake(6),Attr_Idx_Delta1(7),Attr_Idx_Delta2(8),Attr_Idx_Delta3(9),Attr_Idx_Epsilon1(10),Attr_Idx_Epsilon2(11),Attr_Idx_Gamma1(12),Attr_Idx_Gamma2(13)
 {
 	_mapper = mapper;
 	_Vwxyzt_Computer = Vwxyzt;
@@ -1255,6 +1255,16 @@ bool Elastic_Modeling_Job::_read_parmfile(
 				_Num_Parallel_Shots = num_parallel_shots;
 				if (_log_level > 3) printf("NUM_PARALLEL_SHOTS %d\n",_Num_Parallel_Shots);
 			}
+			char Vp_QC_Output_str[256];
+			if (!error && sscanf(s, "Vp_QC_Output %s", Vp_QC_Output_str) == 1)
+			{
+				_tolower(Vp_QC_Output_str);
+				if (strcmp(Vp_QC_Output_str,"enabled") == 0)
+				{
+					_Vp_QC_Output = true;
+					if (_log_level >= 3) printf("Vp_QC_Output ENABLED\n");
+				}
+			}
 		}
 	}
 	return error;
@@ -1275,6 +1285,7 @@ void Elastic_Modeling_Job::_initialize(
 
 	_spatial_order = 8;  // default is 8th order, optional 16
 	_ebcdic_header_filename = 0L;
+	_Vp_QC_Output = false;
 	
 	_num_em_props = 14;
 
@@ -3085,3 +3096,58 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	*/
 }
 
+void Elastic_Modeling_Job::Write_Propagation_Earth_Model_To_Voxet(const char* base_filename, std::list<int> fields)
+{
+	std::string basename = (std::string)base_filename;
+	std::string voxet_filename = basename + "_prop_model.vo";
+	printf("Writing propagation earth model to %s.\n",voxet_filename.c_str());
+	FILE* fp = fopen(voxet_filename.c_str(),"w");
+	assert(fp != 0L);
+	fprintf(fp,"GOCAD Voxet 0.01\n");
+	fprintf(fp,"HEADER {\n");
+	fprintf(fp,"*name: %s\n",basename.c_str());
+	fprintf(fp,"}\n");
+	Global_Coordinate_System* gcs = _voxet->Get_Global_Coordinate_System();
+	double g0,g1,g2;
+	gcs->Convert_Transposed_Index_To_Global(_prop_x0,_prop_y0,_prop_z0,g0,g1,g2);
+	fprintf(fp,"AXIS_O %.6f %.6f %.6f\n",g0,g1,g2);
+	gcs->Convert_Local_To_Global((double)(gcs->Get_NU()-1)*gcs->Get_DU(),0,0,g0,g1,g2);
+	fprintf(fp,"AXIS_U %.6f %.6f %.6f\n",g0,g1,g2);
+	gcs->Convert_Local_To_Global(0,(double)(gcs->Get_NV()-1)*gcs->Get_DV(),0,g0,g1,g2);
+	fprintf(fp,"AXIS_V %.6f %.6f %.6f\n",g0,g1,g2);
+	gcs->Convert_Local_To_Global(0,0,(double)(gcs->Get_NW()-1)*gcs->Get_DW(),g0,g1,g2);
+	fprintf(fp,"AXIS_W %.6f %.6f %.6f\n",g0,g1,g2);
+	fprintf(fp,"AXIS_MIN 0 0 0\n");
+	fprintf(fp,"AXIS_MAX 1 1 1\n");
+	fprintf(fp,"AXIS_N %d %d %d\n",gcs->Get_NU(),gcs->Get_NV(),gcs->Get_NW());
+	fprintf(fp,"AXIS_NAME %s\n",gcs->Get_Axis_Labels());
+	int prop = 0;
+	for (std::list<int>::iterator it = fields.begin();  it != fields.end();  ++it)
+	{
+		++prop;
+		fprintf(fp,"\n");
+		std::string attr = Get_Attribute_String(*it);
+		std::string prop_moniker = attr;
+		std::string prop_filename = basename + "_" + attr + ".bin";
+		fprintf(fp,"PROPERTY  %d %s\n",prop,prop_moniker.c_str());
+		fprintf(fp,"PROP_UNIT %d unitless\n",prop);
+		fprintf(fp,"PROP_FILE %d %s\n",prop,prop_filename.c_str());
+		printf("Writing propagation earth model field %s to file %s.\n",attr.c_str(),prop_filename.c_str());
+		FILE* fp2 = fopen(prop_filename.c_str(),"wb");
+		assert(fp2 != 0L);
+		for (int z = 0;  z < _prop_nz;  ++z)
+		{
+			for (int y = 0;  y < _prop_ny;  ++y)
+			{
+				for (int x = 0;  x < _prop_nx;  ++x)
+				{
+					float val = Get_Earth_Model_Attribute(*it,x,y,z);
+					swap4bytes((int*)&val,1);
+					fwrite(&val,sizeof(float),1,fp2);
+				}
+			}
+		}
+		fclose(fp2);
+	}
+	fclose(fp);
+}

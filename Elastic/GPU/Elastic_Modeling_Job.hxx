@@ -2,8 +2,11 @@
 #define CVX_ESDRD_MI_TMJ_ELASTIC_MODELING_JOB_HXX
 
 #include <cstdio>
+#include <cassert>
 #include <istream>
 #include <map>
+#include <list>
+#include <string>
 
 class Voxet;
 class Voxet_Property;
@@ -33,6 +36,11 @@ public:
 	//! Return true if this model includes a variable (in time and space) water column.
 	//!
 	bool Is_Vwxyzt();
+
+	//!
+	//! Return true if parmfile requested debug output of Vp.
+	//!
+	bool Vp_QC_Output_Enabled() {return _Vp_QC_Output;}
 
 	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
 
@@ -176,20 +184,90 @@ public:
 
 	int Get_Number_Of_Parallel_Shots() {return _Num_Parallel_Shots;}
 
-	static const int Attr_Idx_Vp = 0;
-	static const int Attr_Idx_Vs = 1;
-	static const int Attr_Idx_Density = 2;
-	static const int Attr_Idx_Q = 3;
-	static const int Attr_Idx_Dip = 4;
-	static const int Attr_Idx_Azimuth = 5;
-	static const int Attr_Idx_Rake = 6;
-	static const int Attr_Idx_Delta1 = 7;
-	static const int Attr_Idx_Delta2 = 8;
-	static const int Attr_Idx_Delta3 = 9;
-	static const int Attr_Idx_Epsilon1 = 10;
-	static const int Attr_Idx_Epsilon2 = 11;
-	static const int Attr_Idx_Gamma1 = 12;
-	static const int Attr_Idx_Gamma2 = 13;
+	//!
+	//! Write selected fields from propagation earth model to a voxet.
+	//! The propagation earth model is the earth model the propagator sees, after compression, variable water column etc.
+	//!
+	void Write_Propagation_Earth_Model_To_Voxet(const char* base_filename, std::list<int> fields);
+
+	const int Attr_Idx_Vp;
+	const int Attr_Idx_Vs;
+	const int Attr_Idx_Density;
+	const int Attr_Idx_Q;
+	const int Attr_Idx_Dip;
+	const int Attr_Idx_Azimuth;
+	const int Attr_Idx_Rake;
+	const int Attr_Idx_Delta1;
+	const int Attr_Idx_Delta2;
+	const int Attr_Idx_Delta3;
+	const int Attr_Idx_Epsilon1;
+	const int Attr_Idx_Epsilon2;
+	const int Attr_Idx_Gamma1;
+	const int Attr_Idx_Gamma2;
+
+	std::string Get_Attribute_String(const int Attr_Idx)
+	{
+		if (Attr_Idx == Attr_Idx_Vp)
+		{
+			return "Vp";
+		}
+		else if (Attr_Idx == Attr_Idx_Vs)
+		{
+			return "Vs";
+		}
+		else if (Attr_Idx == Attr_Idx_Density)
+		{
+			return "Density";
+		}
+		else if (Attr_Idx == Attr_Idx_Q)
+		{
+			return "Q";
+		}
+		else if (Attr_Idx == Attr_Idx_Dip)
+		{
+			return "Dip";
+		}
+		else if (Attr_Idx == Attr_Idx_Azimuth)
+		{
+			return "Azimuth";
+		}
+		else if (Attr_Idx == Attr_Idx_Rake)
+		{
+			return "Rake";
+		}
+		else if (Attr_Idx == Attr_Idx_Delta1)
+		{
+			return "Delta1";
+		}
+		else if (Attr_Idx == Attr_Idx_Delta2)
+		{
+			return "Delta2";
+		}
+		else if (Attr_Idx == Attr_Idx_Delta3)
+		{
+			return "Delta3";
+		}
+		else if (Attr_Idx == Attr_Idx_Epsilon1)
+		{
+			return "Epsilon1";
+		}
+		else if (Attr_Idx == Attr_Idx_Epsilon2)
+		{
+			return "Epsilon2";
+		}
+		else if (Attr_Idx == Attr_Idx_Gamma1)
+		{
+			return "Gamma1";
+		}
+		else if (Attr_Idx == Attr_Idx_Gamma2)
+		{
+			return "Gamma2";
+		}
+		else
+		{
+			assert(false);
+		}
+	}
 
 private:
 	friend class Elastic_Propagator;
@@ -216,6 +294,7 @@ private:
 	bool _mapper_enabled;
 	Voxet_Memory_Mapper* _mapper;
 	Voxet* _voxet;
+	bool _Vp_QC_Output;
 
 	int _num_em_props;
 	Voxet_Property** _props;

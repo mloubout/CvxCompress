@@ -50,6 +50,7 @@ public:
 	bool Do_Vy() {return _do_Vy;}
 	bool Do_Vz() {return _do_Vz;}
 
+	const char* Get_Base_Filename() {return _base_filename;}
 	const char* Get_Full_Path(char* buf, int flag);
 
 	void Add_Receiver_Range_X(
