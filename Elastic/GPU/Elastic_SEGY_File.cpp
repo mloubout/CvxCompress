@@ -435,6 +435,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		float rec_water_bathymetry_depth;
 		float rec_water_Vp;
 	} trc_id_hdr;
+	assert(sizeof(trc_id_hdr) == 240);
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
 	/* cmp_x starts at byte position 201 */
 
