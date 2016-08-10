@@ -3139,13 +3139,15 @@ void Elastic_Modeling_Job::Write_Propagation_Earth_Model_To_Voxet(const char* ba
 		printf("Writing propagation earth model field %s to file %s.\n",attr.c_str(),prop_filename.c_str());
 		FILE* fp2 = fopen(prop_filename.c_str(),"wb");
 		assert(fp2 != 0L);
-		for (int z = 0;  z < _prop_nz;  ++z)
+		for (int w = 0;  w < prop_nw;  ++w)
 		{
-			for (int y = 0;  y < _prop_ny;  ++y)
+			for (int v = 0;  v < prop_nv;  ++v)
 			{
-				for (int x = 0;  x < _prop_nx;  ++x)
+				for (int u = 0;  u < prop_nu;  ++u)
 				{
-					float val = Get_Earth_Model_Attribute(*it,x,y,z);
+					int ix,iy,iz;
+					gcs->Convert_Local_Index_To_Transposed_Index(u,v,w,ix,iy,iz);
+					float val = Get_Earth_Model_Attribute(*it,ix,iy,iz);
 					swap4bytes((int*)&val,1);
 					fwrite(&val,sizeof(float),1,fp2);
 				}
