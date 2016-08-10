@@ -2761,7 +2761,6 @@ bool Elastic_Modeling_Job::_Check_Property(
 
 Elastic_Modeling_Job::~Elastic_Modeling_Job()
 {
-	delete _Vwxyzt_Computer;
 	if (_ebcdic_header_filename != 0L) free(_ebcdic_header_filename);
 	if (_shots != 0L)
 	{
