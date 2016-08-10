@@ -2831,16 +2831,22 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 
 	if (_props[Attr_Idx_Vp]->Min_Max_Is_From_Scan() && _Vwxyzt_Computer != 0L && _Vwxyzt_Computer->Has_Been_Initialized())
 	{
+		float old_Vp_Min = _pck_min[Attr_Idx_Vp];
+		float old_Vp_Max = old_Vp_Min + _pck_range[Attr_Idx_Vp];
 		float Vw_min = _Vwxyzt_Computer->Get_Min();
 		float Vw_max = _Vwxyzt_Computer->Get_Max();
 		float Vp_min = _pck_min[Attr_Idx_Vp];
 		float Vp_max = Vp_min + _pck_range[Attr_Idx_Vp];
 		if (Vw_min < Vp_min) Vp_min = Vw_min;
 		if (Vw_max > Vp_max) Vp_max = Vw_max;
-		_props[Attr_Idx_Vp]->Set_MinMax(Vp_min,Vp_max);
-		_pck_min[Attr_Idx_Vp] = Vp_min;
-		_pck_max[Attr_Idx_Vp] = Vp_max;
-		_pck_range[Attr_Idx_Vp] = Vp_max - Vp_min;
+		if (Vp_min < old_Vp_Min || Vp_max > old_Vp_Max)
+		{
+			_props[Attr_Idx_Vp]->Set_MinMax(Vp_min,Vp_max);
+			_pck_min[Attr_Idx_Vp] = Vp_min;
+			_pck_max[Attr_Idx_Vp] = Vp_max;
+			_pck_range[Attr_Idx_Vp] = Vp_max - Vp_min;
+			printf("Adjusted Vp range from [%.2f,%.2f] to [%.2f,%.2f]\n",old_Vp_Min,old_Vp_Max,Vp_min,Vp_max);
+		}
 	}
 
 	for (long trace_group = 0;  trace_group < nn;  trace_group+=nthreads*trcblk)
