@@ -3111,15 +3111,19 @@ void Elastic_Modeling_Job::Write_Propagation_Earth_Model_To_Voxet(const char* ba
 	double g0,g1,g2;
 	gcs->Convert_Transposed_Index_To_Global(_prop_x0,_prop_y0,_prop_z0,g0,g1,g2);
 	fprintf(fp,"AXIS_O %.6f %.6f %.6f\n",g0,g1,g2);
-	gcs->Convert_Local_To_Global((double)(gcs->Get_NU()-1)*gcs->Get_DU(),0,0,g0,g1,g2);
-	fprintf(fp,"AXIS_U %.6f %.6f %.6f\n",g0,g1,g2);
-	gcs->Convert_Local_To_Global(0,(double)(gcs->Get_NV()-1)*gcs->Get_DV(),0,g0,g1,g2);
-	fprintf(fp,"AXIS_V %.6f %.6f %.6f\n",g0,g1,g2);
-	gcs->Convert_Local_To_Global(0,0,(double)(gcs->Get_NW()-1)*gcs->Get_DW(),g0,g1,g2);
-	fprintf(fp,"AXIS_W %.6f %.6f %.6f\n",g0,g1,g2);
+	double o0,o1,o2;
+	gcs->Convert_Local_Index_To_Global(0,0,0,o0,o1,o2);
+	gcs->Convert_Local_Index_To_Global(gcs->Get_NU()-1,0,0,g0,g1,g2);
+	fprintf(fp,"AXIS_U %.6f %.6f %.6f\n",g0-o0,g1-o1,g2-o2);
+	gcs->Convert_Local_Index_To_Global(0,gcs->Get_NV()-1,0,g0,g1,g2);
+	fprintf(fp,"AXIS_V %.6f %.6f %.6f\n",g0-o0,g1-o1,g2-o2);
+	gcs->Convert_Local_Index_To_Global(0,0,gcs->Get_NW()-1,g0,g1,g2);
+	fprintf(fp,"AXIS_W %.6f %.6f %.6f\n",g0-o0,g1-o1,g2-o2);
 	fprintf(fp,"AXIS_MIN 0 0 0\n");
 	fprintf(fp,"AXIS_MAX 1 1 1\n");
-	fprintf(fp,"AXIS_N %d %d %d\n",gcs->Get_NU(),gcs->Get_NV(),gcs->Get_NW());
+	int prop_nu, prop_nv, prop_nw;
+	gcs->Convert_Transposed_Index_To_Local_Index(_prop_nx,_prop_ny,_prop_nz,prop_nu,prop_nv,prop_nw);
+	fprintf(fp,"AXIS_N %d %d %d\n",prop_nu,prop_nv,prop_nw);
 	fprintf(fp,"AXIS_NAME %s\n",gcs->Get_Axis_Labels());
 	int prop = 0;
 	for (std::list<int>::iterator it = fields.begin();  it != fields.end();  ++it)
