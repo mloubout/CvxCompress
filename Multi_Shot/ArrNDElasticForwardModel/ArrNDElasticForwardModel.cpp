@@ -243,7 +243,12 @@ public:
 			prop->Read_Earth_Model();
 			std::list<int> fields;
 			fields.push_back(job->Attr_Idx_Vp);
-			if (job->Vp_QC_Output_Enabled()) job->Write_Propagation_Earth_Model_To_Voxet(file->Get_Base_Filename(),fields);
+			if (job->Vp_QC_Output_Enabled())
+			{
+				char str[1024];
+				sprintf(str,"%s_%05d",file->Get_Base_Filename(),file->Get_File_Index());
+				job->Write_Propagation_Earth_Model_To_Voxet(str,fields);
+			}
 			if (debug_earthmodel_slices) {
 				char str[512];
 				sprintf(str,"slices/model_xz_slice_%04d",itask+1);
