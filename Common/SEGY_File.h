@@ -81,11 +81,42 @@ public:
 	int Get_XLine();
 	void Set_XLine(int XL);
 
+	int Get_Custom1_SEQ_NO();
+	short Get_Custom1_GUN_SEQ();
+	short Get_Custom1_COMPON();
+	int Get_Custom1_FFID();
+	int Get_Custom1_OFFSET();
+	int Get_Custom1_RCV_ELEV();
+	int Get_Custom1_DEPTH();
+	int Get_Custom1_SOU_H2OD();
+	int Get_Custom1_REC_H2OD();
+	double Get_Custom1_AOFFSET();
+	short Get_Custom1_FLAG_VWXYZT();
+	double Get_Custom1_SOU_XD();
+	double Get_Custom1_SOU_YD();
+	double Get_Custom1_REC_XD();
+	double Get_Custom1_REC_YD();
+	int Get_Custom1_RCV_STAT();
+	short Get_Custom1_YEAR();
+	short Get_Custom1_DAY_OF_YEAR();
+	short Get_Custom1_HOUR_OF_DAY();
+	short Get_Custom1_MINUTE_OF_HOUR();
+	short Get_Custom1_SECOND_OF_MINUTE();
+	int Get_Custom1_USEC_OF_SECOND();
+	int Get_Custom1_SOU_LINE();
+	int Get_Custom1_SHOT_POINT();
+	int Get_Custom1_RCV_LINE();
+	int Get_Custom1_RCV_POINT();
+
         void Write(FILE* fp);
 
 private:
 	bool _Is_Valid;
 	char* _hdr;
+	short _Get_Short(int bytepos);
+	int _Get_Int(int bytepos);
+	float _Get_Float(int bytepos);
+	double _Get_Double(int bytepos);
 };
 
 class SEGY_Trace

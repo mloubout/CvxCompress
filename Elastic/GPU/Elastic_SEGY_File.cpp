@@ -254,52 +254,55 @@ void Elastic_SEGY_File::Write_SEGY_File(
         } reel_id_hdr2;
         memset((void*)&reel_id_hdr2, 0, sizeof(reel_id_hdr2));
 
-        struct
-        {
+	struct
+	{
 		// 0-3
-                int trcseqno;
+		int trcseqno;
 
 		// 4-5
-                short gunseq;
-		
+		short gunseq;
+
 		// 6-7
 		short compon;
 
 		// 8-11
-                int isrc;
+		int isrc;
 
 		// 12-15
-                int ichan;
+		int ichan;
 
 		// 16-19
-                int skip1;
+		int skip1;
 
 		// 20-23
-                int cmpbin;
+		int cmpbin;
 
 		// 24-27
-                int trcensemb;
+		int trcensemb;
 
 		// 28-29
-                short code;
+		short code;
 
 		// 30-35
-                char skip2[6];
+		char skip2[6];
 
 		// 36-39
-                int offset;
+		int offset;
 
 		// 40-43
-                int recelev;
+		int recelev;
 
 		// 44-47
-                int elevatsrc;
+		int elevatsrc;
 
 		// 48-51
-                int srcdepth;
+		int srcdepth;
 
-		// 52-59
-		char skip3[8];
+		// 52-55
+		float aoffset;		// absolute offset, including depth difference, between source and receiver
+
+		// 56-59
+		char skip3[4];
 
 		// 60-63
 		int srcwaterdepth;
@@ -308,28 +311,28 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		int recwaterdepth;
 
 		// 68-69
-                short scalar1;
+		short scalar1;
 
 		// 70-71
-                short scalar2;
+		short scalar2;
 
 		// 72-75
-                int srcx;
+		int srcx;
 
 		// 76-79
-                int srcy;
+		int srcy;
 
 		// 80-83
-                int recx;
-	
+		int recx;
+
 		// 84-87
-                int recy;
-	
+		int recy;
+
 		// 88-89
-                short lenunit;
-		
+		short lenunit;
+
 		// 90-97
-		double aoffset;		// absolute offset, including depth difference, between source and receiver
+		char skip4[8];
 
 		// 98-99
 		short srcstatic;
@@ -338,19 +341,19 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		short recstatic;
 
 		// 102-107
-                char skip5[6];
+		char skip5[6];
 
 		// 108-109
-                short tstartrec;
+		short tstartrec;
 
 		// 110-113
 		char skip6[4];
 
 		// 114-115
-                short nsamp;
+		short nsamp;
 
 		// 116-117
-                short dtmicro;
+		short dtmicro;
 
 		// 118-119
 		short Vwxyzt_flag;
@@ -381,7 +384,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 		// 162-163
 		short minute;
-	
+
 		// 164-165
 		short second;
 
@@ -399,19 +402,19 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		int src_xline;
 
 		// 180-183
-                int cmp_x;
+		int cmp_x;
 
 		// 184-187
-                int cmp_y;
-	
+		int cmp_y;
+
 		// 188-191
-                int rec_iline;
+		int rec_iline;
 
 		// 192-195
-                int rec_xline;
+		int rec_xline;
 
 		// 196-199
-                int shot_point;
+		int shot_point;
 
 		// 200-201
 		short scalar3;
@@ -426,12 +429,12 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		float src_water_model_depth;
 		float src_water_bathymetry_depth;
 		float src_water_Vp;
-		
+
 		// 228-239
 		float rec_water_model_depth;
 		float rec_water_bathymetry_depth;
 		float rec_water_Vp;
-        } trc_id_hdr;
+	} trc_id_hdr;
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
 	/* cmp_x starts at byte position 201 */
 
@@ -512,11 +515,11 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rec_water_bathymetry_depth = rec_bath_z[iTrc];
 				rec_water_Vp = rec_model_water_Vp[iTrc];
 			}
-			double aoffset = sqrt((sx-rx)*(sx-rx)+(sy-ry)*(sy-ry)+(sz-rz)*(sz-rz));
+			float aoffset = sqrt((sx-rx)*(sx-rx)+(sy-ry)*(sy-ry)+(sz-rz)*(sz-rz));
 
 			struct tm shot_time;
 			localtime_r(acqtime+iTrc,&shot_time);
-			short tm_year = shot_time.tm_year;
+			short tm_year = shot_time.tm_year + 1900;
 			short tm_day = shot_time.tm_yday;
 			short tm_hour = shot_time.tm_hour;
 			short tm_min = shot_time.tm_min;
@@ -543,7 +546,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			short recstatic = recwaterVp;
 			if(swapflag)
 			{
-				swap8bytes((long*)&aoffset, 1);
+				swap4bytes((int*)&aoffset, 1);
 				swap2bytes(&tm_year,1);
 				swap2bytes(&tm_day,1);
 				swap2bytes(&tm_hour,1);
@@ -673,7 +676,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.compon = scompon;
 			trc_id_hdr.irec = rec_ffid;
 			trc_id_hdr.rec_iline = il;
-			trc_id_hdr.src_iline = il;
+			trc_id_hdr.src_iline = sil;
 			//trc_id_hdr.xoff = xoff;
 			//trc_id_hdr.yoff = yoff;
 			//trc_id_hdr.azim = azim;

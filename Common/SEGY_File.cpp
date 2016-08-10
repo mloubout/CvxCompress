@@ -148,6 +148,56 @@ void SEGY_Trace_Header::Print()
 	printf("Src=[%lf,%lf,%lf], Rec=[%lf,%lf,%lf]\n",Get_Src_X(),Get_Src_Y(),Get_Src_Z(),Get_Rec_X(),Get_Rec_Y(),Get_Rec_Z());
 }
 
+short SEGY_Trace_Header::_Get_Short(int bytepos)
+{
+	short rval = 0;
+	char* dst = (char*)&rval;
+	char* src = _hdr + bytepos;
+	dst[0] = src[1];
+	dst[1] = src[0];
+	return rval;
+}
+
+int SEGY_Trace_Header::_Get_Int(int bytepos)
+{
+	int rval = 0;
+	char* dst = (char*)&rval;
+	char* src = _hdr + bytepos;
+	dst[0] = src[3];
+	dst[1] = src[2];
+	dst[2] = src[1];
+	dst[3] = src[0];
+	return rval;
+}
+
+float SEGY_Trace_Header::_Get_Float(int bytepos)
+{
+	float rval = 0.0f;
+	char* dst = (char*)&rval;
+	char* src = _hdr + bytepos;
+	dst[0] = src[3];
+	dst[1] = src[2];
+	dst[2] = src[1];
+	dst[3] = src[0];
+	return rval;
+}
+
+double SEGY_Trace_Header::_Get_Double(int bytepos)
+{
+	double rval = 0.0;
+	char* dst = (char*)&rval;
+	char* src = _hdr + bytepos;
+	dst[7] = src[0];
+	dst[6] = src[1];
+	dst[5] = src[2];
+	dst[4] = src[3];
+	dst[3] = src[4];
+	dst[2] = src[5];
+	dst[1] = src[6];
+	dst[0] = src[7];
+	return rval;
+}
+
 int SEGY_Trace_Header::Get_NSAMP()
 {
 	struct trc_id_hdr_t* hdr = (struct trc_id_hdr_t*)_hdr;
@@ -311,9 +361,139 @@ double SEGY_Trace_Header::Get_Src_Water_Vp()
 double SEGY_Trace_Header::Get_Rec_Water_Vp()
 {
 	struct custom_trc_id_hdr_t* hdr = (struct custom_trc_id_hdr_t*)_hdr;
-        float d = hdr->rec_water_Vp;
+	float d = hdr->rec_water_Vp;
 	swap4bytes((int*)&d,1);
 	return (double)d;
+}
+
+int SEGY_Trace_Header::Get_Custom1_SEQ_NO()
+{
+	return _Get_Int(0);
+}
+
+short SEGY_Trace_Header::Get_Custom1_GUN_SEQ()
+{
+	return _Get_Short(4);
+}
+
+short SEGY_Trace_Header::Get_Custom1_COMPON()
+{
+	return _Get_Short(6);
+}
+
+int SEGY_Trace_Header::Get_Custom1_FFID()
+{
+	return _Get_Int(8);
+}
+
+int SEGY_Trace_Header::Get_Custom1_OFFSET()
+{
+	return _Get_Int(36);
+}
+
+int SEGY_Trace_Header::Get_Custom1_RCV_ELEV()
+{
+	return _Get_Int(40);
+}
+
+int SEGY_Trace_Header::Get_Custom1_DEPTH()
+{
+	return _Get_Int(48);
+}
+
+int SEGY_Trace_Header::Get_Custom1_SOU_H2OD()
+{
+	return _Get_Int(60);
+}
+
+int SEGY_Trace_Header::Get_Custom1_REC_H2OD()
+{
+	return _Get_Int(64);
+}
+
+double SEGY_Trace_Header::Get_Custom1_AOFFSET()
+{
+	return _Get_Double(90);
+}
+
+short SEGY_Trace_Header::Get_Custom1_FLAG_VWXYZT()
+{
+	return _Get_Short(118);
+}
+
+double SEGY_Trace_Header::Get_Custom1_SOU_XD()
+{
+	return _Get_Double(120);
+}
+
+double SEGY_Trace_Header::Get_Custom1_SOU_YD()
+{
+	return _Get_Double(128);
+}
+
+double SEGY_Trace_Header::Get_Custom1_REC_XD()
+{
+	return _Get_Double(136);
+}
+
+double SEGY_Trace_Header::Get_Custom1_REC_YD()
+{
+	return _Get_Double(144);
+}
+
+int SEGY_Trace_Header::Get_Custom1_RCV_STAT()
+{
+	return _Get_Int(152);
+}
+
+short SEGY_Trace_Header::Get_Custom1_YEAR()
+{
+	return _Get_Short(156);
+}
+
+short SEGY_Trace_Header::Get_Custom1_DAY_OF_YEAR()
+{
+	return _Get_Short(158);
+}
+
+short SEGY_Trace_Header::Get_Custom1_HOUR_OF_DAY()
+{
+	return _Get_Short(160);
+}
+
+short SEGY_Trace_Header::Get_Custom1_MINUTE_OF_HOUR()
+{
+	return _Get_Short(162);
+}
+
+short SEGY_Trace_Header::Get_Custom1_SECOND_OF_MINUTE()
+{
+	return _Get_Short(164);
+}
+
+int SEGY_Trace_Header::Get_Custom1_USEC_OF_SECOND()
+{
+	return _Get_Int(168);
+}
+
+int SEGY_Trace_Header::Get_Custom1_SOU_LINE()
+{
+	return _Get_Int(172);
+}
+
+int SEGY_Trace_Header::Get_Custom1_SHOT_POINT()
+{
+	return _Get_Int(176);
+}
+
+int SEGY_Trace_Header::Get_Custom1_RCV_LINE()
+{
+	return _Get_Int(188);
+}
+
+int SEGY_Trace_Header::Get_Custom1_RCV_POINT()
+{
+	return _Get_Int(192);
 }
 
 void SEGY_Trace_Header::Write(FILE* fp)
