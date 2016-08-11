@@ -12,7 +12,7 @@
 
 void Print_Usage(char* cmd)
 {
-	printf("\nUsage: %s <ArrND-geom-file>\n\n",cmd);
+	printf("\n%s Aug-11-2016\nUsage: %s <ArrND-geom-file>\n\n",cmd,cmd);
 }
 
 void DumpArrND(const char* path)

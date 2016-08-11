@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include <GeomTrace.h>
 #include <GeomTraceAuxiliary.h>
@@ -12,7 +13,7 @@
 
 void Print_Usage(char* cmd)
 {
-	printf("\nUsage: %s in=<input-geom-file> rcv_stat=<receiver-ffid> sou_line=<min>:<max> shot_po=<min>:<max> out=<output-geom-file>\n\n",cmd);
+	printf("\n%s Aug-11-2016\nUsage: %s in=<input-geom-file> rcv_stat=<receiver-ffid> sou_line=<min>:<max> shot_po=<min>:<max> out=<output-geom-file>\n\n",cmd,cmd);
 }
 
 std::string input;
@@ -26,42 +27,45 @@ int shot_po_max = -1;
 
 bool Process_Arguments(int argc, char* argv[])
 {
-	int num1, num2;
-	char str1[256];
-	for (int i = 1;  i < argc;  ++i)
+	if (argc > 1)
 	{
-		if (sscanf(argv[i], "in=%s", str1) == 1)
+		int num1, num2;
+		char str1[256];
+		for (int i = 1;  i < argc;  ++i)
 		{
-			input = (std::string)str1;
+			if (sscanf(argv[i], "in=%s", str1) == 1)
+			{
+				input = (std::string)str1;
+			}
+			if (sscanf(argv[i], "out=%s", str1) == 1)
+			{
+				output = (std::string)str1;
+			}
+			if (sscanf(argv[i], "rcv_stat=%d", &num1) == 1)
+			{
+				rcv_stat = num1;
+				use_rcv_stat = true;
+			}
+			if (sscanf(argv[i], "sou_line=%d:%d", &num1, &num2) == 2)
+			{
+				sou_line_min = num1;
+				sou_line_max = num2;
+			}
+			if (sscanf(argv[i], "shot_po=%d:%d", num1, &num2) == 2)
+			{
+				shot_po_min = num1;
+				shot_po_max = num2;
+			}
 		}
-		if (sscanf(argv[i], "out=%s", str1) == 1)
-		{
-			output = (std::string)str1;
-		}
-		if (sscanf(argv[i], "rcv_stat=%d", &num1) == 1)
-		{
-			rcv_stat = num1;
-			use_rcv_stat = true;
-		}
-		if (sscanf(argv[i], "sou_line=%d:%d", &num1, &num2) == 2)
-		{
-			sou_line_min = num1;
-			sou_line_max = num2;
-		}
-		if (sscanf(argv[i], "shot_po=%d:%d", num1, &num2) == 2)
-                {
-			shot_po_min = num1;
-			shot_po_max = num2;
-		}
-	}
 
-	printf("Arguments :: ");
-	if (input.size() > 0) printf("in=%s ",input.c_str());
-	if (output.size() > 0) printf("out=%s ",output.c_str());
-	if (use_rcv_stat) printf("rcv_stat=%d ",rcv_stat);
-	if (sou_line_min <= sou_line_max) printf("sou_line=%d:%d ",sou_line_min,sou_line_max);
-	if (shot_po_min <= shot_po_max) printf("shot_po=%d:%d ",shot_po_min,shot_po_max);
-	printf("\n");
+		printf("Arguments :: ");
+		if (input.size() > 0) printf("in=%s ",input.c_str());
+		if (output.size() > 0) printf("out=%s ",output.c_str());
+		if (use_rcv_stat) printf("rcv_stat=%d ",rcv_stat);
+		if (sou_line_min <= sou_line_max) printf("sou_line=%d:%d ",sou_line_min,sou_line_max);
+		if (shot_po_min <= shot_po_max) printf("shot_po=%d:%d ",shot_po_min,shot_po_max);
+		printf("\n");
+	}
 
 	if (input.size() > 0 && output.size() > 0)
 		return true;
@@ -187,6 +191,10 @@ void Extract_Receiver()
 			}
 		}
 
+		char* str = new char[PATH_MAX+1];
+		realpath(output.c_str(),str);
+		output = (string)str;
+		delete [] str;
 		ArrND<GeomTrace> gtd2(size3, output.c_str());
 		ArrND<GeomTraceAuxiliary> gtauxd2(size3, (output+".ixl").c_str());
 

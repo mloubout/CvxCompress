@@ -181,6 +181,7 @@ int main(int argc, char* argv[])
 	if (argc != 24)
 	{
 		printf("\n");
+		printf("%s Aug-11-2016\n",argv[0]);
 		printf("Usage : %s \n",argv[0]);
 		printf("        <source-file> <seqno> <gunseq> <source-ffid-column> <source-il-column> <source-xl-column> <source-X-column> <source-Y-column> <source-Z-column> <shot-time-column>\n");
 		printf("        <receiver-file> <receiver-ffid_column> <receiver-il-column> <receiver-xl-column> <receiver-X-column> <receiver-Y-column> <receiver-Z-column>\n");
