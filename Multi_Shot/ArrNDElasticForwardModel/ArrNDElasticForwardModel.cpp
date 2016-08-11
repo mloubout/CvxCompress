@@ -11,6 +11,9 @@
 //Modified on 10/1/2014 to use new ArrNDApp
 
 #include<iostream>
+#include<fstream>
+#include<istream>
+#include<sstream>
 #include<vector>
 #include<tr1/array>
 #include<ctime>
@@ -98,6 +101,7 @@ class FDTask:public ArrNDTask<GeomTrace,GeomTraceAuxiliary>{
 
 protected:
 	char* _parmfile;
+	char* _parmfile_str;
 	int _log_level;
 	Voxet_Memory_Mapper* _mapper;
 	Variable_Water_Velocity* _Vwxyzt;
@@ -111,6 +115,18 @@ public:
 		//Create SegY file objects; Create Global_Coordinate_System object
 		_log_level = log_level;
 		_parmfile = parmfile;
+		// read parmfile into string buffer to prevent it from being read more than once.
+		// this is not done for performance, it is done to prevent two shots within the same job from
+		// being run with different parameters if the user changes the parmfile while job is running.
+		ifstream is;
+		is.open(_parmfile,ios::binary);
+		is.seekg (0, std::ios::end);
+		long length = is.tellg();
+		is.seekg (0, std::ios::beg);
+		_parmfile_str = new char [length];
+		is.read (_parmfile_str,length);
+		is.close();
+		// create voxet memory mapper
 		_mapper = new Voxet_Memory_Mapper();
 		_Vwxyzt = new Variable_Water_Velocity();
 
@@ -121,6 +137,7 @@ public:
 	};
 
 	~FDTask(){
+		delete [] _parmfile_str;
 		delete _Vwxyzt;
 		delete _mapper;
 	}
@@ -155,7 +172,8 @@ public:
 
 		cout<<"Propagation sub-volume is relative to source"<<endl;
 
-		Elastic_Modeling_Job* job = new Elastic_Modeling_Job(_log_level,_parmfile,_mapper,_Vwxyzt);
+		istringstream parmfile_iss((string)_parmfile_str);
+		Elastic_Modeling_Job* job = new Elastic_Modeling_Job(_log_level,_parmfile,_mapper,_Vwxyzt,parmfile_iss);
 		if (job->Is_Valid()){
 			if (_Vwxyzt != 0L && _Vwxyzt->Has_Been_Initialized()) _Vwxyzt->Set_Shot_Time(dat[0].getShotTime());
 			Voxet* voxet = job->Get_Voxet();
