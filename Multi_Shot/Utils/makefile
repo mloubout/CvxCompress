@@ -1,4 +1,4 @@
-all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 Interactive_Coordinate_Converter_rev1
+all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 DayOfYearToDate Interactive_Coordinate_Converter_rev1
 	cp ./MergeShotAndReceiverASCIIFiles ../../bin
 	cp ./DumpArrND ../../bin
 	cp ./ExtractReceiver ../../bin
