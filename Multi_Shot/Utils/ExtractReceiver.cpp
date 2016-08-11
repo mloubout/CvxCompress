@@ -51,7 +51,7 @@ bool Process_Arguments(int argc, char* argv[])
 				sou_line_min = num1;
 				sou_line_max = num2;
 			}
-			if (sscanf(argv[i], "shot_po=%d:%d", num1, &num2) == 2)
+			if (sscanf(argv[i], "shot_po=%d:%d", &num1, &num2) == 2)
 			{
 				shot_po_min = num1;
 				shot_po_max = num2;
