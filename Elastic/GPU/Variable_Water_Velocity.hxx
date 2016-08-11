@@ -222,9 +222,10 @@ public:
 			{
 				long i0 = iThr * nn / (long)num_threads;
 				long i1 = (iThr+1) * nn / (long)num_threads;
-				float min = p[0];
+				float min = p[i0];
+				swap4bytes((int*)&min,1);
 				float max = min;
-				for (long i = i0;  i < i1;  ++i)
+				for (long i = i0+1;  i < i1;  ++i)
 				{
 					float v = p[i];
 					swap4bytes((int*)&v,1);
