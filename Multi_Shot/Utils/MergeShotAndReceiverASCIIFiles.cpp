@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <list>
 #include <vector>
+#include <limits.h>
+#include <stdlib.h>
 
 #include <GeomTrace.h>
 #include <GeomTraceAuxiliary.h>
@@ -389,8 +391,11 @@ int main(int argc, char* argv[])
 			++ isrc;
 		}
 
-		ArrND<GeomTrace> gtd(size, argv[21]);
-		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(argv[21])+".ixl").c_str());
+		char* resolved_path = new char[PATH_MAX+1];
+		realpath(argv[21],resolved_path);
+		ArrND<GeomTrace> gtd(size, resolved_path);
+		ArrND<GeomTraceAuxiliary> gtauxd(size, ((std::string)(resolved_path)+".ixl").c_str());
+		delete [] resolved_path;
 
 		gtd<<gtarr;
 		gtauxd<<gtauxarr;
