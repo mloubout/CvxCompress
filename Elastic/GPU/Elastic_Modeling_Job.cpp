@@ -2974,7 +2974,7 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 									int x,y,z;
 									gcs->Convert_Local_Index_To_Transposed_Index(ilu+u,ilv,ilw,x,y,z);
 									float Vwxyzt = _Vwxyzt_Computer->Compute_Velocity_Increment(x,y,z);
-									if (Vwxyzt > 0.0f) vals[curr_vals_off+u] = Vwxyzt;
+									if (Vwxyzt > 0.0f) vals[curr_vals_off+u] += Vwxyzt;
 								}
 							}
 						}
