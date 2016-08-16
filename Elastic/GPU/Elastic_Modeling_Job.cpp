@@ -1255,6 +1255,16 @@ bool Elastic_Modeling_Job::_read_parmfile(
 				_Num_Parallel_Shots = num_parallel_shots;
 				if (_log_level > 3) printf("NUM_PARALLEL_SHOTS %d\n",_Num_Parallel_Shots);
 			}
+			char Vp_QC_1D_Profile_str[4096];
+			if (!error && sscanf(s, "Vp_QC_1D_Profile %s", Vp_QC_1D_Profile_str) == 1)
+			{
+				_tolower(Vp_QC_1D_Profile_str);
+				if (strcmp(Vp_QC_1D_Profile_str,"enabled") == 0)
+				{
+					_Vp_QC_1D_Profile = true;
+					if (_log_level >= 3) printf("Vp_QC_1D_Profile ENABLED\n");
+				}
+			}
 			char Vp_QC_Output_str[256];
 			if (!error && sscanf(s, "Vp_QC_Output %s", Vp_QC_Output_str) == 1)
 			{
@@ -1286,6 +1296,7 @@ void Elastic_Modeling_Job::_initialize(
 	_spatial_order = 8;  // default is 8th order, optional 16
 	_ebcdic_header_filename = 0L;
 	_Vp_QC_Output = false;
+	_Vp_QC_1D_Profile = false;
 	
 	_num_em_props = 14;
 
@@ -3102,8 +3113,34 @@ void Elastic_Modeling_Job::_Read_Earth_Model(Elastic_Propagator* propagator)
 	*/
 }
 
+void Elastic_Modeling_Job::Write_Leis_Debug_Trace(const char* base_filename, long ffid, double sx, double sy, std::list<int> fields)
+{
+	char str[512];
+	sprintf(str,"%s_%08ld.src.",base_filename,ffid);
+	std::string basename = (std::string)str;
+	int ix = (int)round(sx) - _prop_x0;
+	int iy = (int)round(sy) - _prop_y0;
+	assert(ix >= 0 && ix < _prop_nx);
+	assert(iy >= 0 && iy < _prop_ny);
+	for (std::list<int>::iterator it = fields.begin();  it != fields.end();  ++it)
+	{
+		std::string attr = Get_Attribute_String(*it);
+		std::string filename = basename + attr + ".bin";
+		FILE* fp2 = fopen(filename.c_str(),"wb");
+		assert(fp2 != 0L);
+		for (int iz = 0;  iz < _prop_nz;  ++iz)
+		{
+			float val = Get_Earth_Model_Attribute(*it,ix,iy,iz);
+			swap4bytes((int*)&val,1);
+			fwrite(&val,sizeof(float),1,fp2);
+		}
+		fclose(fp2);
+	}
+}
+
 void Elastic_Modeling_Job::Write_Propagation_Earth_Model_To_Voxet(const char* base_filename, std::list<int> fields)
 {
+
 	std::string basename = (std::string)base_filename;
 	std::string voxet_filename = basename + "_prop_model.vo";
 	printf("Writing propagation earth model to %s.\n",voxet_filename.c_str());

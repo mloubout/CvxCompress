@@ -24,7 +24,7 @@ public:
 
 	static void Print_Version_Information()
 	{
-		printf("\nCVX 3D Elastic Orthorhombic Modeling - v2.2 - 08/08/16\n\n");
+		printf("\nCVX 3D Elastic Orthorhombic Modeling - v2.21 - 08/16/16\n\n");
 	}
 
 	bool Is_Valid() {return _Is_Valid;}
@@ -41,6 +41,11 @@ public:
 	//! Return true if parmfile requested debug output of Vp.
 	//!
 	bool Vp_QC_Output_Enabled() {return _Vp_QC_Output;}
+	
+	//!
+	//! Return true if parmfile requested debug output of a 1D Vp profile at source location.
+	//!
+	bool Vp_QC_1D_Profile_Enabled() {return _Vp_QC_1D_Profile;}
 
 	const char* Get_EBCDIC_Header_Filename() {return _ebcdic_header_filename;}
 
@@ -190,6 +195,11 @@ public:
 	//!
 	void Write_Propagation_Earth_Model_To_Voxet(const char* base_filename, std::list<int> fields);
 
+	//!
+	//! Write 1D vertical profile at source location.
+	//!
+	void Write_Leis_Debug_Trace(const char* base_filename, long ffid, double sx, double sy, std::list<int> fields);
+
 	const int Attr_Idx_Vp;
 	const int Attr_Idx_Vs;
 	const int Attr_Idx_Density;
@@ -294,6 +304,7 @@ private:
 	bool _mapper_enabled;
 	Voxet_Memory_Mapper* _mapper;
 	Voxet* _voxet;
+	bool _Vp_QC_1D_Profile;
 	bool _Vp_QC_Output;
 
 	int _num_em_props;

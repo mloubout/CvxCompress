@@ -267,6 +267,10 @@ public:
 				sprintf(str,"%s_%05d",file->Get_Base_Filename(),file->Get_File_Index());
 				job->Write_Propagation_Earth_Model_To_Voxet(str,fields);
 			}
+			if (job->Vp_QC_1D_Profile_Enabled())
+			{
+				job->Write_Leis_Debug_Trace("ffid",file->Get_File_Index(),shot->Get_Source_X(),shot->Get_Source_Y(),fields);
+			}
 			if (debug_earthmodel_slices) {
 				char str[512];
 				sprintf(str,"slices/model_xz_slice_%04d",itask+1);
