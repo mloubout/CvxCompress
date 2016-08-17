@@ -16,7 +16,7 @@ DumpArrND: DumpArrND.cpp
 	icc -std=c++11 -I../Geom -I../ArrND -I../../Common $^ -L../../lib -lvoxet -o $@
 
 DumpTraceHeaders_Custom1: DumpTraceHeaders_Custom1.cpp
-	icc -std=c++11 -I../../Common $^ -L../../lib -lsegy -o $@
+	icc -std=c++11 -I../../Common $^ -L../../lib -lsegy -lcrypt -o $@
 
 DayOfYearToDate: DayOfYearToDate.cpp
 	icc -std=c++11 $^ -o $@

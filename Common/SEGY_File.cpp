@@ -5,6 +5,7 @@
 #include <SEGY_Header_Structs.h>
 #include <SEGY_File.h>
 #include <swapbytes.h>
+#include <Encrypt56.h>
 
 SEGY_Reel_Id_Header_1::SEGY_Reel_Id_Header_1(FILE* fp, bool ascii)
 {
@@ -403,12 +404,18 @@ int SEGY_Trace_Header::Get_Custom1_DEPTH()
 
 int SEGY_Trace_Header::Get_Custom1_SOU_H2OD()
 {
-	return _Get_Int(60);
+	int src_h2od, rec_h2od;
+	Decrypt56(*((long*)(_hdr+56)),src_h2od,rec_h2od);
+	swap4bytes(&src_h2od,1);
+	return src_h2od;
 }
 
 int SEGY_Trace_Header::Get_Custom1_REC_H2OD()
 {
-	return _Get_Int(64);
+	int src_h2od, rec_h2od;
+	Decrypt56(*((long*)(_hdr+56)),src_h2od,rec_h2od);
+	swap4bytes(&rec_h2od,1);
+	return rec_h2od;
 }
 
 double SEGY_Trace_Header::Get_Custom1_AOFFSET()

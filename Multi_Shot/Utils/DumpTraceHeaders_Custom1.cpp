@@ -5,7 +5,7 @@ int main(int argc, char* argv[])
 {
 	if (argc != 2)
 	{
-		printf("\n%s Aug-11-2016\nUsage : %s <segy-file>\n\n",argv[0],argv[0]);
+		printf("\n%s Aug-17-2016\nUsage : %s <segy-file>\n\n",argv[0],argv[0]);
 		return -1;
 	}
 
