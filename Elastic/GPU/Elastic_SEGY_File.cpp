@@ -4,7 +4,6 @@
 #include <math.h>
 #include <time.h>
 #include <swapbytes.h>
-#include <Encrypt56.h>
 #include <Elastic_SEGY_File.hxx>
 #include <Elastic_SEGY_File_Receiver_Range.hxx>
 #include <Elastic_Buffer.hxx>
@@ -274,7 +273,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		int ichan;
 
 		// 16-19
-		char skip1[4];
+		int skip1;
 
 		// 20-23
 		int cmpbin;
@@ -303,14 +302,7 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		// 52-55
 		float aoffset;		// absolute offset, including depth difference, between source and receiver
 
-		// 56-63
-		long encrypted0;
-
-		// 64-67
-		char skip3[4];
-		
-		/*
- 		// 56-59
+		// 56-59
 		char skip3[4];
 
 		// 60-63
@@ -318,7 +310,6 @@ void Elastic_SEGY_File::Write_SEGY_File(
 
 		// 64-67
 		int recwaterdepth;
-		*/
 
 		// 68-69
 		short scalar1;
@@ -430,27 +421,20 @@ void Elastic_SEGY_File::Write_SEGY_File(
 		short scalar3;
 
 		// 202-213
-		char skip7[12];
+		char skip10[12];
 
 		// 214-215
 		short scalar4;
 
-		// 216-239
-		long encrypted1;
-		long encrypted2;
-		long encrypted3;
-
-		/*
 		// 216-227
 		float src_water_model_depth;
-                float src_water_bathymetry_depth;
-                float src_water_Vp;
+		float src_water_bathymetry_depth;
+		float src_water_Vp;
 
 		// 228-239
 		float rec_water_model_depth;
-                float rec_water_bathymetry_depth;
-                float rec_water_Vp;
-		*/
+		float rec_water_bathymetry_depth;
+		float rec_water_Vp;
 	} trc_id_hdr;
 	assert(sizeof(trc_id_hdr) == 240);
         memset((void*)&trc_id_hdr, 0, sizeof(trc_id_hdr));
@@ -533,6 +517,14 @@ void Elastic_SEGY_File::Write_SEGY_File(
 				rec_water_bathymetry_depth = rec_bath_z[iTrc];
 				rec_water_Vp = rec_model_water_Vp[iTrc];
 			}
+			// TMJ remove from trace header for variable water column project
+			rec_water_model_depth = 0.0f;
+			rec_water_bathymetry_depth = 0.0f;
+			rec_water_Vp = 0.0f;
+			src_water_model_depth = 0.0f;
+			src_water_bathymetry_depth = 0.0f;
+			src_water_Vp = 0.0f;
+
 			float aoffset = sqrt((sx-rx)*(sx-rx)+(sy-ry)*(sy-ry)+(sz-rz)*(sz-rz));
 
 			struct tm shot_time;
@@ -599,24 +591,16 @@ void Elastic_SEGY_File::Write_SEGY_File(
 			trc_id_hdr.isrc = ffid;
 			trc_id_hdr.elevatsrc = elevatsrc; 
 			trc_id_hdr.srcdepth = srcdepth;
-			/*
 			trc_id_hdr.srcwaterdepth = srcwaterdepth;
 			trc_id_hdr.recwaterdepth = recwaterdepth;
-			*/
-			trc_id_hdr.encrypted0 = Encrypt56(srcwaterdepth,recwaterdepth);
 			//trc_id_hdr.srcstatic = srcstatic;
 			//trc_id_hdr.recstatic = recstatic;
-			trc_id_hdr.encrypted1 = Encrypt56(src_water_bathymetry_depth,rec_water_bathymetry_depth);
-			trc_id_hdr.encrypted2 = Encrypt56(src_water_Vp,rec_water_Vp);
-			trc_id_hdr.encrypted3 = Encrypt56(rec_water_model_depth,rec_water_model_depth);
-			/*
 			trc_id_hdr.src_water_bathymetry_depth = src_water_bathymetry_depth;
 			trc_id_hdr.src_water_model_depth = src_water_model_depth;
 			trc_id_hdr.src_water_Vp = src_water_Vp;
 			trc_id_hdr.rec_water_bathymetry_depth = rec_water_bathymetry_depth;
 			trc_id_hdr.rec_water_model_depth = rec_water_model_depth;
 			trc_id_hdr.rec_water_Vp = rec_water_Vp;
-			*/
 			trc_id_hdr.srcx = xsrc;           
 			trc_id_hdr.srcy = ysrc;
 			trc_id_hdr.aoffset = aoffset;
