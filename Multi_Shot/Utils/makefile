@@ -1,4 +1,4 @@
-all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 DayOfYearToDate Interactive_Coordinate_Converter_rev1 ConvertSVPTable
+all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 DayOfYearToDate Interactive_Coordinate_Converter_rev1 ConvertSVPTable Sampling_PIES_Time
 	cp ./MergeShotAndReceiverASCIIFiles ../../bin
 	cp ./DumpArrND ../../bin
 	cp ./ExtractReceiver ../../bin
@@ -6,6 +6,7 @@ all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_C
 	cp ./DayOfYearToDate ../../bin
 	cp ./Interactive_Coordinate_Converter_rev1 ../../bin
 	cp ./ConvertSVPTable ../../bin
+	cp ./Sampling_PIES_Time ../../bin
 
 MergeShotAndReceiverASCIIFiles: MergeShotAndReceiverASCIIFiles.cpp
 	icc -std=c++11 -I../Geom -I../ArrND -I../../ $^ -L../../lib -lvoxet -o $@
@@ -26,4 +27,7 @@ Interactive_Coordinate_Converter_rev1: Interactive_Coordinate_Converter_rev1.cpp
 	icc -std=c++11 -I../Geom -I../ArrND -I../../Common $^ -L../../lib -lvoxet -o $@
 
 ConvertSVPTable: ConvertSVPTable.cpp
+	icc -std=c++11 $^ -o $@
+
+Sampling_PIES_Time: Sampling_PIES_Time.cpp
 	icc -std=c++11 $^ -o $@

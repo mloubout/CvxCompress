@@ -70,7 +70,7 @@ template<class T1, class T2> void ArrNDAppMastSlaveAtm<T1,T2>::doAtm(AppTaskMgr 
 				outs.close();
 
 				// check in task
-				atm.taskIn();
+				atm.taskIn(tInfo.taskId);
 				cout<<"Time out="<<_taskTimeoutSecs<<endl;
 				cout<<"Sleep time="<<_sleepTime<<endl;
 
@@ -81,14 +81,14 @@ template<class T1, class T2> void ArrNDAppMastSlaveAtm<T1,T2>::doAtm(AppTaskMgr 
 			else if (taskId != "") {
 
 				// do task
-				int itask = atoi(tInfo.taskId.c_str());
+				int itask = atoi(tInfo.taskId.taskData.c_str());
 				cout<<"***doing itask="<<itask<<endl;
 				_task._in<<_in[itask];
 				_task._in_aux<<_in_aux[itask];
 				_task.doit(itask);
 
 				// check in task
-				atm.taskIn();
+				atm.taskIn(tInfo.taskId);
 
 			}
 			else {
