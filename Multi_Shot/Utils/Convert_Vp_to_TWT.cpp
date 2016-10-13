@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
 	}
 
 	int ffid = 0;
-	if (sscanf(argv[1],"%d_Vp.bin",&ffid) < 1)
+	if (sscanf(argv[1],"ffid_%d.src.Vp.bin",&ffid) < 1)
 	{
 		printf("Error! Unable to determine FFID from filename %s.\n",argv[1]);
 		Print_Usage(argv[0]);
