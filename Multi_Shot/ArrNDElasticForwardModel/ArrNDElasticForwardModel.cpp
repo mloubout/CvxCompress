@@ -370,6 +370,15 @@ int main(int argc, char **argv) {
 			printf("Overriding NUM_PARALLEL_SHOTS from command line argument. New value is %d.\n",num_processes);
 		}
 	}
+	if (num_processes < 1 || num_processes == 3 || num_processes > 4)
+	{
+		int new_num_processes;
+		if (num_processes < 1) new_num_processes = 1;
+		else if (num_processes == 3) new_num_processes = 2;
+		else if (num_processes > 4) new_num_processes = 4;
+		printf("Changing NUM_PARALLEL_SHOTS from %d to %d.\n",num_processes,new_num_processes);
+		num_processes = new_num_processes;
+	}
 	delete job;
 
 	int cu_device_count = 0;
@@ -404,28 +413,61 @@ int main(int argc, char **argv) {
 	// Each process is bound to the socket that is physically connected to its block of GPUs,
 	// and CUDA_VISIBLE_DEVICES is updated to show only the devices the process is allowed to acces.
 	//
-	int curr_process = 1;
-	child_pid = 0;
-	if (num_processes > 1)
+	
+	int curr_process;
+	pid_t* fd_children = new pid_t[num_processes];
+	for (curr_process = 1;  curr_process <= num_processes;  ++curr_process)
 	{
-		bool fork_again = (curr_process < num_processes);
-		while (fork_again)
+		child_pid = fork();
+		if (child_pid != 0)
 		{
-			child_pid = fork();
-			if (child_pid == 0)
-			{
-				// child
-				++curr_process;
-				fork_again = (curr_process < num_processes);
-				sleep(5);
-			}
-			else
-			{
-				// parent
-				fork_again = false;
-			}
+			fd_children[curr_process-1] = child_pid;
 		}
+		else
+		{
+			break;
+		}
+	}
 
+	if (child_pid != 0)
+	{
+		// master, wait for children to finish
+		bool children_signaled = false;
+		int num_active_children = num_processes;
+		do
+		{
+			if (num_active_children > 0)
+			{
+				// wait for any child process to terminate
+				int waited_for_return_status = 0;
+				pid_t waited_for_pid = waitpid(-1,&waited_for_return_status,0);
+				// remove terminated child process from list of monitored child processes
+				for (int i = 0;  i < num_processes;  ++i) if (fd_children[i] == waited_for_pid) fd_children[i] = 0;
+				// recount number of active child processes
+				num_active_children = 0;
+				for (int i = 0;  i < num_processes;  ++i) if (fd_children[i] != 0) ++num_active_children;
+				// send kill signal to remaining child processes if recently terminated processed was terminated with a signal.
+				// this happens if user killed it or if a catastrophic error like "out of memory" occured.
+				if (num_active_children > 0 && WIFSIGNALED(waited_for_return_status) && !children_signaled)
+				{
+					// one child process died prematurely.
+					// terminate remaining child processes.
+					children_signaled = true;
+					for (int i = 0;  i < num_processes;  ++i)
+					{
+						if (fd_children[i] != 0)
+						{
+							kill(fd_children[i],SIGKILL);
+						}
+					}
+				}
+			}
+		} while (num_active_children > 0); 
+		printf("\nALL CHILD PROCESSES HAVE FINISHED.\nEXIT.\n\n");
+		return 0;
+	}
+	else
+	{
 		int node_number = ((curr_process-1)*2) / num_processes;
 		char node_str[256];
 		sprintf(node_str,"%d",node_number);
@@ -451,60 +493,57 @@ int main(int argc, char **argv) {
 		}
 		printf("PROCESS %d :: cuda_devices = %s\n",curr_process,cuda_devices.c_str());
 		setenv("CUDA_VISIBLE_DEVICES",cuda_devices.c_str(),1);
-	}
 
-	//
-	// At this point, all processes have been forked off and bound to their respective CPU sockets.
-	// CUDA_VISIBLE_DEVICES have been set, so no code change is required in the modeling code.
-	//
+		//
+		// At this point, all processes have been forked off and bound to their respective CPU sockets.
+		// CUDA_VISIBLE_DEVICES have been set, so no code change is required in the modeling code.
+		//
 
-	time_t start = time(0);
+		time_t start = time(0);
 
-	string ixlfile_path = ((std::string)geomfile_path) + ".ixl";
+		string ixlfile_path = ((std::string)geomfile_path) + ".ixl";
 
-	ArrND<GeomTrace> in(geomfile_path);
-	ArrND<GeomTraceAuxiliary> in_aux(ixlfile_path.c_str());
-	vector<long> size1=in.size();
-	cout<<"Number of jobs="<<size1[0]<<endl;
+		ArrND<GeomTrace> in(geomfile_path);
+		ArrND<GeomTraceAuxiliary> in_aux(ixlfile_path.c_str());
+		vector<long> size1=in.size();
+		cout<<"Number of jobs="<<size1[0]<<endl;
 
-	//size of one shot.
-	std::vector<long> size2(1);
-	size2[0] = size1[1];
+		//size of one shot.
+		std::vector<long> size2(1);
+		size2[0] = size1[1];
 
-	//Sanity check that source id number (stored in gt.sortindex) is unique for each shot
-	long nshots = size1[0];
-	std::vector<int> shotIDs(size1[0]);
+		//Sanity check that source id number (stored in gt.sortindex) is unique for each shot
+		long nshots = size1[0];
+		std::vector<int> shotIDs(size1[0]);
 
-	for (int i =0;i<size1[0];i++) {
-		ArrND<GeomTrace> shotGeom(size2);
-		shotGeom<<in[i];
-		GeomTrace *dat=shotGeom.datptr();
-		shotIDs[i] = dat[0].getSortindex();
-	}
-	std::sort(shotIDs.begin(), shotIDs.end()); //Sort to ascending order
-	for (int i=1; i<size1[0]; i++) {
-		if (shotIDs[i]==shotIDs[i-1]) {
-			printf("Repeated values for shot IDs in the geometry file: shotID[%d]=%d; shotID[%d]=%d\n",
-					i-1,shotIDs[i-1],i,shotIDs[i]);
-			exit(-1);
+		for (int i =0;i<size1[0];i++) {
+			ArrND<GeomTrace> shotGeom(size2);
+			shotGeom<<in[i];
+			GeomTrace *dat=shotGeom.datptr();
+			shotIDs[i] = dat[0].getSortindex();
 		}
+		std::sort(shotIDs.begin(), shotIDs.end()); //Sort to ascending order
+		for (int i=1; i<size1[0]; i++) {
+			if (shotIDs[i]==shotIDs[i-1]) {
+				printf("Repeated values for shot IDs in the geometry file: shotID[%d]=%d; shotID[%d]=%d\n",
+						i-1,shotIDs[i-1],i,shotIDs[i]);
+				exit(-1);
+			}
+		}
+
+		shotIDs.clear();
+
+		ArrND<GeomTrace> inloc(size2);
+		ArrND<GeomTraceAuxiliary> inloc_aux(size2);
+
+		FDTask mytask(inloc, inloc_aux, parmfile, 4);
+		ArrNDAppMastSlaveAtm<GeomTrace,GeomTraceAuxiliary> ams(in, in_aux, mytask, atmfile_path);
+		ams.setTaskTimeOutSecs(timeOut);
+		ams.setSleepTime(sleepTime);
+		ams.run();
+
+		time_t end = time(0);
+		cout<<"time taken = "<<end-start<<endl;
+		return 0;
 	}
-
-	shotIDs.clear();
-
-	ArrND<GeomTrace> inloc(size2);
-	ArrND<GeomTraceAuxiliary> inloc_aux(size2);
-
-	FDTask mytask(inloc, inloc_aux, parmfile, 4);
-	ArrNDAppMastSlaveAtm<GeomTrace,GeomTraceAuxiliary> ams(in, in_aux, mytask, atmfile_path);
-	ams.setTaskTimeOutSecs(timeOut);
-	ams.setSleepTime(sleepTime);
-	ams.run();
-
-	int child_return_status = 0;
-	if (child_pid != 0) waitpid(child_pid,&child_return_status,0);
-
-	time_t end = time(0);
-	cout<<"time taken = "<<end-start<<endl;
-	return 0;
 }

@@ -618,8 +618,8 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	if (verbose) printf("\n");
 #define MIN(a,b) (a<b?a:b)
 #define MAX(a,b) (a>b?a:b)
-	int max_bs = MAX(Max_BX(),MAX(Max_BY(),Max_BZ()));
-	int buf_size = (3*Max_BX()*Max_BY()*Max_BZ() + max_bs*8);
+	long max_bs = MAX(Max_BX(),MAX(Max_BY(),Max_BZ()));
+	long buf_size = (3*Max_BX()*Max_BY()*Max_BZ() + max_bs*8);
 	float* data1 = omp_allocate((long)buf_size*(long)num_threads);
 	float* data2 = data1 + Max_BX()*Max_BY()*Max_BZ();
 	float* work = data2 + Max_BX()*Max_BY()*Max_BZ();
@@ -747,9 +747,9 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					printf("\x1B[0m -> %3d x %3d x %3d (%s) ",bx,by,bz,memtype);  fflush(stdout);
 					int niter = (int)((long)num_threads * (1024*1024*1024+((bx*by*bz)-1)) / (bx*by*bz));
 
-					for (int iThr = 0;  iThr < num_threads;  ++iThr)
+					for (long iThr = 0;  iThr < num_threads;  ++iThr)
 					{
-						float* priv_data1 = data1 + iThr * buf_size;
+						float* priv_data1 = data1 + (long)iThr * buf_size;
 						float* priv_data2 = priv_data1 + bx * by * bz;
 						Fill_Block(priv_data1,priv_data2,bx,by,bz);
 					}
@@ -771,7 +771,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					for (int iter = 0;  iter < niter;  ++iter)
 					{
 						int thread_id = omp_get_thread_num();
-						float* priv_data1 = data1 + thread_id * buf_size;
+						float* priv_data1 = data1 + (long)thread_id * buf_size;
 						float* priv_data2 = priv_data1 + bx * by * bz;
 						float* priv_work = priv_data2 + bx * by * bz;
 						Wavelet_Transform_Fast_Forward((__m256*)priv_data2,(__m256*)priv_work,bx,by,bz);
@@ -996,7 +996,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 							int z0 = iiz*bz;
 
 							int thread_id = omp_get_thread_num();
-							float* priv_data1 = data1 + thread_id * buf_size;
+							float* priv_data1 = data1 + (long)thread_id * buf_size;
 
 							Copy_To_Block(vol,x0,y0,z0,nx,ny,nz,(__m128*)priv_data1,bx,by,bz);
 							Copy_From_Block((__m128*)priv_data1,bx,by,bz,vol2,x0,y0,z0,nx,ny,nz);

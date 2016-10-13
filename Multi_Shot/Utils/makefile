@@ -34,4 +34,4 @@ Sampling_PIES_Time: Sampling_PIES_Time.cpp
 	icc -std=c++11 $^ -o $@
 
 Convert_Vp_to_TWT: Convert_Vp_to_TWT.cpp
-	icc -std=c++11 $^ -o $@
+	icc -std=c++11 -I../../Common $^ -L../../lib -lsegy -lcrypt -o $@
