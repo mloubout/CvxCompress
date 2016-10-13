@@ -1,4 +1,4 @@
-all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 DayOfYearToDate Interactive_Coordinate_Converter_rev1 ConvertSVPTable Sampling_PIES_Time
+all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_Custom1 DayOfYearToDate Interactive_Coordinate_Converter_rev1 ConvertSVPTable Sampling_PIES_Time Convert_Vp_to_TWT
 	cp ./MergeShotAndReceiverASCIIFiles ../../bin
 	cp ./DumpArrND ../../bin
 	cp ./ExtractReceiver ../../bin
@@ -7,6 +7,7 @@ all: MergeShotAndReceiverASCIIFiles DumpArrND ExtractReceiver DumpTraceHeaders_C
 	cp ./Interactive_Coordinate_Converter_rev1 ../../bin
 	cp ./ConvertSVPTable ../../bin
 	cp ./Sampling_PIES_Time ../../bin
+	cp ./Convert_Vp_to_TWT ../../bin
 
 MergeShotAndReceiverASCIIFiles: MergeShotAndReceiverASCIIFiles.cpp
 	icc -std=c++11 -I../Geom -I../ArrND -I../../ $^ -L../../lib -lvoxet -o $@
@@ -30,4 +31,7 @@ ConvertSVPTable: ConvertSVPTable.cpp
 	icc -std=c++11 $^ -o $@
 
 Sampling_PIES_Time: Sampling_PIES_Time.cpp
+	icc -std=c++11 $^ -o $@
+
+Convert_Vp_to_TWT: Convert_Vp_to_TWT.cpp
 	icc -std=c++11 $^ -o $@
