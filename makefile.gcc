@@ -2,7 +2,7 @@ CC=gcc
 F77=gfortran
 CFLAGS=-fopenmp -O3 -fPIC -mavx
 FFLAGS=-O3 -fPIC -mavx
-LDFLAGS=-shared -fopenmp
+LDFLAGS=-shared -fopenmp -lm
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
 
@@ -12,13 +12,13 @@ libcvxcompress.so : $(OBJECTS)
 	$(CC) $(LDFLAGS) -o libcvxcompress.so $(OBJECTS)
 
 CvxCompress_Test: Ds79_Base.cpp CvxCompress_Test.cpp $(OBJECTS)
-	$(CC) $(CFLAGS) $(OBJECTS) -lrt -lstdc++ CvxCompress_Test.cpp -o CvxCompress_Test
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJECTS) -lrt -lstdc++ CvxCompress_Test.cpp -o CvxCompress_Test
 
 CvxCompress_GenCode: CvxCompress_GenCode.cpp CvxCompress.hxx Wavelet_Transform_Slow.cpp
 	$(CC) -O2 Wavelet_Transform_Slow.cpp -lrt -lstdc++ CvxCompress_GenCode.cpp -o CvxCompress_GenCode
 
 Test_Compression: Ds79_Base.cpp Test_Compression.cpp $(OBJECTS)
-	$(CC) $(CFLAGS) $(OBJECTS) -lrt -lstdc++ Test_Compression.cpp -o Test_Compression
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJECTS) -lrt -lstdc++ Test_Compression.cpp -o Test_Compression
 
 Ds79_Base.cpp: CvxCompress.hxx CvxCompress_GenCode
 	./CvxCompress_GenCode
