@@ -1,37 +1,43 @@
-CC=gcc
-F77=gfortran
+CC = gcc
+CXX = g++
 CFLAGS=-fopenmp -O3 -fPIC -mavx
-FFLAGS=-O3 -fPIC -mavx
-LDFLAGS=-shared -fopenmp -lm
+LDFLAGS=-fopenmp -lm
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
 
-all: CvxCompress_Test Test_Compression
+all: CvxCompress_Test CvxCompress_Test_Dyn Test_Compression Compress_SEAM_Basin
 
 libcvxcompress.so : $(OBJECTS)
-	$(CC) $(LDFLAGS) -o libcvxcompress.so $(OBJECTS)
+	$(CXX) -shared $(LDFLAGS) -o libcvxcompress.so $(OBJECTS)
 
-CvxCompress_Test: Ds79_Base.cpp CvxCompress_Test.cpp $(OBJECTS)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJECTS) -lrt -lstdc++ CvxCompress_Test.cpp -o CvxCompress_Test
+Wavelet_Transform_Fast.o: Wavelet_Transform_Fast.cpp Ds79_Base.cpp Us79_Base.cpp 
+	$(CXX) -c $(CFLAGS) $< 
 
-CvxCompress_GenCode: CvxCompress_GenCode.cpp CvxCompress.hxx Wavelet_Transform_Slow.cpp
-	$(CC) -O2 Wavelet_Transform_Slow.cpp -lrt -lstdc++ CvxCompress_GenCode.cpp -o CvxCompress_GenCode
+CvxCompress_Test: CvxCompress_Test.o $(OBJECTS)
+	$(CXX) $(LDFLAGS) $(OBJECTS)  CvxCompress_Test.o -o CvxCompress_Test
 
-Test_Compression: Ds79_Base.cpp Test_Compression.cpp $(OBJECTS)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJECTS) -lrt -lstdc++ Test_Compression.cpp -o Test_Compression
+CvxCompress_Test_Dyn: CvxCompress_Test.o libcvxcompress.so
+	$(CXX) $(LDFLAGS) CvxCompress_Test.o  -L. -lcvxcompress -o $@
 
-Ds79_Base.cpp: CvxCompress.hxx CvxCompress_GenCode
+CvxCompress_GenCode: CvxCompress_GenCode.o CvxCompress.hxx Wavelet_Transform_Slow.o
+	$(CXX) -O2 Wavelet_Transform_Slow.o  CvxCompress_GenCode.o -o CvxCompress_GenCode
+
+Test_Compression: Test_Compression.o $(OBJECTS)
+	$(CXX) $(LDFLAGS) $(OBJECTS)  Test_Compression.o -o Test_Compression
+
+Ds79_Base.cpp Us79_Base.cpp: CvxCompress.hxx CvxCompress_GenCode
 	./CvxCompress_GenCode
 
-%.o: %.f
-	$(F77) -c $(FFLAGS) $*.f
+Compress_SEAM_Basin: Compress_SEAM_Basin.o libcvxcompress.so 
+	$(CXX) $(LDFLAGS) $<  -L. -lcvxcompress  -o $@
 
 %.o: %.c
 	$(CC) -c $(CFLAGS) $*.c
 
 %.o: %.cpp
-	$(CC) -c $(CFLAGS) $*.cpp
+	$(CXX) -c $(CFLAGS) $*.cpp
 
 clean:
 	rm -f *.o
-	rm -f libcvxcompress.so
+	rm -f libcvxcompress.so CvxCompress_Test CvxCompress_Test_Dyn CvxCompress_GenCode Test_Compression
+	rm -f Ds79_Base.cpp Us79_Base.cpp

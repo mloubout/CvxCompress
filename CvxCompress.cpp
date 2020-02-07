@@ -1059,7 +1059,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	printf("9. Test throughput of Compress() method...\n");
 	int nx3,ny3,nz3;
 	float* vol3;
-	Read_Raw_Volume("/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/pressure_at_t=7512.bin",nx3,ny3,nz3,vol3);
+	Read_Raw_Volume("/cpfs/lfs02/ESDRD/tjhc/pressure_at_t=7512.bin",nx3,ny3,nz3,vol3);
 	//Read_Raw_Volume("/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/empty.bin",nx3,ny3,nz3,vol3);
 	unsigned long* compressed3;
 	posix_memalign((void**)&compressed3, 64, (long)sizeof(float)*(long)nx3*(long)ny3*(long)nz3);
