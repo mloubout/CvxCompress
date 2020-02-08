@@ -8,4 +8,5 @@ CvxCompress_GenCode
 CvxCompress_Test
 CvxCompress_Test_Dyn
 Test_Compression
-Test_generated_input
+Test_With_Generated_Input
+results.txt
