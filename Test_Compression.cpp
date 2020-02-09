@@ -7,7 +7,7 @@
 #include "CvxCompress.hxx"
 #include "Read_Raw_Volume.hxx"
 
-#define PAPI
+// #define PAPI
 #ifndef __INTEL_COMPILER
 #undef PAPI  // PAPI only works with intel compiler (for now).
 #endif
