@@ -3,7 +3,7 @@
 
 int main(int argc, char* argv[])
 {
-	CvxCompress* compressor = new CvxCompress();
-	compressor->Run_Module_Tests(false,false);
-	return 0;
+  CvxCompress compressor;
+  bool passed_tests = compressor.Run_Module_Tests(false,false);
+  if (passed_tests) return 0; else return 1;
 }

@@ -8,7 +8,7 @@
 #include <omp.h>
 #include "CvxCompress.hxx"
 
-#define PAPI
+// #define PAPI
 #ifndef __INTEL_COMPILER
 #undef PAPI
 #endif

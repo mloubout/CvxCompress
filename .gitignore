@@ -1,0 +1,12 @@
+*.o 
+*.so
+*~
+Compress_Guojians_Stuff
+Compress_SEAM_Basin
+Compress_Sams_Stuff
+CvxCompress_GenCode
+CvxCompress_Test
+CvxCompress_Test_Dyn
+Test_Compression
+Test_With_Generated_Input
+results.txt

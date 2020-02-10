@@ -1,40 +1,50 @@
+CXX=icpc
 CC=icc
-CFLAGS=-openmp -O3 -fPIC -mavx -inline-forceinline
-LDFLAGS=-shared -openmp
-PAPI_INCLUDES=-I/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src -I/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/testlib
-PAPI=$(PAPI_INCLUDES) -L/cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src /cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/testlib/libtestlib.a /cpfs/lfs01/ESDRD/tjhc/vend/papi-5.4.3/src/libpapi.a
+CFLAGS=-qopenmp -O3 -fPIC -mavx -inline-forceinline -I.
+LDFLAGS=-qopenmp -L. -lcvxcompress
+
+# I think this disabled for now
+PAPI_PATH := /devl/geophys/util/papi/papi-5.7.0
+PAPI_INCLUDES := -DPAPI -I$(PAPI_PATH)/include
+PAPI_LDFLAGS := -L$(PAPI_PATH)/lib -lpapi
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
 
 all: CvxCompress_Test Test_Compression Compress_Sams_Stuff Compress_Guojians_Stuff
 
 libcvxcompress.so : Ds79_Base.cpp $(OBJECTS)
-	$(CC) $(LDFLAGS) -o libcvxcompress.so $(OBJECTS)
-	cp libcvxcompress.so ../lib
+	$(CXX) -shared -qopenmp -o libcvxcompress.so $(OBJECTS)
 
-CvxCompress_Test: libcvxcompress.so CvxCompress_Test.cpp
-	$(CC) $(CFLAGS) $^ $(PAPI) -lrt -lstdc++ -o CvxCompress_Test
+CvxCompress_Test: libcvxcompress.so CvxCompress_Test.o
+	$(CXX) $(LDFLAGS) $^  -o CvxCompress_Test
 
-CvxCompress_GenCode: CvxCompress_GenCode.cpp CvxCompress.hxx Wavelet_Transform_Slow.cpp
-	$(CC) -O2 CvxCompress_GenCode.cpp Wavelet_Transform_Slow.cpp -lrt -lstdc++ -o CvxCompress_GenCode
+CvxCompress_GenCode: CvxCompress_GenCode.o CvxCompress.hxx Wavelet_Transform_Slow.o
+	$(CXX) -O2 -qopenmp CvxCompress_GenCode.o Wavelet_Transform_Slow.o -o CvxCompress_GenCode
 
-Test_Compression: libcvxcompress.so Test_Compression.cpp
-	$(CC) $(CFLAGS) $^ $(PAPI) -lrt -lstdc++ -o Test_Compression
+Test_Compression: libcvxcompress.so Test_Compression.o
+	$(CXX) $(LDFLAGS) $^ $(PAPI_INCLUDES) -o Test_Compression
 
-Compress_SEGY: libcvxcompress.so Compress_SEGY.cpp
-	$(CC) -std=c++11 $(CFLAGS) $^ -L../lib -I. -I../Common -lsegy -lpthread -lrt -lstdc++ -o Compress_SEGY
+# requires libsegy which is not included in this repo, so don't include in "all" target for now. 
+Compress_SEGY: Compress_SEGY.o libcvxcompress.so 
+	$(CXX) $(LDFLAGS) $< -lsegy -o Compress_SEGY
 
-Compress_Sams_Stuff: libcvxcompress.so Compress_Sams_Stuff.cpp
-	$(CC) $(CFLAGS) $^ $(PAPI) -lpthread -lrt -lstdc++ -o Compress_Sams_Stuff
+Compress_Sams_Stuff: libcvxcompress.so Compress_Sams_Stuff.o
+	$(CXX) $(LDFLAGS) $^  -o Compress_Sams_Stuff
 
-Compress_Guojians_Stuff: libcvxcompress.so Compress_Guojians_Stuff.cpp
-	$(CC) $(CFLAGS) $^ $(PAPI) -lpthread -lrt -lstdc++ -o Compress_Guojians_Stuff
+Compress_Guojians_Stuff: Compress_Guojians_Stuff.o libcvxcompress.so 
+	$(CXX) $(LDFLAGS) $<  -o Compress_Guojians_Stuff
 
 Ds79_Base.cpp: CvxCompress.hxx CvxCompress_GenCode
 	./CvxCompress_GenCode
 
+# CvxCompress.o: CvxCompress.cpp
+# 	$(CXX) -c -DPAPI $(CFLAGS) $(PAPI_INCLUDES) $*.cpp
+
+Test_With_Generated_Input: Test_With_Generated_Input.o libcvxcompress.so 
+	$(CXX) $(LDFLAGS) $<  -L. -lcvxcompress  -o $@
+
 CvxCompress.o: CvxCompress.cpp
-	$(CC) -c -DPAPI $(CFLAGS) $(PAPI_INCLUDES) $*.cpp
+	$(CXX) -c $(CFLAGS) $(PAPI_INCLUDES) $< -o $@
 
 %.o: %.f
 	$(F77) -c $(FFLAGS) $*.f
@@ -43,7 +53,7 @@ CvxCompress.o: CvxCompress.cpp
 	$(CC) -c $(CFLAGS) $*.c
 
 %.o: %.cpp
-	$(CC) -c $(CFLAGS) $*.cpp
+	$(CXX) -c $(CFLAGS) $*.cpp
 
 clean:
 	rm -f *.o
