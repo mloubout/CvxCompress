@@ -1,53 +1,16 @@
 # CvxCompres library
-This CvxCompress functionality is extracted from the FD modeling module by Thor Johnsen. 
-
-This version is not using the [PAPI library](https://icl.utk.edu/papi/index.html) for low level monitoring
-AFAIK. To use it (for the Intel compiler) is at least partially a makefile fix, but not a priority for this
-version based on an older commit without the _Safe interfaces.   
+This CvxCompress functionality is extracted from the FD modeling module by Thor Johnsen.    
 
 # Building
 ## GCC
-With GCC use the makefile.gcc by typing
-```
-make -f makefile.gcc
-```
 
 It is believed that this will work with a wide variety of gcc
 versions, as the Julia package CvxCompress.jl compiles the library
 whenever a user installs it in their Julia environment, but as I am writing this I have only tested it with this version. 
 ```
-module load gcc/7.3.0
-make -f makefile.gcc
-```
-
-## Intel compiler 
-
-I, Peeter Akerberg, just succeeded in compiling and running the
-`Test_With_Generated_Input` test by loading _both_ the intel 2019
-compiler and a newer compiler than the RH7 system one 
-(gcc (GCC) 4.8.5 20150623 (Red Hat 4.8.5-39)
-
-```
-module load intel/parallel_studio_xe_2019_update5
-module load gcc/7.3.0
+module load gcc/7.3.0 and gcc/9.30
 make
 ```
-I failed to run without the newer gcc with the following message:
-```
-Test_With_Generated_Input: /lib64/libstdc++.so.6: version `CXXABI_1.3.9' not found (required by ./Test_With_Generated_Input)
-```
-The [Intel website](https://software.intel.com/en-us/parallel-studio-xe/documentation/system-requirements) 
-says the following about compatibility for the 2019 version. 
-> Red Hat Enterprise Linux* 7, 8
->
-> On Linux, development for a 32-bit target on a 64-bit host may require
-> installing optional library components (ia32-libs, lib32gcc1,
-> lib32stdc++6, libc6-dev-i386, gcc-multilib, g++-multilib) from your
-> Linux distribution.
-
-Since those requirements are met, and we know that the intel compiler
-uses gcc (on linux), I take this to mean that someone may have used a
-"newer than RH7 native gcc" compiler when installing intel 2019.
 
 ## Tests
 
