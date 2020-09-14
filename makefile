@@ -1,7 +1,7 @@
 CC = gcc
 CXX = g++
 CFLAGS=-fopenmp -O3 -fPIC -mavx -g
-LDFLAGS=-fopenmp -lm
+LDFLAGS=-fopenmp -lm -lrt
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
 
