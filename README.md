@@ -1,5 +1,5 @@
 # CvxCompres library
-This CvxCompress functionality is extracted from the FD modeling module by Thor Johnsen.    
+This CvxCompress was originally authored by Thor Johnsen.    
 
 # Building
 ## GCC
