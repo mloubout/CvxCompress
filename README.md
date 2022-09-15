@@ -5,26 +5,13 @@ This CvxCompress was originally authored by Thor Johnsen.
 ## GCC
 
 It is believed that this will work with a wide variety of gcc
-versions, as the Julia package CvxCompress.jl compiles the library
-whenever a user installs it in their Julia environment, but as I am writing this I have only tested it with this version. 
-```
-module load gcc/7.3.0 and gcc/9.30
-make
-```
+versions, but as I am writing this I have only tested it with gcc 7.30 and gcc 9.3.0. 
 
 ## Tests
 
 There are several tests included, some of which depends on binary
 cubes of input need to exist at some absolute path which is no longer
 present. Thus, here I describe only the ones that require no input file. 
-
-Since I want to make this a library, one of the goals is to ensure
-that the shared object (the .so file) works, so to run the tests I
-have used the following pattern to run the tests to ensure the
-environment is set.
-
-Note that I believe the return code of the `CvxCompress_Test` is now 0 when passed, so we might be able to use this in
-a pipeline as a unit- and integration test. 
 
 ```
 Prompt> ( setenv LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:${cwd} ; ./CvxCompress_Test )
