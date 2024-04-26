@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <omp.h>
+#include <chrono>
 #include "CvxCompress.hxx"
 #include "Read_Raw_Volume.hxx"
 
@@ -15,6 +16,11 @@
 #ifdef PAPI
 #include "papi.h"
 #endif
+
+using std::chrono::high_resolution_clock;
+typedef std::chrono::high_resolution_clock Time;
+typedef std::chrono::milliseconds ms;
+typedef std::chrono::duration<double> fsec;
 
 void XZ_Slice(const char* filename, int nx, int ny, int nz, float* vol, int iy)
 {
@@ -113,12 +119,16 @@ int main(int argc, char* argv[])
 		}
 #endif
 		long compressed_length = 0;
-		struct timespec before, after;
-		clock_gettime(CLOCK_REALTIME,&before);
+		// struct timespec before, after;
+		// clock_gettime(CLOCK_REALTIME,&before);
+		auto start = Time::now();
 		float ratio = compressor->Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,compressed_length);
-		clock_gettime(CLOCK_REALTIME,&after);
-		double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-		double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);
+		// clock_gettime(CLOCK_REALTIME,&after);
+		auto stop = Time::now();
+		// double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
+		// double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);
+		fsec elapsed = stop-start;
+		double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed.count() * 1e6);
 #ifdef PAPI
 		if (sp_ops_counter_is_available)
 		{
@@ -129,7 +139,7 @@ int main(int argc, char* argv[])
 				PAPI_stop_counters(&curr_sp_ops,1);
 				sp_ops1 += curr_sp_ops;
 			}
-			total_elapsed_time1 += elapsed;
+			total_elapsed_time1 += elapsed.count();
 		}
 #endif
 		printf("Compression throughput was %.0f MC/s - Compression ratio is %.2f:1\n",mcells_per_sec,ratio);
@@ -146,11 +156,15 @@ int main(int argc, char* argv[])
 			}
 		}
 #endif
-		clock_gettime(CLOCK_REALTIME,&before);
+		// clock_gettime(CLOCK_REALTIME,&before);
+		start = Time::now();
 		float* vol2 = compressor->Decompress(nx2,ny2,nz2,compressed,compressed_length);
-		clock_gettime(CLOCK_REALTIME,&after);
-		elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-		mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed * 1e6);
+		// clock_gettime(CLOCK_REALTIME,&after);
+		stop = Time::now();
+		// elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
+		// mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed * 1e6);
+		elapsed = stop-start; 
+		mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed.count() * 1e6);
 #ifdef PAPI
 		if (sp_ops_counter_is_available)
 		{
@@ -161,7 +175,7 @@ int main(int argc, char* argv[])
 				PAPI_stop_counters(&curr_sp_ops,1);
 				sp_ops2 += curr_sp_ops;
 			}
-			total_elapsed_time2 += elapsed;
+			total_elapsed_time2 += elapsed.count();
 		}
 #endif
 		printf("Decompression throughput was %.0f MC/s\n",mcells_per_sec);
