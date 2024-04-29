@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string>
 #include <string.h>
-#include <time.h>
 #include <chrono>
 #include "CvxCompress.hxx"
 #include <iostream>
@@ -63,8 +62,6 @@ int main(int argc, char* argv[])
     for (long j = 0;  j < volsize && !has_NaN;  ++j) if (isnan(vol[j])) has_NaN = true;
     assert(!has_NaN);
   
-    // struct timespec before, after;
-    // clock_gettime(CLOCK_REALTIME,&before);
     auto start = Time::now();
     // **********************  COMPRESSING **********************  
     // float ratio = compressor->Compress_Safe(scale,vol,nz,ny,nx,bz,by,bx,
@@ -78,25 +75,20 @@ int main(int argc, char* argv[])
 				       compressed,
 				       compressed_length);
 
-    // clock_gettime(CLOCK_REALTIME,&after);
+
     auto stop = Time::now();
-    // double elapsed1 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    // double mcells_per_sec1 = (double) volsize / (elapsed1 * 1e6);
     fsec elapsed1 = stop-start;
     double mcells_per_sec1 = (double) volsize / (elapsed1.count() * 1e6);
     tot_elapsed_time += elapsed1.count();
     overall_compressed = (long)compressed_length;
 	
-    // clock_gettime(CLOCK_REALTIME,&before);
     start = Time::now();
     // **********************  DECOMPRESSING **********************  
     //  compressor->Decompress_Safe(vol2,nz,ny,nx, (char*) compressed, compressed_length);
     compressor->Decompress(vol2, nz,ny,nx, compressed, compressed_length);
   
-    // clock_gettime(CLOCK_REALTIME,&after);
     stop = Time::now();
-    // double elapsed2 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    // double mcells_per_sec2 = (double) volsize / (elapsed2 * 1e6);
+
     fsec elapsed2 = stop-start;
     double mcells_per_sec2 = (double) volsize / (elapsed2.count() * 1e6);
     tot_elapsed_time += elapsed2.count();

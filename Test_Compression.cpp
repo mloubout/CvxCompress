@@ -1,5 +1,4 @@
 #include <math.h>
-#include <time.h>
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,14 +118,9 @@ int main(int argc, char* argv[])
 		}
 #endif
 		long compressed_length = 0;
-		// struct timespec before, after;
-		// clock_gettime(CLOCK_REALTIME,&before);
 		auto start = Time::now();
 		float ratio = compressor->Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,compressed_length);
-		// clock_gettime(CLOCK_REALTIME,&after);
 		auto stop = Time::now();
-		// double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-		// double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);
 		fsec elapsed = stop-start;
 		double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed.count() * 1e6);
 #ifdef PAPI
@@ -156,13 +150,9 @@ int main(int argc, char* argv[])
 			}
 		}
 #endif
-		// clock_gettime(CLOCK_REALTIME,&before);
 		start = Time::now();
 		float* vol2 = compressor->Decompress(nx2,ny2,nz2,compressed,compressed_length);
-		// clock_gettime(CLOCK_REALTIME,&after);
 		stop = Time::now();
-		// elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-		// mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed * 1e6);
 		elapsed = stop-start; 
 		mcells_per_sec = (double)nx2 * (double)ny2 * (double)nz2 / (elapsed.count() * 1e6);
 #ifdef PAPI
