@@ -9,8 +9,8 @@
 #include <iostream>
 using namespace std;
 
-using std::chrono::high_resolution_clock;
-typedef std::chrono::high_resolution_clock Time;
+using std::chrono::system_clock;
+typedef std::chrono::system_clock Time;
 typedef std::chrono::milliseconds ms;
 typedef std::chrono::duration<double> fsec;
 
