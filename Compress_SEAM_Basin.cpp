@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string>
 #include <string.h>
-#include <time.h>
+#include <chrono>
 #include <omp.h>
 #include "CvxCompress.hxx"
 #include <iostream>
@@ -13,6 +13,11 @@ using namespace std;
 //#define VERBOSE
 
 using namespace std;
+using std::chrono::system_clock;
+typedef std::chrono::system_clock Time;
+typedef std::chrono::milliseconds ms;
+typedef std::chrono::duration<double> fsec;
+
 
 int main(int argc, char* argv[])
 {
@@ -90,8 +95,7 @@ int main(int argc, char* argv[])
   assert(!has_NaN);
   
   for(int ntries=0; ntries<2; ntries++){
-    struct timespec before, after;
-    clock_gettime(CLOCK_REALTIME,&before);
+    auto start = Time::now();
     // **********************  COMPRESSING **********************  
     // float ratio = compressor->Compress_Safe(scale,vol,nz,ny,nx,bz,by,bx,
     // 					      use_local_RMS,include_block_lengths,
@@ -104,21 +108,21 @@ int main(int argc, char* argv[])
 				       compressed,
 				       compressed_length);
       
-    clock_gettime(CLOCK_REALTIME,&after);
-    double elapsed1 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    double mcells_per_sec1 = (double)nx * (double)ny * (double)nz / (elapsed1 * 1e6);
-    tot_elapsed_time += elapsed1;
+    auto stop = Time::now();
+    fsec elapsed1 = (stop - start);
+    double mcells_per_sec1 = (double)(nx * ny * nz) / (elapsed1.count() * 1e6);
+    tot_elapsed_time += elapsed1.count();
     overall_compressed = (long)compressed_length;
 	
-    clock_gettime(CLOCK_REALTIME,&before);
+    start = Time::now();
     // **********************  DECOMPRESSING **********************  
     //      compressor->Decompress_Safe(vol2,nz,ny,nx,compressed,compressed_length);
     compressor->Decompress(vol2, nz,ny,nx, compressed, compressed_length);
-  
-    clock_gettime(CLOCK_REALTIME,&after);
-    double elapsed2 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    double mcells_per_sec2 = (double)nx * (double)ny * (double)nz / (elapsed2 * 1e6);
-    tot_elapsed_time += elapsed2;
+
+    stop = Time::now();
+    fsec elapsed2 = (stop - start);
+    double mcells_per_sec2 = (double)nx * (double)ny * (double)nz / (elapsed2.count() * 1e6);
+    tot_elapsed_time += elapsed2.count();
 
     double acc1=0.0, acc2=0.0, acc3=0.0;
 #pragma omp parallel for reduction(+:acc1,acc2,acc3)
@@ -140,7 +144,7 @@ int main(int argc, char* argv[])
 
     printf("compression ratio = %.2f:1, compression throughput = %.0f MC/s, decompression throughput = %.0f MC/s, error = %.6e, SNR = %.1f dB\n",
 	   ratio,mcells_per_sec1,mcells_per_sec2,error,snr);
-    fprintf(fp2,"%.2f, %.6e, %.5f, %.5f, %.0f, %.0f\n",ratio,error,elapsed1,elapsed2,mcells_per_sec1,mcells_per_sec2);
+    fprintf(fp2,"%.2f, %.6e, %.5f, %.5f, %.0f, %.0f\n",ratio,error,elapsed1.count(),elapsed2.count(),mcells_per_sec1,mcells_per_sec2);
 
     printf("Total compression and decompression times were %.2f seconds\n",tot_elapsed_time);
     double overall_ratio = ((double)nx * (double)ny * (double)nz * 4.0) / (double)overall_compressed;

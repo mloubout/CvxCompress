@@ -1,10 +1,10 @@
-#include <time.h>
 #include <math.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <omp.h>
+#include <chrono>
 #include "CvxCompress.hxx"
 #include "Wavelet_Transform_Fast.hxx"
 #include "Wavelet_Transform_Slow.hxx"  // for comparison in module test
@@ -19,6 +19,12 @@
 #ifdef PAPI
 #include "papi.h"
 #endif
+
+using namespace std;
+using std::chrono::system_clock;
+typedef std::chrono::system_clock Time;
+typedef std::chrono::milliseconds ms;
+typedef std::chrono::duration<double> fsec;
 
 CvxCompress::CvxCompress()
 {
@@ -765,8 +771,8 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						}
 					}
 #endif
-					struct timespec before, after;
-					clock_gettime(CLOCK_REALTIME,&before);
+
+					auto start = Time::now();
 #pragma omp parallel for schedule(static,1)
 					for (int iter = 0;  iter < niter;  ++iter)
 					{
@@ -777,7 +783,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						Wavelet_Transform_Fast_Forward((__m256*)priv_data2,(__m256*)priv_work,bx,by,bz);
 						Wavelet_Transform_Fast_Inverse((__m256*)priv_data2,(__m256*)priv_work,bx,by,bz);
 					}
-					clock_gettime(CLOCK_REALTIME,&after);
+					auto stop = Time::now();
 #ifdef PAPI
 					if (sp_ops_counter_is_available)
 					{
@@ -790,22 +796,22 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						}
 					}
 #endif
-					double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-					double mcells_per_second = (double)(bx*by*bz) * (double)niter / (elapsed * 1e6);
+					fsec elapsed = (stop - start);
+					double mcells_per_second = (double)(bx*by*bz) * (double)niter / (elapsed.count() * 1e6);
 					double FLOPS_per_cell = Compute_FLOPS_Single_Dimension(bx) + Compute_FLOPS_Single_Dimension(by) + Compute_FLOPS_Single_Dimension(bz);
 					double GF_per_second = mcells_per_second * 1e-3 * 2.0 * FLOPS_per_cell;
 #ifdef PAPI
 					if (sp_ops_counter_is_available)
 					{
-						double PAPI_GF_per_second = (double)sp_ops1 / (elapsed * 1e9);
-						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s - PAPI %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second,PAPI_GF_per_second);
+						double PAPI_GF_per_second = (double)sp_ops1 / (elapsed.count() * 1e9);
+						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s - PAPI %.0f GF/s\n",elapsed.count(),mcells_per_second,GF_per_second,PAPI_GF_per_second);
 					}
 					else
 					{
-						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second);
+						printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed.count(),mcells_per_second,GF_per_second);
 					}
 #else
-					printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed,mcells_per_second,GF_per_second);
+					printf(":: %6.3f secs - %.0f MCells/s - %.0f GF/s\n",elapsed.count(),mcells_per_second,GF_per_second);
 #endif
 				}
 			}
@@ -981,8 +987,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						int nbz = (nz+bz-1)/bz;
 						int nnn = nbx*nby*nbz;
 
-						struct timespec before, after;
-						clock_gettime(CLOCK_REALTIME,&before);
+						auto start = Time::now();
 #pragma omp parallel for schedule(static,8)
 						for (int iBlk = 0;  iBlk < nnn;  ++iBlk)
 						{
@@ -1001,10 +1006,10 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 							Copy_To_Block(vol,x0,y0,z0,nx,ny,nz,(__m128*)priv_data1,bx,by,bz);
 							Copy_From_Block((__m128*)priv_data1,bx,by,bz,vol2,x0,y0,z0,nx,ny,nz);
 						}
-						clock_gettime(CLOCK_REALTIME,&after);
-						double elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-						double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed * 1e6);
-						double GB_per_sec = (double)sizeof(float) * (double)nx * (double)ny * (double)nz * 3.0 / (elapsed * 1e9);
+						auto stop = Time::now();
+						fsec elapsed = start-stop; 
+						double mcells_per_sec = (double)nx * (double)ny * (double)nz / (elapsed.count() * 1e6);
+						double GB_per_sec = (double)sizeof(float) * (double)nx * (double)ny * (double)nz * 3.0 / (elapsed.count() * 1e9);
 					
 						if (!Check_Volume(vol,vol2,nx,ny,nz))
 						{
@@ -1013,7 +1018,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						}
 						else
 						{					
-							printf("\x1B[0m[\x1B[32mPassed!\x1B[0m] :: %6.3f secs - %.0f MCells/s - %.2f GB/s\n",elapsed,mcells_per_sec,GB_per_sec);
+							printf("\x1B[0m[\x1B[32mPassed!\x1B[0m] :: %6.3f secs - %.0f MCells/s - %.2f GB/s\n",elapsed.count(),mcells_per_sec,GB_per_sec);
 						}
 					}
 				}
@@ -1086,8 +1091,8 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						memtype = "DRAM";
 					printf("\x1B[0m -> %3d x %3d x %3d (%s) ",bx,by,bz,memtype);  fflush(stdout);
 
-					struct timespec before, after;
-					clock_gettime(CLOCK_REALTIME,&before);
+
+					auto start = Time::now();
 					double elapsed = 0.0;
 
 					float ratio = 0.0f;
@@ -1096,11 +1101,11 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					{
 						long compressed_length = 0l;
 						ratio = Compress(scale,vol3,nx3,ny3,nz3,bx,by,bz,false,(unsigned int*)compressed3,compressed_length);
-						clock_gettime(CLOCK_REALTIME,&after);
+						auto stop = Time::now();
 						++niter;
-						elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-						double mcells_per_sec = (double)niter * (double)nx3 * (double)ny3 * (double)nz3 / (elapsed * 1e6);
-						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s - ratio %.2f:1",bx,by,bz,memtype,niter,elapsed,mcells_per_sec,ratio);
+						fsec elapsed = stop-start;
+						double mcells_per_sec = (double)niter * (double)nx3 * (double)ny3 * (double)nz3 / (elapsed.count() * 1e6);
+						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s - ratio %.2f:1",bx,by,bz,memtype,niter,elapsed.count(),mcells_per_sec,ratio);
 						fflush(stdout);
 					} while (elapsed < 10.0);
 					printf("\n");
@@ -1137,8 +1142,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						memtype = "DRAM";
 					printf("\x1B[0m -> %3d x %3d x %3d (%s) ",bx,by,bz,memtype);  fflush(stdout);
 
-					struct timespec before, after;
-					clock_gettime(CLOCK_REALTIME,&before);
+					auto start = Time::now();
 					double elapsed = 0.0;
 
 					int niter = 0;
@@ -1146,12 +1150,11 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 					{
 						int nx4, ny4, nz4;
 						float* vol4;
-						vol4 = Decompress(nx4,ny4,nz4,(unsigned int*)compressed3,compressed_length3);
-						clock_gettime(CLOCK_REALTIME,&after);
+						auto stop = Time::now();
 						++niter;
-						elapsed = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-						double mcells_per_sec = (double)niter * (double)nx3 * (double)ny3 * (double)nz3 / (elapsed * 1e6);
-						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s",bx,by,bz,memtype,niter,elapsed,mcells_per_sec);
+						fsec elapsed = stop-start;
+						double mcells_per_sec = (double)niter * (double)nx3 * (double)ny3 * (double)nz3 / (elapsed.count() * 1e6);
+						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s",bx,by,bz,memtype,niter,elapsed.count(),mcells_per_sec);
 						fflush(stdout);
 						free(vol4);
 					} while (elapsed < 10.0);

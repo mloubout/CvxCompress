@@ -4,10 +4,15 @@
 #include <stdlib.h>
 #include <string>
 #include <string.h>
-#include <time.h>
+#include <chrono>
 #include "CvxCompress.hxx"
 #include <iostream>
 using namespace std;
+
+using std::chrono::system_clock;
+typedef std::chrono::system_clock Time;
+typedef std::chrono::milliseconds ms;
+typedef std::chrono::duration<double> fsec;
 
 int main(int argc, char* argv[])
 {
@@ -57,8 +62,7 @@ int main(int argc, char* argv[])
     for (long j = 0;  j < volsize && !has_NaN;  ++j) if (isnan(vol[j])) has_NaN = true;
     assert(!has_NaN);
   
-    struct timespec before, after;
-    clock_gettime(CLOCK_REALTIME,&before);
+    auto start = Time::now();
     // **********************  COMPRESSING **********************  
     // float ratio = compressor->Compress_Safe(scale,vol,nz,ny,nx,bz,by,bx,
     // 					      use_local_RMS, include_block_lengths,
@@ -71,21 +75,23 @@ int main(int argc, char* argv[])
 				       compressed,
 				       compressed_length);
 
-    clock_gettime(CLOCK_REALTIME,&after);
-    double elapsed1 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    double mcells_per_sec1 = (double) volsize / (elapsed1 * 1e6);
-    tot_elapsed_time += elapsed1;
+
+    auto stop = Time::now();
+    fsec elapsed1 = stop-start;
+    double mcells_per_sec1 = (double) volsize / (elapsed1.count() * 1e6);
+    tot_elapsed_time += elapsed1.count();
     overall_compressed = (long)compressed_length;
 	
-    clock_gettime(CLOCK_REALTIME,&before);
+    start = Time::now();
     // **********************  DECOMPRESSING **********************  
     //  compressor->Decompress_Safe(vol2,nz,ny,nx, (char*) compressed, compressed_length);
     compressor->Decompress(vol2, nz,ny,nx, compressed, compressed_length);
   
-    clock_gettime(CLOCK_REALTIME,&after);
-    double elapsed2 = (double)after.tv_sec + (double)after.tv_nsec * 1e-9 - (double)before.tv_sec - (double)before.tv_nsec * 1e-9;
-    double mcells_per_sec2 = (double) volsize / (elapsed2 * 1e6);
-    tot_elapsed_time += elapsed2;
+    stop = Time::now();
+
+    fsec elapsed2 = stop-start;
+    double mcells_per_sec2 = (double) volsize / (elapsed2.count() * 1e6);
+    tot_elapsed_time += elapsed2.count();
 
     double acc1=0.0, acc2=0.0, acc3=0.0;
     for (long idx = 0;  idx < volsize;  ++idx)
