@@ -1,6 +1,12 @@
 #ifndef CVX_CVXCOMPRESS_HXX
 #define CVX_CVXCOMPRESS_HXX
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifdef __cplusplus
+
 /*!
  * This class implements lossy compression for seismic wavefields.
  * It uses Antonini's 7-9 tap filter wavelet transform.
@@ -32,7 +38,7 @@ public:
 			int bz,
 			bool use_local_RMS,
 			unsigned int* compressed,
-			long& compressed_length 
+			long& compressed_length
 		      );
 	/*!
  	 * Compress a 3D wavefield using a given block size.
@@ -80,6 +86,42 @@ public:
 	bool Run_Module_Tests(bool verbose, bool exhaustive_throughput_tests);  /*!< Execute module tests.*/
 
 };
+
+#endif // __cplusplus
+
+float cvx_compress(
+    float scale,
+    float* vol,
+    int nx,
+    int ny,
+    int nz,
+    int bx,
+    int by,
+    int bz,
+    unsigned int* compressed,
+    long* compressed_length
+);
+
+float* cvx_decompress_outofplace(
+    int* nx,
+    int* ny,
+    int* nz,
+    unsigned int* compressed,
+    long compressed_length
+);
+
+void cvx_decompress_inplace(
+    float* vol,
+    int nx,
+    int ny,
+    int nz,
+    unsigned int* compressed,
+    long compressed_length
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 
