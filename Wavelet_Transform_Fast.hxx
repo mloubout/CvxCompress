@@ -1,8 +1,6 @@
 #ifndef CVX_WAVELET_TRANSFORM_FAST_HXX
 #define CVX_WAVELET_TRANSFORM_FAST_HXX
 
-#include <immintrin.h>
-
 /*!
  * Perform forward wavelet transform.
  * Arguments:
