@@ -77,6 +77,19 @@ public:
                         unsigned int* compressed,
                         long& compressed_length
                       );
+	float Compress(
+                        float scale,
+                        float* vol,
+                        int nx,
+                        int ny,
+                        int nz,
+                        int bx,
+                        int by,
+                        int bz,
+                        unsigned int* compressed,
+						int num_threads,
+                        long& compressed_length
+                      );
 	/*!< Decompress a 3D wavefield that was compressed with Compress(...) method */
 
 	float* Decompress(

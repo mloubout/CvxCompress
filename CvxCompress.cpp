@@ -209,6 +209,24 @@ float CvxCompress::Compress(
 	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,num_threads,compressed_length);
 }
 
+float CvxCompress::Compress(
+	float scale,
+	float* vol,
+	int nx,
+	int ny,
+	int nz,
+	int bx,
+	int by,
+	int bz,
+	unsigned int* compressed,
+	int num_threads,
+	long& compressed_length 
+	)
+{
+	bool use_local_RMS = false;
+	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,num_threads,compressed_length);
+}
+
 
 float CvxCompress::Compress(
 	float scale,
