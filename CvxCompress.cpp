@@ -248,6 +248,8 @@ float CvxCompress::Compress(
 	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
 	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
 
+	omp_set_num_threads(num_threads);
+
 #define MAX(a,b) (a>b?a:b)
 	int max_bs = MAX(bx,MAX(by,bz));
 #undef MAX
@@ -475,6 +477,8 @@ void CvxCompress::Decompress(
 		printf("Error! Decompress: nx, ny, nz do not match!\n");
 		printf("nx=%d, ny=%d, nz=%d, nx_check=%d, ny_check=%d, nz_check=%d\n",nx,ny,nz,nx_check,ny_check,nz_check);
 	}
+
+	omp_set_num_threads(num_threads);
 
 	assert(nx == nx_check);
 	assert(ny == ny_check);
