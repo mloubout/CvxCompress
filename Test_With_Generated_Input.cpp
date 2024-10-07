@@ -7,6 +7,8 @@
 #include <chrono>
 #include "CvxCompress.hxx"
 #include <iostream>
+#include <cassert>
+
 using namespace std;
 
 using std::chrono::system_clock;
@@ -98,7 +100,7 @@ int main(int argc, char* argv[])
       {
 	double val1 = vol[idx];
 	double val2 = vol[idx] - vol2[idx];
-	double val3 = vol2[idx];
+	double val3 = vol2[idx] + vol[idx];
 	acc1 += val1 * val1;
 	acc2 += val2 * val2;
 	acc3 += val3 * val3;
@@ -114,7 +116,11 @@ int main(int argc, char* argv[])
     printf("compression ratio (return value) = %.2f:1, compression throughput = %.0f MC/s, decompression throughput = %.0f MC/s, error = %.6e, SNR = %.1f dB\n",ratio,mcells_per_sec1,mcells_per_sec2,error,snr);
     printf("Total compression and decompression times were %.2f seconds\n",tot_elapsed_time);
     double overall_ratio = ((double)volsize * 4.0) / (double)overall_compressed;
-    printf("Total compression ratio (based on compress_length) was %.2f:1, compressed length in bytes = %d \n",overall_ratio, overall_compressed);
+    printf("Total compression ratio (based on compress_length) was %.2f:1, compressed length in bytes = %ld \n",overall_ratio, overall_compressed);
+
+    assert(error < 2e-4);
+    assert(snr > 75.0);
+
   }// itries
   return 0;
 }
