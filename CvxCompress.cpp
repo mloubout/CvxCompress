@@ -201,16 +201,35 @@ float CvxCompress::Compress(
 	long& compressed_length 
 	)
 {
-	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
-	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
-	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
-	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
-	
 	int num_threads;
 #pragma omp parallel
 	{
 		num_threads = omp_get_num_threads();
 	}
+	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,num_threads,compressed_length);
+}
+
+
+float CvxCompress::Compress(
+	float scale,
+	float* vol,
+	int nx,
+	int ny,
+	int nz,
+	int bx,
+	int by,
+	int bz,
+	bool use_local_RMS,
+	unsigned int* compressed,
+	int num_threads,
+	long& compressed_length 
+	)
+{
+	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
+	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
+	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
+	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
+
 #define MAX(a,b) (a>b?a:b)
 	int max_bs = MAX(bx,MAX(by,bz));
 #undef MAX
@@ -410,6 +429,24 @@ void CvxCompress::Decompress(
 	long compressed_length 
 	)
 {
+	int num_threads;
+#pragma omp parallel
+	{
+		num_threads = omp_get_num_threads();
+	}
+	return Decompress(vol, nx, ny, nz, compressed, num_threads, compressed_length);
+}
+
+void CvxCompress::Decompress(
+	float *vol,
+	int nx,
+	int ny,
+	int nz,
+	unsigned int* compressed,
+	int num_threads,
+	long compressed_length 
+	)
+{
 	int nx_check = ((int*)compressed)[0];
 	int ny_check = ((int*)compressed)[1];
 	int nz_check = ((int*)compressed)[2];
@@ -454,11 +491,6 @@ void CvxCompress::Decompress(
 		bytes = (unsigned int*)(glob_blkoffs+nnn);
 	}
 
-	int num_threads;
-#pragma omp parallel
-	{
-		num_threads = omp_get_num_threads();
-	}
 #define MAX(a,b) (a>b?a:b)
 	int max_bs = MAX(bx,MAX(by,bz));
 #undef MAX
@@ -1212,7 +1244,7 @@ cvx_decompress_outofplace(
 	int           *ny,
 	int           *nz,
 	unsigned int  *compressed,
-	long           compressed_length)
+	long          compressed_length)
 {
 	CvxCompress c;
 	return c.Decompress(*nx, *ny, *nz, compressed, compressed_length);
@@ -1221,13 +1253,45 @@ cvx_decompress_outofplace(
 void 
 cvx_decompress_inplace(
 	float         *vol,
-	int            nx,
-	int            ny,
-	int            nz,
+	int           nx,
+	int           ny,
+	int           nz,
 	unsigned int  *compressed,
-	long           compressed_length)
+	long          compressed_length)
 {
 	CvxCompress c;
 	c.Decompress(vol, nx, ny, nz, compressed, compressed_length);
+}
+
+float
+cvx_compress_th(
+	float         scale,
+	float        *vol,
+	int           nx,
+	int           ny,
+	int           nz,
+	int           bx,
+	int           by,
+	int           bz,
+	unsigned int *compressed,
+	int           num_threads,
+	long         *compressed_length)
+{
+	CvxCompress c;
+	return c.Compress(scale, vol, nx, ny, nz, bx, by, bz, false, compressed, num_threads, *compressed_length);
+}
+
+void 
+cvx_decompress_inplace_th(
+	float         *vol,
+	int           nx,
+	int           ny,
+	int           nz,
+	unsigned int  *compressed,
+	int           num_threads,
+	long          compressed_length)
+{
+	CvxCompress c;
+	c.Decompress(vol, nx, ny, nz, compressed, num_threads, compressed_length);
 }
 //

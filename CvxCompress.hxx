@@ -21,6 +21,27 @@ public:
 	virtual ~CvxCompress();
 
 	/*!
+	 * Compress a 3D wavefield using a given block size and number of threads
+	 * nx is fast, nz is slow
+	 * scale is a relative threshold for discarding wavelet coefficients.
+	 * recommendation for seismic wave-fields: scale=1e-2->1e-5
+	 * larger scale means higher compression (more lossy)
+	 */
+	float Compress(
+			float scale,
+			float* vol,
+			int nx,
+			int ny,
+			int nz,
+			int bx,
+			int by,
+			int bz,
+			bool use_local_RMS,
+			unsigned int* compressed,
+			int num_threads,
+			long& compressed_length
+		      );
+	/*!
 	 * Compress a 3D wavefield using a given block size
 	 * nx is fast, nz is slow
 	 * scale is a relative threshold for discarding wavelet coefficients.
@@ -57,6 +78,7 @@ public:
                         long& compressed_length
                       );
 	/*!< Decompress a 3D wavefield that was compressed with Compress(...) method */
+
 	float* Decompress(
 			int& nx,
 			int& ny,
@@ -71,9 +93,19 @@ public:
 			int ny,
 			int nz,
 			unsigned int* compressed,
+			int num_threads,
 			long compressed_length 
 		       );
-	
+
+	void Decompress(
+			float* vol,
+			int nx,
+			int ny,
+			int nz,
+			unsigned int* compressed,
+			long compressed_length 
+		       );
+
 	bool Is_Valid_Block_Size(int bx, int by, int bz);
 
 	static int Min_BX() {return  8;}  /*!< Get minimum X block size. Will always be a power of two.*/
@@ -116,6 +148,30 @@ void cvx_decompress_inplace(
     int ny,
     int nz,
     unsigned int* compressed,
+    long compressed_length
+);
+
+float cvx_compress_th(
+    float scale,
+    float* vol,
+    int nx,
+    int ny,
+    int nz,
+    int bx,
+    int by,
+    int bz,
+    unsigned int* compressed,
+	int num_threads,
+    long* compressed_length
+);
+
+void cvx_decompress_inplace_th(
+    float* vol,
+    int nx,
+    int ny,
+    int nz,
+    unsigned int* compressed,
+	int num_threads,
     long compressed_length
 );
 
