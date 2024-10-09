@@ -13,8 +13,10 @@ TFLAG=-std=c++11
 # Detect platform and set library extension accordingly
 ifeq ($(shell uname), Darwin)
     LIB_EXT = dylib
+	rflags = -install_name @rpath/libcvxcompress.dylib
 else
     LIB_EXT = so
+	rflags = 
 endif
 
 OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Length_Encode_Slow.o Block_Copy.o Read_Raw_Volume.o
@@ -22,7 +24,7 @@ OBJECTS=CvxCompress.o Wavelet_Transform_Slow.o Wavelet_Transform_Fast.o Run_Leng
 all: CvxCompress_Test CvxCompress_Test_Dyn Test_Compression Compress_SEAM_Basin Test_With_Generated_Input
 
 lib: $(OBJECTS)
-	$(CXX) -shared $(LDFLAGS) -o libcvxcompress.$(LIB_EXT) $(OBJECTS)
+	$(CXX) -shared $(LDFLAGS) -o libcvxcompress.$(LIB_EXT) $(OBJECTS) $(rflags)
 
 libcvxcompress.$(LIB_EXT) : $(OBJECTS)
 	$(CXX) -shared $(LDFLAGS) -o libcvxcompress.$(LIB_EXT) $(OBJECTS)
