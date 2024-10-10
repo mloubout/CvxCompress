@@ -19,14 +19,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Install simde
         run: |
           if [ "${{ runner.os }}" == 'macOS' ]; then
             brew install simde
             echo "DYLD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
-            echo "CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:/opt/homebrew/Cellar/simde/0.8.2/include" >> $GITHUB_ENV
-            echo "C_INCLUDE_PATH=$C_INCLUDE_PATH:/opt/homebrew/Cellar/simde/0.8.2/include" >> $GITHUB_ENV
           else
             sudo apt install libsimde-dev
             echo "LD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
