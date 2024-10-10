@@ -22,13 +22,11 @@ jobs:
         with:
           submodules: true
 
-      - name: Install simde
+      - name: Setup lib path
         run: |
           if [ "${{ runner.os }}" == 'macOS' ]; then
-            brew install simde
             echo "DYLD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
           else
-            sudo apt install libsimde-dev
             echo "LD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
           fi
 
