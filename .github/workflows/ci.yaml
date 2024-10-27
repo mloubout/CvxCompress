@@ -43,5 +43,8 @@ jobs:
           make
           ls
       
-      - name: Run test
+      - name: Run CvxCompress_Test
+        run: ./CvxCompress_Test
+
+      - name: Run Test_With_Generated_Input
         run: ./Test_With_Generated_Input

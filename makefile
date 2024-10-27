@@ -1,7 +1,7 @@
 CC ?= gcc
 CXX ?= g++
 
-CFLAGS=-fopenmp -O3 -fPIC -g
+CFLAGS=-fopenmp -O3 -fPIC -g -Wno-unused-result
 # Check if we're on an x86 architecture and if CC supports -mavx
 ifeq ($(shell uname -m), x86_64)
     CFLAGS += -mavx

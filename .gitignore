@@ -1,6 +1,8 @@
 *.o 
 *.so
 *~
+Ds79_Base.cpp
+Us79_Base.cpp
 Compress_Guojians_Stuff
 Compress_SEAM_Basin
 Compress_Sams_Stuff
