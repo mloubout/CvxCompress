@@ -5,6 +5,12 @@
 #include <stdio.h>
 #include <omp.h>
 #include <chrono>
+
+#ifndef SIMDE_ENABLE_NATIVE_ALIASES
+	#define SIMDE_ENABLE_NATIVE_ALIASES
+	#include "simde/x86/avx512.h"  // SSE intrinsics
+#endif
+
 #include "CvxCompress.hxx"
 #include "Wavelet_Transform_Fast.hxx"
 #include "Wavelet_Transform_Slow.hxx"  // for comparison in module test
@@ -195,16 +201,55 @@ float CvxCompress::Compress(
 	long& compressed_length 
 	)
 {
-	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
-	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
-	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
-	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
-	
 	int num_threads;
 #pragma omp parallel
 	{
 		num_threads = omp_get_num_threads();
 	}
+	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,num_threads,compressed_length);
+}
+
+float CvxCompress::Compress(
+	float scale,
+	float* vol,
+	int nx,
+	int ny,
+	int nz,
+	int bx,
+	int by,
+	int bz,
+	unsigned int* compressed,
+	int num_threads,
+	long& compressed_length 
+	)
+{
+	bool use_local_RMS = false;
+	return Compress(scale,vol,nx,ny,nz,bx,by,bz,use_local_RMS,compressed,num_threads,compressed_length);
+}
+
+
+float CvxCompress::Compress(
+	float scale,
+	float* vol,
+	int nx,
+	int ny,
+	int nz,
+	int bx,
+	int by,
+	int bz,
+	bool use_local_RMS,
+	unsigned int* compressed,
+	int num_threads,
+	long& compressed_length 
+	)
+{
+	assert(bx >= CvxCompress::Min_BX() && bx <= CvxCompress::Max_BX() && is_pow2(bx));
+	assert(by >= CvxCompress::Min_BY() && by <= CvxCompress::Max_BY() && is_pow2(by));
+	assert(bz == 1 || (bz >= CvxCompress::Min_BZ() && bz <= CvxCompress::Max_BZ() && is_pow2(bz)));
+	float global_rms = use_local_RMS ? 1.0f : Compute_Global_RMS(vol,nx,ny,nz);
+
+	omp_set_num_threads(num_threads);
+
 #define MAX(a,b) (a>b?a:b)
 	int max_bs = MAX(bx,MAX(by,bz));
 #undef MAX
@@ -245,6 +290,7 @@ float CvxCompress::Compress(
 	
 	float glob_mulfac = global_rms != 0.0f ? 1.0f / (global_rms * scale) : 1.0f;
 	compressed[6] = *((unsigned int*)&glob_mulfac);
+	// printf("nx=%d, ny=%d, nz=%d, bx=%d, by=%d, bz=%d, mulfac=%e\n",nx,ny,nz,bx,by,bz,glob_mulfac);
 
 	// flags:
 	// 1 -> use local RMS (global RMS otherwise)
@@ -403,9 +449,37 @@ void CvxCompress::Decompress(
 	long compressed_length 
 	)
 {
+	int num_threads;
+#pragma omp parallel
+	{
+		num_threads = omp_get_num_threads();
+	}
+	return Decompress(vol, nx, ny, nz, compressed, num_threads, compressed_length);
+}
+
+void CvxCompress::Decompress(
+	float *vol,
+	int nx,
+	int ny,
+	int nz,
+	unsigned int* compressed,
+	int num_threads,
+	long compressed_length 
+	)
+{
 	int nx_check = ((int*)compressed)[0];
 	int ny_check = ((int*)compressed)[1];
 	int nz_check = ((int*)compressed)[2];
+	// Check sizes and print error message if they don't match.
+	// for nx ny and nz
+	if (nx != nx_check || ny != ny_check || nz != nz_check)
+	{
+		printf("Error! Decompress: nx, ny, nz do not match!\n");
+		printf("nx=%d, ny=%d, nz=%d, nx_check=%d, ny_check=%d, nz_check=%d\n",nx,ny,nz,nx_check,ny_check,nz_check);
+	}
+
+	omp_set_num_threads(num_threads);
+
 	assert(nx == nx_check);
 	assert(ny == ny_check);
 	assert(nz == nz_check);
@@ -416,16 +490,16 @@ void CvxCompress::Decompress(
 	float glob_mulfac = ((float*)compressed)[6];
 	int flags = ((int*)compressed)[7];
 	bool use_local_RMS = (flags & 1) ? true : false;
-	//printf("nx=%d, ny=%d, nz=%d, bx=%d, by=%d, bz=%d, mulfac=%e\n",nx,ny,nz,bx,by,bz,mulfac);
+	// printf("nx=%d, ny=%d, nz=%d, bx=%d, by=%d, bz=%d, mulfac=%e\n",nx,ny,nz,bx,by,bz,glob_mulfac);
 
 	int nbx = (nx+bx-1)/bx;
 	int nby = (ny+by-1)/by;
 	int nbz = (nz+bz-1)/bz;
 	int nnn = nbx*nby*nbz;
-	//printf("nbx=%d, nby=%d, nbz=%d, nnn=%d\n",nbx,nby,nbz,nnn);
+	// printf("nbx=%d, nby=%d, nbz=%d, nnn=%d\n",nbx,nby,nbz,nnn);
 
 	long* glob_blkoffs = (long*)(compressed+8);
-	
+
 	float* blkmulfac = 0L;
 	unsigned int* bytes;
 	if (use_local_RMS)
@@ -439,11 +513,6 @@ void CvxCompress::Decompress(
 		bytes = (unsigned int*)(glob_blkoffs+nnn);
 	}
 
-	int num_threads;
-#pragma omp parallel
-	{
-		num_threads = omp_get_num_threads();
-	}
 #define MAX(a,b) (a>b?a:b)
 	int max_bs = MAX(bx,MAX(by,bz));
 #undef MAX
@@ -1173,8 +1242,6 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	return forward_passed && inverse_passed && copy_to_block_passed && copy_from_block_passed && copy_round_trip_passed && global_rms_passed;
 }
 
-extern "C"
-{
 //
 float
 cvx_compress(
@@ -1199,7 +1266,7 @@ cvx_decompress_outofplace(
 	int           *ny,
 	int           *nz,
 	unsigned int  *compressed,
-	long           compressed_length)
+	long          compressed_length)
 {
 	CvxCompress c;
 	return c.Decompress(*nx, *ny, *nz, compressed, compressed_length);
@@ -1208,14 +1275,45 @@ cvx_decompress_outofplace(
 void 
 cvx_decompress_inplace(
 	float         *vol,
-	int            nx,
-	int            ny,
-	int            nz,
+	int           nx,
+	int           ny,
+	int           nz,
 	unsigned int  *compressed,
-	long           compressed_length)
+	long          compressed_length)
 {
 	CvxCompress c;
 	c.Decompress(vol, nx, ny, nz, compressed, compressed_length);
 }
-//
+
+float
+cvx_compress_th(
+	float         scale,
+	float        *vol,
+	int           nx,
+	int           ny,
+	int           nz,
+	int           bx,
+	int           by,
+	int           bz,
+	unsigned int *compressed,
+	int           num_threads,
+	long         *compressed_length)
+{
+	CvxCompress c;
+	return c.Compress(scale, vol, nx, ny, nz, bx, by, bz, false, compressed, num_threads, *compressed_length);
 }
+
+void 
+cvx_decompress_inplace_th(
+	float         *vol,
+	int           nx,
+	int           ny,
+	int           nz,
+	unsigned int  *compressed,
+	int           num_threads,
+	long          compressed_length)
+{
+	CvxCompress c;
+	c.Decompress(vol, nx, ny, nz, compressed, num_threads, compressed_length);
+}
+//

@@ -3,7 +3,10 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <immintrin.h>
+
+#define SIMDE_ENABLE_NATIVE_ALIASES
+#include "simde/x86/avx512.h"  // SSE intrinsics
+
 #include "Run_Length_Escape_Codes.hxx"
 
 // un-comment if you want debug printouts during encoding

@@ -1,0 +1,47 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup lib path
+        run: |
+          if [ "${{ runner.os }}" == 'macOS' ]; then
+            echo "DYLD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
+          else
+            echo "LD_LIBRARY_PATH=$PWD" >> $GITHUB_ENV
+          fi
+
+      - name: Setup clang for osx
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm libomp
+          echo "/opt/homebrew/bin:/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          make
+          ls
+      
+      - name: Run test
+        run: ./Test_With_Generated_Input

@@ -1,7 +1,10 @@
 #ifndef CVX_CVXCOMPRESS_BLOCK_COPY_HXX
 #define CVX_CVXCOMPRESS_BLOCK_COPY_HXX
 
-#include <xmmintrin.h>
+#ifndef MY_AVX_DEFINED
+	#define SIMDE_ENABLE_NATIVE_ALIASES
+	#include "simde/x86/avx512.h"  // SSE intrinsics
+#endif
 
 void Copy_To_Block(
 	float* data,

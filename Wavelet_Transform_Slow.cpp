@@ -500,8 +500,9 @@ void Gen_Ds79(const char* path, int min_n, int max_n, int num_vars)
 	fprintf(fp,"/*!\n");
 	fprintf(fp," * Don't edit this code, it was automatically generated.\n");
 	fprintf(fp," * Base functions for wavelet transforms of length %d to %d.\n",1<<min_n,1<<max_n);
-	fprintf(fp," */\n");
-	fprintf(fp,"#include <immintrin.h>\n\n");
+	fprintf(fp," */\n\n");
+	fprintf(fp,"#define  SIMDE_ENABLE_NATIVE_ALIASES \n");
+	fprintf(fp,"#include \"simde/x86/avx.h\"  // AVX intrinsics\n\n");
 
 	fprintf(fp,"/*\n");
 	fprintf(fp," * Define coefficients for Antonini 7-9 tap filter.\n");
@@ -706,7 +707,6 @@ void Gen_Us79(const char* path, int min_n, int max_n, int num_vars)
 	fprintf(fp," * Don't edit this code, it was automatically generated.\n");
 	fprintf(fp," * Base functions for wavelet transforms of length %d to %d.\n",1<<min_n,1<<max_n);
 	fprintf(fp," */\n");
-	fprintf(fp,"#include <immintrin.h>\n\n");
 
 	fprintf(fp,"/*\n");
 	fprintf(fp," * Define coefficients for Antonini 7-9 tap filter.\n");
