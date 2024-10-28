@@ -40,7 +40,7 @@ public:
 			unsigned int* compressed,
 			int num_threads,
 			long& compressed_length
-		      );
+			);
 	/*!
 	 * Compress a 3D wavefield using a given block size
 	 * nx is fast, nz is slow
@@ -60,7 +60,7 @@ public:
 			bool use_local_RMS,
 			unsigned int* compressed,
 			long& compressed_length
-		      );
+			);
 	/*!
  	 * Compress a 3D wavefield using a given block size.
  	 * Works same as above, except parameter use_local_RMS is hardcoded to be false.
@@ -108,7 +108,7 @@ public:
 			unsigned int* compressed,
 			int num_threads,
 			long compressed_length 
-		       );
+			);
 
 	void Decompress(
 			float* vol,
@@ -117,7 +117,7 @@ public:
 			int nz,
 			unsigned int* compressed,
 			long compressed_length 
-		       );
+			);
 
 	bool Is_Valid_Block_Size(int bx, int by, int bz);
 

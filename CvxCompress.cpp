@@ -736,12 +736,12 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	else
 	{
 		if (forward_passed)
-			printf("[\x1B[32mPassed\x1B[0m]\n"); 
+			printf("[\x1B[32mPassed!\x1B[0m]\n"); 
 		else 
-			printf("[\x1B[31mFailed\x1B[0m]\n");
+			printf("[\x1B[31mFailed!\x1B[0m]\n");
 	}
 
-	printf("3. Verify correctness of inverse wavelet transform...");
+	printf("\n3. Verify correctness of inverse wavelet transform...");
 	if (verbose) printf("\n");
 	bool inverse_passed = true;
 	for (int k = min_k;  k <= max_k;  ++k)
@@ -776,9 +776,9 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 	else
 	{
 		if (inverse_passed)
-			printf("[\x1B[32mPassed\x1B[0m]\n");
+			printf("[\x1B[32mPassed!\x1B[0m]\n");
 		else 
-			printf("[\x1B[31mFailed\x1B[0m]\n");
+			printf("[\x1B[31mFailed!\x1B[0m]\n");
 	}
 
 #ifdef PAPI
@@ -797,7 +797,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
         }
 #endif
 
-	printf("4. Test throughput of wavelet transform (forward + inverse)...\n");
+	printf("\n4. Test throughput of wavelet transform (forward + inverse)...\n");
 	for (int k = min_k;  k <= max_k;  ++k)
 	{
 		int bz = 1 << k;
@@ -961,7 +961,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		else
 			printf("\x1B[0m[\x1B[31mFailed!\x1B[0m]\n");
 	
-	printf("6. Verify correctness of Copy_From_Block method...");  fflush(stdout);
+	printf("\n6. Verify correctness of Copy_From_Block method...");  fflush(stdout);
 	bool copy_from_block_passed = true;
 	if (vol == 0L || block == 0L)
 	{
@@ -1027,7 +1027,7 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 		else
 			printf("\x1B[0m[\x1B[31mFailed!\x1B[0m]\n");
 
-	printf("7. Test throughput of block copy...");  fflush(stdout);
+	printf("\n7. Test throughput of block copy...");  fflush(stdout);
 	bool copy_round_trip_passed = true;
 	if (vol == 0L)
 	{
@@ -1094,9 +1094,8 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 			}
 		}
 	}
-	printf("\n");
 
-	printf("8. Verify correctness of Global_RMS method...");  fflush(stdout);
+	printf("\n8. Verify correctness of Global_RMS method...");  fflush(stdout);
 	bool global_rms_passed = true;
 	if (vol == 0L || block == 0L)
 	{
@@ -1130,9 +1129,10 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 
 	float scale = 1e-1f;
 
-	printf("9. Test throughput of Compress() method...\n");
+	printf("\n9. Test throughput of Compress() method...\n");
 	int nx3,ny3,nz3;
 	float* vol3;
+	// 2024.10.27 instead of reading a binary file, we now create a volume in the function Read_Raw_Volume 
 	Read_Raw_Volume("/cpfs/lfs02/ESDRD/tjhc/pressure_at_t=7512.bin",nx3,ny3,nz3,vol3);
 	//Read_Raw_Volume("/cpfs/lfs01/ESDRD/tjhc/fdmod2/trunk/CvxCompress/empty.bin",nx3,ny3,nz3,vol3);
 	unsigned long* compressed3;
@@ -1160,7 +1160,6 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						memtype = "DRAM";
 					printf("\x1B[0m -> %3d x %3d x %3d (%s) ",bx,by,bz,memtype);  fflush(stdout);
 
-
 					auto start = Time::now();
 					double elapsed = 0.0;
 
@@ -1176,16 +1175,16 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						double mcells_per_sec = (double)niter * (double)nx3 * (double)ny3 * (double)nz3 / (elapsed.count() * 1e6);
 						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s - ratio %.2f:1",bx,by,bz,memtype,niter,elapsed.count(),mcells_per_sec,ratio);
 						fflush(stdout);
-					} while (elapsed < 10.0);
+					// } while (elapsed < 10.0); // 2024.10.27 switch to iteration count, elapased doesnt make sense
+					} while (niter < 10);
 					printf("\n");
-					//printf("%d iterations - %6.3f secs - %.0f MCells/s - ratio %.2f:1\n",niter,elapsed,mcells_per_sec,ratio);
 				}
 			}
 		}
 	}
 
-	printf("10. Test throughput of Decompress() method...\n");
-	for (int k = min_k;  k <= max_k-2;  ++k)
+	printf("\n10. Test throughput of Decompress() method...\n");
+	for (int k = min_k;  k <= max_k-1;  ++k)
 	{
 		int bz = 1 << k;
 		for (int j = min_j;  j <= max_j;  ++j)
@@ -1226,7 +1225,8 @@ bool CvxCompress::Run_Module_Tests(bool verbose, bool exhaustive_throughput_test
 						printf("\r\x1B[0m -> %3d x %3d x %3d (%s) %2d iterations - %6.3f secs - %.0f MCells/s",bx,by,bz,memtype,niter,elapsed.count(),mcells_per_sec);
 						fflush(stdout);
 						free(vol4);
-					} while (elapsed < 10.0);
+					// } while (elapsed < 10.0); // 2024.10.27 switch to iteration count, elapased doesnt make sense
+					} while (niter < 10);
 					printf("\n");
 				}
 			}
